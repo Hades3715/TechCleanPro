@@ -3385,12 +3385,11 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Segundo plano: widget + Modo Juego ----------------
     def mostrar_segundo_plano(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Trabajo en segundo plano",
+        ctk.CTkLabel(self.contenido, text=t("segplano_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ctk.CTkLabel(self.contenido,
-                     text="Deja que TechClean Pro te ayude mientras usas tu equipo, sin abrir la ventana completa. "
-                          "¿Buscas Modo Juego, FPS o Enfoque asistido? Se mudaron a 🎮 Gaming.",
+                     text=t("segplano_subtitulo"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 16))
 
@@ -3400,12 +3399,11 @@ class TechCleanApp(ctk.CTk):
 
         fila1 = ctk.CTkFrame(panel, fg_color="transparent")
         fila1.pack(fill="x", padx=20, pady=(20, 6))
-        ctk.CTkLabel(fila1, text="🧩 Widget de rendimiento flotante",
+        ctk.CTkLabel(fila1, text=t("segplano_widget_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
         self.switch_widget = ctk.CTkSwitch(fila1, text="", command=self._toggle_widget)
         self.switch_widget.pack(side="right")
-        ctk.CTkLabel(panel, text="Una barra pequeña, siempre visible y arrastrable, con CPU/GPU/RAM/Red en vivo. "
-                                  "Haz clic en ▾ dentro del widget para expandirlo y ver más detalle.",
+        ctk.CTkLabel(panel, text=t("segplano_widget_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             fill="x", padx=20, pady=(0, 16), anchor="w")
 
@@ -3414,11 +3412,12 @@ class TechCleanApp(ctk.CTk):
 
         fila3 = ctk.CTkFrame(panel, fg_color="transparent")
         fila3.pack(fill="x", padx=20, pady=(16, 6))
-        ctk.CTkLabel(fila3, text="🗓 Limpieza programada automática",
+        ctk.CTkLabel(fila3, text=t("segplano_limpieza_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
         self.switch_limpieza = ctk.CTkSwitch(fila3, text="", command=self._toggle_limpieza_programada)
         self.switch_limpieza.pack(side="right")
-        self.combo_frecuencia = ctk.CTkOptionMenu(fila3, values=["Diaria", "Semanal"], width=110)
+        self.combo_frecuencia = ctk.CTkOptionMenu(
+            fila3, values=[t("segplano_frec_diaria"), t("segplano_frec_semanal")], width=110)
         self.combo_frecuencia.pack(side="right", padx=(0, 8))
         horas_disponibles = ["00:00", "03:00", "06:00", "09:00", "12:00", "15:00", "18:00", "21:00", "22:00"]
         self.combo_hora_limpieza = ctk.CTkOptionMenu(fila3, values=horas_disponibles, width=90)
@@ -3436,9 +3435,7 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker_estado_limpieza, daemon=True).start()
 
         ctk.CTkLabel(panel,
-                     text="Crea una tarea en el Programador de tareas de Windows que libera RAM y limpia "
-                          "temporales todos los días (o cada semana), a la hora que elijas — sin abrir ninguna "
-                          "ventana, ni siquiera minimizada. Se puede desactivar en cualquier momento con este switch.",
+                     text=t("segplano_limpieza_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             fill="x", padx=20, pady=(0, 20), anchor="w")
 
@@ -3669,15 +3666,19 @@ class TechCleanApp(ctk.CTk):
         encender = bool(self.switch_limpieza.get())
         # Leer los valores de los widgets AQUÍ, en el hilo principal — Tkinter
         # no garantiza que .get() sea seguro de llamar desde un hilo aparte.
-        frecuencia = "DAILY" if self.combo_frecuencia.get() == "Diaria" else "WEEKLY"
+        # El valor del combo está traducido, así que NO se puede comparar contra
+        # el literal "Diaria" — en la build en inglés diría "Daily" y esto habría
+        # programado siempre WEEKLY sin dar ningún error. Se compara contra la
+        # misma clave traducida que se usó para construir el combo.
+        frecuencia = "DAILY" if self.combo_frecuencia.get() == t("segplano_frec_diaria") else "WEEKLY"
         hora = self.combo_hora_limpieza.get()
         etiqueta_frecuencia = self.combo_frecuencia.get().lower()
 
         def worker():
             if encender:
                 exito, comando = opt.crear_limpieza_programada(frecuencia=frecuencia, hora=hora)
-                msg = (f"Limpieza {etiqueta_frecuencia} programada a las {hora}."
-                       if exito else "No se pudo crear la tarea programada (¿permisos suficientes?).")
+                msg = (t("segplano_programada_ok", frecuencia=etiqueta_frecuencia, hora=hora)
+                       if exito else t("segplano_programada_error"))
                 self._log_dev("Limpieza programada activada", comando, msg, seccion="Segundo Plano", exito=exito)
                 if exito:
                     self.prefs["limpieza_hora"] = hora
@@ -3687,7 +3688,7 @@ class TechCleanApp(ctk.CTk):
             else:
                 exito, comando = opt.quitar_limpieza_programada()
                 self._log_dev("Limpieza programada desactivada", comando,
-                              "Tarea programada eliminada." if exito else "No se pudo eliminar la tarea.",
+                              t("segplano_quitada_ok") if exito else t("segplano_quitada_error"),
                               seccion="Segundo Plano", exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
