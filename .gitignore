@@ -1,0 +1,17 @@
+# Bytecode de Python
+__pycache__/
+*.py[cod]
+
+# Salidas de PyInstaller (Generar_App_Instalable.bat / Generar_App_Admin.bat)
+build/
+dist/
+*.spec
+TechCleanPro.exe
+TechCleanPro_Admin.exe
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Nota: preferencias.json y el registro de errores viven en
+# %APPDATA%\TechCleanPro, fuera de esta carpeta — no hace falta ignorarlos.
