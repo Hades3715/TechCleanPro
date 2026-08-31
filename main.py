@@ -50,6 +50,7 @@ COLOR_WARN = "#f1c40f"
 COLOR_CRIT = "#e74c3c"
 COLOR_BG_PANEL = "#1c1f26"
 COLOR_ACCENT = "#3d8bfd"
+COLOR_DONAR = "#ff5e5b"   # calido, para que la tarjeta de apoyo no se pierda entre paneles grises
 
 DEV_NAME = "Edwin Javier Cortez Cardoza"
 DEV_ALIAS = "Hades"
@@ -4323,13 +4324,28 @@ class TechCleanApp(ctk.CTk):
         ctk.CTkLabel(panel, text=t("ajustes_descripcion_app"),
                      font=ctk.CTkFont(size=12), text_color="gray60").pack(padx=20, pady=(0, 8), anchor="w")
 
-        fila_donar = ctk.CTkFrame(panel, fg_color="transparent")
-        fila_donar.pack(fill="x", padx=20, pady=(0, 8))
-        ctk.CTkButton(fila_donar, text=t("ajustes_donar_boton"), width=180, fg_color="#2a2d36",
-                      hover_color="#3a3e4a", command=self._accion_abrir_donacion).pack(side="left")
-        ctk.CTkLabel(fila_donar, text=t("ajustes_donar_desc"),
-                     font=ctk.CTkFont(size=11), text_color="gray60", wraplength=560, justify="left").pack(
-            side="left", padx=10)
+        # La tarjeta de apoyo va deliberadamente distinta al resto de filas de
+        # Ajustes: antes era un boton gris "#2a2d36" identico al de Buscar
+        # actualizaciones justo debajo, y se perdia entre las demas opciones.
+        # Ahora tiene fondo calido propio, borde de acento y su propio titulo,
+        # para que se distinga sin volverse un anuncio molesto.
+        tarjeta_donar = ctk.CTkFrame(panel, fg_color="#241f1a", corner_radius=12,
+                                     border_width=1, border_color=COLOR_DONAR)
+        tarjeta_donar.pack(fill="x", padx=20, pady=(4, 12))
+
+        ctk.CTkLabel(tarjeta_donar, text=t("ajustes_donar_titulo"),
+                     font=ctk.CTkFont(size=15, weight="bold"), text_color=COLOR_DONAR).pack(
+            padx=16, pady=(14, 2), anchor="w")
+        ctk.CTkLabel(tarjeta_donar, text=t("ajustes_donar_desc"),
+                     font=ctk.CTkFont(size=12), text_color="gray70",
+                     wraplength=620, justify="left").pack(padx=16, pady=(0, 2), anchor="w")
+        ctk.CTkLabel(tarjeta_donar, text=t("ajustes_donar_nota"),
+                     font=ctk.CTkFont(size=11), text_color="gray50",
+                     wraplength=620, justify="left").pack(padx=16, pady=(0, 10), anchor="w")
+        ctk.CTkButton(tarjeta_donar, text=t("ajustes_donar_boton"), width=200, height=38,
+                      font=ctk.CTkFont(size=13, weight="bold"),
+                      fg_color=COLOR_DONAR, hover_color="#e0524f", text_color="white",
+                      command=self._accion_abrir_donacion).pack(padx=16, pady=(0, 16), anchor="w")
 
         fila_actualizacion = ctk.CTkFrame(panel, fg_color="transparent")
         fila_actualizacion.pack(fill="x", padx=20, pady=(0, 8))
@@ -4658,13 +4674,25 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_abrir_donacion(self):
-        exito, comando = opt.abrir_pagina_donacion()
-        if not exito and comando == "URL_DONACION vacía":
-            self._mostrar_popup_info(t("ajustes_donar_no_configurado_titulo"), t("ajustes_donar_no_configurado_msg"))
+        # Antes esto comparaba el segundo valor de retorno contra el texto
+        # exacto "URL_DONACION vacía" para detectar que no hay link. Ese
+        # centinela por string se rompe en silencio si alguien reescribe el
+        # mensaje en optimizer.py: dejaría de salir el aviso y en su lugar
+        # se registraría un fallo. Se consulta la constante directamente.
+        if not opt.URL_DONACION:
+            self._mostrar_popup_info(t("ajustes_donar_no_configurado_titulo"),
+                                     t("ajustes_donar_no_configurado_msg"))
             return
-        self._log_dev("Abrir página de donación", comando,
-                      "Abriendo en el navegador." if exito else "No se pudo abrir.",
-                      seccion=t("seccion_ajustes"), exito=exito)
+
+        # webbrowser.open() lanza un proceso del sistema: si el navegador
+        # está frío puede tardar y congelar la ventana. Va en un hilo, como
+        # el resto de llamadas que salen al sistema operativo.
+        def worker():
+            exito, comando = opt.abrir_pagina_donacion()
+            self._log_dev(t("ajustes_donar_log_accion"), comando,
+                          t("ajustes_donar_log_ok") if exito else t("ajustes_donar_log_error"),
+                          seccion=t("seccion_ajustes"), exito=exito)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _accion_buscar_actualizacion_manual(self):
         self.lbl_resultado_actualizacion.configure(text=t("ajustes_buscando"))
