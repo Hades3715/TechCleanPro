@@ -1323,16 +1323,23 @@ class TechCleanApp(ctk.CTk):
             if bateria:
                 lineas += ["", "-- Batería --", f'{bateria["porcentaje"]:.0f}%']
 
-            destino = os.path.join(os.path.expanduser("~"), "Desktop", "reporte_hardware_techclean.txt")
+            # El respaldo ya no es BASE_DIR: en la build --onefile de
+            # PyInstaller esa es la carpeta temporal donde se descomprime
+            # el .exe y Windows la borra al cerrar la app, asi que el
+            # archivo se "guardaba" y desaparecia solo. carpeta_datos()
+            # apunta a %APPDATA% + TechCleanPro, que si persiste.
+            carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
+            destino = os.path.join(carpeta, "reporte_hardware_techclean.txt")
             try:
                 with open(destino, "w", encoding="utf-8") as f:
                     f.write("\n".join(lineas))
             except Exception:
-                destino = os.path.join(BASE_DIR, "reporte_hardware_techclean.txt")
+                destino = os.path.join(prefs.carpeta_datos(), "reporte_hardware_techclean.txt")
                 with open(destino, "w", encoding="utf-8") as f:
                     f.write("\n".join(lineas))
 
-            self.after(0, lambda: self._mostrar_popup_info("Reporte de hardware exportado", f"Se guardó en:\n{destino}"))
+            self.after(0, lambda: self._mostrar_popup_info(
+                t("hist_hardware_exportado_titulo"), t("hist_exportado_msg", ruta=destino)))
             self._log_dev("Exportar reporte de hardware", "N/A", f"Guardado en {destino}",
                           seccion=t("seccion_componentes"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
@@ -3841,39 +3848,37 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Historial de actividad (transparencia) ----------------
     def mostrar_reporte(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Historial de actividad",
+        ctk.CTkLabel(self.contenido, text=t("hist_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         ctk.CTkLabel(self.contenido,
-                     text="Aquí puedes ver cada acción que TechClean Pro ha realizado en esta sesión "
-                          "(manual o automática).",
+                     text=t("hist_subtitulo"),
                      font=ctk.CTkFont(size=12), text_color="gray60").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         resumen = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
         resumen.grid(row=2, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
-        texto_resumen = (
-            f"Acciones ejecutadas: {self.reporte.total_acciones()}   |   "
-            f"Exitosas: {self.reporte.total_exitosas()}   |   "
-            f"Fallidas: {self.reporte.total_fallidas()}   |   "
-            f"Espacio total liberado: {opt.format_bytes(self.reporte.total_bytes_liberados())}"
-        )
+        texto_resumen = t("hist_resumen",
+                          total=self.reporte.total_acciones(),
+                          exitosas=self.reporte.total_exitosas(),
+                          fallidas=self.reporte.total_fallidas(),
+                          espacio=opt.format_bytes(self.reporte.total_bytes_liberados()))
         ctk.CTkLabel(resumen, text=texto_resumen, font=ctk.CTkFont(size=13, weight="bold")).pack(
             padx=16, pady=12, anchor="w")
 
         fila_busqueda = ctk.CTkFrame(self.contenido, fg_color="transparent")
         fila_busqueda.grid(row=3, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 6))
         self.entry_buscar_historial = ctk.CTkEntry(
-            fila_busqueda, placeholder_text="🔎 Buscar por acción, sección o resultado...")
+            fila_busqueda, placeholder_text=t("hist_buscar_placeholder"))
         self.entry_buscar_historial.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_buscar_historial.bind("<KeyRelease>", lambda e: self._filtrar_historial())
 
         secciones = sorted({e["seccion"] for e in self.reporte.entries}) or []
         self.combo_seccion_historial = ctk.CTkOptionMenu(
-            fila_busqueda, values=["Todas las secciones"] + secciones, width=180,
+            fila_busqueda, values=[t("hist_todas_secciones")] + secciones, width=180,
             command=lambda v: self._filtrar_historial())
-        self.combo_seccion_historial.set("Todas las secciones")
+        self.combo_seccion_historial.set(t("hist_todas_secciones"))
         self.combo_seccion_historial.pack(side="left")
 
         self.contenido.grid_rowconfigure(4, weight=1)
@@ -3882,7 +3887,7 @@ class TechCleanApp(ctk.CTk):
 
         self._filtrar_historial()
 
-        ctk.CTkButton(self.contenido, text="💾 Exportar reporte a archivo .txt",
+        ctk.CTkButton(self.contenido, text=t("hist_exportar"),
                       command=self._exportar_reporte).grid(row=5, column=0, sticky="w", padx=8, pady=8)
 
     def _filtrar_historial(self):
@@ -3892,18 +3897,20 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
 
         termino = self.entry_buscar_historial.get().strip().lower() if hasattr(self, "entry_buscar_historial") else ""
-        seccion_elegida = self.combo_seccion_historial.get() if hasattr(self, "combo_seccion_historial") else "Todas las secciones"
+        seccion_elegida = (self.combo_seccion_historial.get()
+                           if hasattr(self, "combo_seccion_historial") else t("hist_todas_secciones"))
         entradas = self.reporte.entradas_recientes_primero()
         if termino:
             entradas = [e for e in entradas if termino in e["accion"].lower()
                         or termino in e["seccion"].lower()
                         or termino in e["resultado"].lower()]
-        if seccion_elegida and seccion_elegida != "Todas las secciones":
+        if seccion_elegida and seccion_elegida != t("hist_todas_secciones"):
             entradas = [e for e in entradas if e["seccion"] == seccion_elegida]
 
         if not entradas:
-            texto = ("Todavía no se ha ejecutado ninguna acción en esta sesión."
-                     if not termino and seccion_elegida == "Todas las secciones" else "Sin resultados para este filtro.")
+            texto = (t("hist_vacio")
+                     if not termino and seccion_elegida == t("hist_todas_secciones")
+                     else t("hist_sin_resultados"))
             ctk.CTkLabel(self.lista_historial, text=texto, text_color="gray60").pack(padx=16, pady=16)
         else:
             for e in entradas:
@@ -3922,23 +3929,25 @@ class TechCleanApp(ctk.CTk):
 
         # El comando técnico exacto solo se muestra en la Edición Administrador.
         if EDICION == "admin":
-            ctk.CTkLabel(tarjeta, text=f'Comando: {entrada["comando"]}',
+            ctk.CTkLabel(tarjeta, text=t("hist_comando", comando=entrada["comando"]),
                          font=ctk.CTkFont(family="Consolas", size=11),
                          text_color="gray60", anchor="w", wraplength=900, justify="left").pack(
                 fill="x", padx=12, pady=1)
 
-        ctk.CTkLabel(tarjeta, text=f'Resultado: {entrada["resultado"]}', font=ctk.CTkFont(size=12),
+        ctk.CTkLabel(tarjeta, text=t("hist_resultado", resultado=entrada["resultado"]),
+                     font=ctk.CTkFont(size=12),
                      anchor="w", wraplength=900, justify="left").pack(fill="x", padx=12, pady=(1, 10))
 
     def _exportar_reporte(self):
-        destino = os.path.join(os.path.expanduser("~"), "Desktop", "reporte_techclean.txt")
+        carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
+        destino = os.path.join(carpeta, "reporte_techclean.txt")
         incluir_comando = (EDICION == "admin")
         try:
             ruta = self.reporte.export_txt(destino, incluir_comando=incluir_comando)
         except Exception:
-            ruta = self.reporte.export_txt(os.path.join(BASE_DIR, "reporte_techclean.txt"),
+            ruta = self.reporte.export_txt(os.path.join(prefs.carpeta_datos(), "reporte_techclean.txt"),
                                             incluir_comando=incluir_comando)
-        self._mostrar_popup_info("Reporte exportado", f"Se guardó en:\n{ruta}")
+        self._mostrar_popup_info(t("hist_exportado_titulo"), t("hist_exportado_msg", ruta=ruta))
 
     def _mostrar_popup_info(self, titulo, mensaje):
         dialogo = ctk.CTkToplevel(self)
@@ -3946,7 +3955,7 @@ class TechCleanApp(ctk.CTk):
         dialogo.geometry("420x150")
         dialogo.grab_set()
         ctk.CTkLabel(dialogo, text=mensaje, wraplength=380, justify="center").pack(pady=30, padx=20)
-        ctk.CTkButton(dialogo, text="OK", command=dialogo.destroy).pack(pady=10)
+        ctk.CTkButton(dialogo, text=t("comun_ok"), command=dialogo.destroy).pack(pady=10)
 
     # ---------------- Manejo global de errores ----------------
     def report_callback_exception(self, exc, val, tb):
@@ -3967,8 +3976,8 @@ class TechCleanApp(ctk.CTk):
         # Se registra SIEMPRE, pase lo que pase con el resto de este método.
         try:
             ultima_linea = texto_error.strip().splitlines()[-1][:250]
-            self.reporte.add("Sistema", "⚠ Error interno detectado", ultima_linea,
-                              False, "Detalle completo guardado — ver el archivo o este aviso.", 0, 0)
+            self.reporte.add(t("seccion_sistema"), t("hist_error_interno_accion"), ultima_linea,
+                              False, t("hist_error_interno_resultado"), 0, 0)
         except Exception:
             pass
         try:
@@ -3992,7 +4001,7 @@ class TechCleanApp(ctk.CTk):
 
     def _mostrar_ventana_error(self, texto_error):
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("⚠ Se encontró un error")
+        dialogo.title(t("error_titulo_ventana"))
         dialogo.geometry("580x380")
         # Deliberadamente SIN grab_set(): un error puede ocurrir mientras
         # ya hay otra ventana modal abierta (como la de reparación), y
@@ -4003,18 +4012,17 @@ class TechCleanApp(ctk.CTk):
             dialogo.attributes("-topmost", True)
         except Exception:
             pass
-        ctk.CTkLabel(dialogo, text="⚠ Una función tuvo un problema",
+        ctk.CTkLabel(dialogo, text=t("error_encabezado"),
                      font=ctk.CTkFont(size=16, weight="bold"), text_color=COLOR_CRIT).pack(pady=(16, 4))
         ctk.CTkLabel(dialogo,
-                     text="El resto de la app sigue funcionando con normalidad. Copia este texto si quieres "
-                          "reportarlo — también quedó guardado en el Historial y en ultimo_error.txt.",
+                     text=t("error_explicacion"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=520, justify="left").pack(
             padx=20, pady=(0, 10))
         caja = ctk.CTkTextbox(dialogo, font=ctk.CTkFont(family="Consolas", size=10))
         caja.pack(fill="both", expand=True, padx=20, pady=(0, 12))
         caja.insert("1.0", texto_error)
         caja.configure(state="disabled")
-        ctk.CTkButton(dialogo, text="Cerrar", command=dialogo.destroy).pack(pady=(0, 16))
+        ctk.CTkButton(dialogo, text=t("comun_cerrar"), command=dialogo.destroy).pack(pady=(0, 16))
 
     # ---------------- Consola de desarrollador (solo Edición Administrador) ----------------
     def mostrar_consola(self):

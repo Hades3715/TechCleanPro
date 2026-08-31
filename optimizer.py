@@ -1380,10 +1380,11 @@ def listar_instaladores_viejos(dias=30):
     ya no sirven, y comprimidos porque son fáciles de volver a descargar
     si de verdad hacen falta (útil, por ejemplo, para ir limpiando ZIPs
     de versiones de esta misma app que ya no necesites)."""
-    carpeta = os.path.join(os.path.expanduser("~"), "Downloads")
-    if not os.path.isdir(carpeta):
-        carpeta = os.path.join(os.path.expanduser("~"), "Descargas")
-    if not os.path.isdir(carpeta):
+    carpeta = carpeta_conocida("descargas", respaldos=(
+        os.path.join(os.path.expanduser("~"), "Downloads"),
+        os.path.join(os.path.expanduser("~"), "Descargas"),
+    ))
+    if not carpeta:
         return []
 
     limite_tiempo = time.time() - dias * 86400
@@ -2368,6 +2369,51 @@ def abrir_mezclador_volumen():
 # función simplemente no encuentra nada — no rompe nada, solo no hace nada.
 
 REPO_ACTUALIZACIONES = "TU_USUARIO/TU_REPO"  # <-- cambiar cuando exista el repositorio real
+
+
+# ---------------- Carpetas conocidas de Windows ----------------
+# BUG real encontrado en el equipo del desarrollador: el codigo armaba la
+# ruta del Escritorio como ~/Desktop. Con OneDrive sincronizando el
+# escritorio (y con Windows en espanol) el escritorio de verdad esta en
+# ~/OneDrive/Escritorio, mientras que ~/Desktop sigue existiendo VACIO.
+# Resultado: el reporte se exportaba sin error, la app avisaba la ruta, y
+# el usuario no encontraba nada en su escritorio. Lo mismo aplica a
+# Descargas. La unica forma correcta es preguntarle a Windows.
+_FOLDERID = {
+    "escritorio": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
+    "descargas": "374DE290-123F-4565-9164-39C4925E467B",
+}
+
+
+class _GUID(ctypes.Structure):
+    _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+                ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
+
+
+def carpeta_conocida(cual, respaldos=()):
+    """Ruta real de una carpeta conocida de Windows, resolviendo
+    redirecciones (OneDrive) y el idioma del sistema. Devuelve "" si no se
+    pudo determinar ninguna ruta existente."""
+    guid_txt = _FOLDERID.get(cual)
+    if IS_WINDOWS and guid_txt:
+        try:
+            import uuid
+            u = uuid.UUID(guid_txt)
+            g = _GUID(u.fields[0], u.fields[1], u.fields[2],
+                      (ctypes.c_ubyte * 8)(*u.bytes[8:]))
+            ptr = ctypes.c_wchar_p()
+            if ctypes.windll.shell32.SHGetKnownFolderPath(
+                    ctypes.byref(g), 0, None, ctypes.byref(ptr)) == 0:
+                ruta = ptr.value                      # copiar ANTES de liberar
+                ctypes.windll.ole32.CoTaskMemFree(ptr)
+                if ruta and os.path.isdir(ruta):
+                    return ruta
+        except Exception:
+            pass
+    for r in respaldos:
+        if r and os.path.isdir(r):
+            return r
+    return ""
 
 
 # ---------------- Apoyar el proyecto (donaciones) ----------------
