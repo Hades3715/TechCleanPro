@@ -16,6 +16,8 @@ import time
 import psutil
 import optimizer as opt
 
+from idiomas import t
+
 IS_WINDOWS = platform.system() == "Windows"
 
 if IS_WINDOWS:
@@ -96,10 +98,10 @@ class Autopilot:
             excluir = {self._pid_priorizado} if self._pid_priorizado else set()
             liberado, afectados, comando = opt.trim_process_memory(exclude_pids=excluir)
             self.log_callback(
-                "Auto-liberación de RAM", comando,
-                f"RAM al {uso:.0f}% (umbral {self.umbral_ram}%) — se compactó memoria en "
-                f"{afectados} procesos ({opt.format_bytes(liberado)} liberados).",
-                seccion="Automático", exito=True,
+                t("auto_ram_accion"), comando,
+                t("auto_ram_resultado", uso=f"{uso:.0f}", umbral=self.umbral_ram,
+                  procesos=afectados, tamano=opt.format_bytes(liberado)),
+                seccion=t("seccion_automatico"), exito=True,
                 bytes_liberados=liberado, archivos_afectados=afectados,
             )
 
@@ -117,10 +119,10 @@ class Autopilot:
                 proceso.nice(psutil.HIGH_PRIORITY_CLASS)
                 self._pid_priorizado = pid
                 self.log_callback(
-                    "Modo juego activado",
+                    t("auto_juego_on_accion"),
                     f"SetPriorityClass(HIGH_PRIORITY_CLASS) sobre PID {pid}",
-                    f"Se detectó pantalla completa y se priorizó '{nombre}'.",
-                    seccion="Automático", exito=True,
+                    t("auto_juego_on_resultado", nombre=nombre),
+                    seccion=t("seccion_automatico"), exito=True,
                 )
             except Exception:
                 self._pid_priorizado = None
@@ -131,9 +133,9 @@ class Autopilot:
                 proceso = psutil.Process(self._pid_priorizado)
                 proceso.nice(psutil.NORMAL_PRIORITY_CLASS)
                 self.log_callback(
-                    "Modo juego desactivado", "SetPriorityClass(NORMAL_PRIORITY_CLASS)",
-                    f"Se restauró la prioridad normal del proceso {self._pid_priorizado}.",
-                    seccion="Automático", exito=True,
+                    t("auto_juego_off_accion"), "SetPriorityClass(NORMAL_PRIORITY_CLASS)",
+                    t("auto_juego_off_resultado", pid=self._pid_priorizado),
+                    seccion=t("seccion_automatico"), exito=True,
                 )
             except Exception:
                 pass

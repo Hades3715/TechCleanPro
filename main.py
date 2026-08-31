@@ -3533,10 +3533,10 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Gaming ----------------
     def mostrar_gaming(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="🎮 Gaming",
+        ctk.CTkLabel(self.contenido, text=t("gaming_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        ctk.CTkLabel(self.contenido, text="Todo lo relacionado a jugar, en un solo lugar.",
+        ctk.CTkLabel(self.contenido, text=t("gaming_subtitulo"),
                      font=ctk.CTkFont(size=12), text_color="gray60").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 16))
 
@@ -3549,7 +3549,7 @@ class TechCleanApp(ctk.CTk):
         panel_modo.pack(fill="x", padx=8, pady=8)
         fila_modo = ctk.CTkFrame(panel_modo, fg_color="transparent")
         fila_modo.pack(fill="x", padx=20, pady=(20, 6))
-        self.lbl_estado_gaming = ctk.CTkLabel(fila_modo, text="Modo Juego",
+        self.lbl_estado_gaming = ctk.CTkLabel(fila_modo, text=t("gaming_modo_juego"),
                                                font=ctk.CTkFont(size=16, weight="bold"))
         self.lbl_estado_gaming.pack(side="left")
         self.switch_gaming = ctk.CTkSwitch(fila_modo, text="", command=self._toggle_autopilot)
@@ -3557,48 +3557,39 @@ class TechCleanApp(ctk.CTk):
         if self.autopilot.activo:
             self.switch_gaming.select()
         ctk.CTkLabel(panel_modo,
-                     text="Cambia el plan de energía a Rendimiento, sube la prioridad de CPU a lo que detecte "
-                          "en pantalla completa (revisando cada 8 segundos, bajo consumo), y libera RAM sola "
-                          "si pasa del 85% — sin tocar nunca el juego priorizado. Al apagarlo, vuelve al plan "
-                          "Equilibrado. Todo queda en el Historial.",
+                     text=t("gaming_modo_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             fill="x", padx=20, pady=(0, 16), anchor="w")
 
         fila_botones_gaming = ctk.CTkFrame(panel_modo, fg_color="transparent")
         fila_botones_gaming.pack(fill="x", padx=20, pady=(0, 8))
-        ctk.CTkButton(fila_botones_gaming, text="🚀 Antes de jugar (todo en un clic)",
+        ctk.CTkButton(fila_botones_gaming, text=t("gaming_btn_antes"),
                       command=self._accion_antes_de_jugar).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fila_botones_gaming, text="🎯 Ver FPS (Xbox Game Bar)", fg_color="#2a2d36",
+        ctk.CTkButton(fila_botones_gaming, text=t("gaming_btn_fps"), fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_fps).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fila_botones_gaming, text="🔕 Enfoque asistido", fg_color="#2a2d36",
+        ctk.CTkButton(fila_botones_gaming, text=t("gaming_btn_enfoque"), fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_enfoque_asistido).pack(side="left")
         self.lbl_resultado_gaming = ctk.CTkLabel(panel_modo, text="", font=ctk.CTkFont(size=11),
                                                    text_color="gray70", wraplength=850, justify="left")
         self.lbl_resultado_gaming.pack(fill="x", padx=20, pady=(8, 4), anchor="w")
 
         ctk.CTkLabel(panel_modo,
-                     text="No hacemos un overlay propio inyectado en el juego (así funcionan RTSS/Afterburner) "
-                          "porque los anti-cheats lo marcan como sospechoso — 'Ver FPS' usa el overlay que ya "
-                          "trae Windows, seguro y sin riesgo de baneo. 'Enfoque asistido' no lo activamos por "
-                          "registro (su estado interno no está documentado y hacerlo a ciegas podría corromper "
-                          "tu configuración de notificaciones) — el botón te lleva a la pantalla oficial.",
+                     text=t("gaming_nota_overlay"),
                      font=ctk.CTkFont(size=11), text_color="gray50", wraplength=850, justify="left").pack(
             fill="x", padx=20, pady=(0, 16), anchor="w")
 
         # ---- Tarjeta: biblioteca de juegos ----
         panel_biblioteca = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_biblioteca.pack(fill="x", padx=8, pady=8)
-        ctk.CTkLabel(panel_biblioteca, text="📚 Biblioteca de juegos instalados",
+        ctk.CTkLabel(panel_biblioteca, text=t("gaming_biblioteca_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
         ctk.CTkLabel(panel_biblioteca,
-                     text="Detecta juegos de Steam, Epic Games y GOG leyendo sus propios archivos — el tamaño "
-                          "en disco solo está disponible para Steam (en Epic/GOG habría que recorrer la carpeta "
-                          "completa para calcularlo, lento en juegos grandes, así que se muestra N/D a propósito).",
+                     text=t("gaming_biblioteca_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=16, pady=(0, 10))
         self.lista_juegos = ctk.CTkScrollableFrame(panel_biblioteca, fg_color="#141720", corner_radius=10, height=220)
         self.lista_juegos.pack(fill="x", padx=16, pady=(0, 16))
-        ctk.CTkLabel(self.lista_juegos, text="Buscando juegos instalados...", text_color="gray60").pack(
+        ctk.CTkLabel(self.lista_juegos, text=t("gaming_buscando_juegos"), text_color="gray60").pack(
             padx=8, pady=8)
 
         def worker():
@@ -3612,9 +3603,9 @@ class TechCleanApp(ctk.CTk):
         if not (hasattr(self, "lbl_estado_gaming") and self.lbl_estado_gaming.winfo_exists()):
             return
         if self.autopilot.activo:
-            self.lbl_estado_gaming.configure(text="🎮 Modo Juego: Activado", text_color=COLOR_OK)
+            self.lbl_estado_gaming.configure(text=t("gaming_modo_activado"), text_color=COLOR_OK)
         else:
-            self.lbl_estado_gaming.configure(text="🎮 Modo Juego: Apagado", text_color=COLOR_WARN)
+            self.lbl_estado_gaming.configure(text=t("gaming_modo_apagado"), text_color=COLOR_WARN)
 
     def _pintar_juegos(self, juegos):
         if not (hasattr(self, "lista_juegos") and self.lista_juegos.winfo_exists()):
@@ -3623,7 +3614,7 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not juegos:
             ctk.CTkLabel(self.lista_juegos,
-                         text="No se detectó Steam, Epic Games ni GOG instalados en este equipo.",
+                         text=t("gaming_sin_juegos"),
                          text_color="gray60").pack(padx=8, pady=8)
             return
         for j in juegos:
@@ -3631,8 +3622,9 @@ class TechCleanApp(ctk.CTk):
             fila.pack(fill="x", padx=4, pady=3)
             ctk.CTkLabel(fila, text=j["nombre"], font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(
                 side="left", padx=10, pady=8, fill="x", expand=True)
-            tamano_txt = opt.format_bytes(j["bytes"]) if j["bytes"] else "Tamaño N/D"
-            ctk.CTkLabel(fila, text=f'{j["plataforma"]}  ·  {tamano_txt}', font=ctk.CTkFont(size=11),
+            tamano_txt = opt.format_bytes(j["bytes"]) if j["bytes"] else t("gaming_tamano_nd")
+            ctk.CTkLabel(fila, text=t("gaming_juego_detalle", plataforma=j["plataforma"], tamano=tamano_txt),
+                         font=ctk.CTkFont(size=11),
                          text_color="gray60").pack(side="right", padx=10, pady=8)
 
     def _accion_antes_de_jugar(self):
@@ -3640,12 +3632,13 @@ class TechCleanApp(ctk.CTk):
         estaba activo) + abrir el contador de FPS — pensado para justo
         antes de sentarte a jugar, sin tener que ir sección por sección."""
         if hasattr(self, "lbl_resultado_gaming") and self.lbl_resultado_gaming.winfo_exists():
-            self.lbl_resultado_gaming.configure(text="Preparando todo para jugar...")
+            self.lbl_resultado_gaming.configure(text=t("gaming_preparando"))
 
         def worker():
             liberado, procesos, cmd = opt.trim_process_memory()
-            self._log_dev("Antes de jugar: liberar RAM", cmd,
-                          f"RAM compactada en {procesos} procesos ({opt.format_bytes(liberado)}).",
+            self._log_dev(t("gaming_log_antes_ram"), cmd,
+                          t("gaming_ram_compactada", procesos=procesos,
+                            tamano=opt.format_bytes(liberado)),
                           seccion=t("seccion_gaming"), exito=True, bytes_liberados=liberado, archivos_afectados=procesos)
 
             if not self.autopilot.activo:
@@ -3656,8 +3649,8 @@ class TechCleanApp(ctk.CTk):
                           "Overlay de FPS abierto." if exito_fps else "No se pudo abrir el overlay de FPS.",
                           seccion=t("seccion_gaming"), exito=exito_fps)
 
-            msg = (f"Listo — RAM liberada ({opt.format_bytes(liberado)}), Modo Juego activado"
-                   + (" y overlay de FPS abierto." if exito_fps else ", pero no se pudo abrir el overlay de FPS."))
+            msg = (t("gaming_listo_con_fps", tamano=opt.format_bytes(liberado)) if exito_fps
+                   else t("gaming_listo_sin_fps", tamano=opt.format_bytes(liberado)))
             if hasattr(self, "lbl_resultado_gaming") and self.lbl_resultado_gaming.winfo_exists():
                 self.after(0, lambda: self.lbl_resultado_gaming.configure(text=msg))
         threading.Thread(target=worker, daemon=True).start()
@@ -3679,9 +3672,8 @@ class TechCleanApp(ctk.CTk):
             def worker():
                 exito_plan, comando_plan = opt.set_power_plan("rendimiento")
                 self._log_dev(
-                    "Modo Juego activado", comando_plan,
-                    "Autopiloto iniciado y plan de energía cambiado a Rendimiento."
-                    if exito_plan else "Autopiloto iniciado (no se pudo cambiar el plan de energía).",
+                    t("gaming_log_activado"), comando_plan,
+                    t("gaming_activado_ok") if exito_plan else t("gaming_activado_sin_plan"),
                     seccion=t("seccion_gaming"), exito=True)
             threading.Thread(target=worker, daemon=True).start()
         else:
@@ -3696,23 +3688,24 @@ class TechCleanApp(ctk.CTk):
                 # plan exacto de antes, para mantenerlo simple y predecible.
                 exito_plan, comando_plan = opt.set_power_plan("equilibrado")
                 self._log_dev(
-                    "Modo Juego desactivado", comando_plan,
-                    "Autopiloto detenido y plan de energía restaurado a Equilibrado.",
+                    t("gaming_log_desactivado"), comando_plan,
+                    t("gaming_desactivado_ok"),
                     seccion=t("seccion_gaming"), exito=True)
             threading.Thread(target=worker, daemon=True).start()
 
     def _accion_abrir_fps(self):
         exito, comando = opt.abrir_contador_fps_windows()
-        msg = ("Abriendo el overlay de Rendimiento de Xbox Game Bar." if exito else
-               "No se pudo abrir — revisa que 'Xbox Game Bar' esté activado en Configuración > Juegos.")
-        self._log_dev("Abrir contador de FPS (Xbox Game Bar)", comando, msg, seccion=t("seccion_gaming"), exito=exito)
+        msg = t("gaming_fps_ok") if exito else t("gaming_fps_error")
+        self._log_dev(t("gaming_log_fps"), comando, msg,
+                      seccion=t("seccion_gaming"), exito=exito)
         if not exito:
             self._mostrar_popup_info("Xbox Game Bar", msg)
 
     def _accion_abrir_enfoque_asistido(self):
         exito, comando = opt.abrir_configuracion_enfoque_asistido()
-        msg = "Abriendo configuración de Enfoque asistido." if exito else "No se pudo abrir la configuración."
-        self._log_dev("Abrir Enfoque asistido", comando, msg, seccion=t("seccion_gaming"), exito=exito)
+        msg = t("gaming_enfoque_ok") if exito else t("gaming_enfoque_error")
+        self._log_dev(t("gaming_log_enfoque"), comando, msg,
+                      seccion=t("seccion_gaming"), exito=exito)
 
     def _toggle_limpieza_programada(self):
         encender = bool(self.switch_limpieza.get())
