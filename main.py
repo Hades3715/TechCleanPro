@@ -1590,7 +1590,7 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Optimizador ----------------
     def mostrar_optimizador(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Optimizador de sistema",
+        ctk.CTkLabel(self.contenido, text=t("opt_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 16))
 
@@ -1605,17 +1605,17 @@ class TechCleanApp(ctk.CTk):
         panel = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel.pack(fill="x", padx=8, pady=8)
 
-        self.lbl_resultado_opt = ctk.CTkLabel(panel, text="Selecciona una acción para comenzar.",
+        self.lbl_resultado_opt = ctk.CTkLabel(panel, text=t("opt_selecciona"),
                                                font=ctk.CTkFont(size=13), wraplength=800, justify="left")
         self.lbl_resultado_opt.pack(padx=16, pady=16, anchor="w")
 
         botones = [
-            ("Liberar memoria RAM", self._accion_liberar_ram),
-            ("Estimar espacio recuperable", self._accion_estimar_espacio),
-            ("Limpiar archivos temporales", self._accion_limpiar_temp),
-            ("Vaciar papelera de reciclaje", self._accion_vaciar_papelera),
-            ("Limpiar caché DNS", self._accion_flush_dns),
-            ("🖼 Limpiar caché de miniaturas", self._accion_limpiar_miniaturas),
+            (t("opt_btn_ram"), self._accion_liberar_ram),
+            (t("opt_btn_estimar"), self._accion_estimar_espacio),
+            (t("opt_btn_temp"), self._accion_limpiar_temp),
+            (t("opt_btn_papelera"), self._accion_vaciar_papelera),
+            (t("opt_btn_dns"), self._accion_flush_dns),
+            (t("opt_btn_miniaturas"), self._accion_limpiar_miniaturas),
         ]
         fila_botones = ctk.CTkFrame(panel, fg_color="transparent")
         fila_botones.pack(padx=16, pady=(0, 8), fill="x")
@@ -1623,96 +1623,126 @@ class TechCleanApp(ctk.CTk):
             ctk.CTkButton(fila_botones, text=texto, command=cmd).pack(side="left", padx=6, pady=6)
 
         ctk.CTkLabel(panel,
-                     text='💡 "Estimar espacio recuperable" te muestra el detalle exacto ANTES de borrar nada — '
-                          "úsalo primero si quieres ver el número antes de decidir.",
+                     text=t("opt_tip_estimar"),
                      font=ctk.CTkFont(size=11), text_color="gray50", wraplength=800, justify="left").pack(
             padx=16, pady=(0, 8), anchor="w")
 
         fila_unica = ctk.CTkFrame(panel, fg_color="transparent")
         fila_unica.pack(padx=16, pady=(0, 8), fill="x")
-        ctk.CTkLabel(fila_unica, text="⏱ Limpieza única (una sola vez, no recurrente) en:",
+        ctk.CTkLabel(fila_unica, text=t("opt_limpieza_unica_label"),
                      font=ctk.CTkFont(size=12)).pack(side="left")
         self.combo_minutos_unica = ctk.CTkOptionMenu(fila_unica, values=["5 min", "15 min", "30 min", "60 min"], width=90)
         self.combo_minutos_unica.pack(side="left", padx=8)
-        ctk.CTkButton(fila_unica, text="Programar", width=100, command=self._accion_limpieza_unica).pack(side="left")
+        ctk.CTkButton(fila_unica, text=t("opt_btn_programar"), width=100,
+                      command=self._accion_limpieza_unica).pack(side="left")
 
         self._boton_ver_reporte(panel)
 
         # ---- Perfiles de energía ----
         panel_perfiles = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_perfiles.pack(fill="x", padx=8, pady=8)
-        ctk.CTkLabel(panel_perfiles, text="⚡ Perfiles de energía",
+        ctk.CTkLabel(panel_perfiles, text=t("opt_perfiles_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
         self.lbl_perfil_actual = ctk.CTkLabel(
-            panel_perfiles, text="Plan activo: cargando...",
+            panel_perfiles, text=t("opt_plan_cargando"),
             font=ctk.CTkFont(size=12), text_color="gray70")
         self.lbl_perfil_actual.pack(anchor="w", padx=16, pady=(0, 8))
         self._actualizar_lbl_perfil_actual()
 
         fila_perfiles = ctk.CTkFrame(panel_perfiles, fg_color="transparent")
         fila_perfiles.pack(padx=16, pady=(0, 16), fill="x")
+        # La clave ("silencioso"/"equilibrado"/"rendimiento") es interna y NO se
+        # traduce: es lo que entiende opt.set_power_plan() y lo que se guarda en
+        # preferencias. Solo se traduce la etiqueta visible, que ahora se pasa
+        # aparte para que los mensajes no muestren la clave interna al usuario.
         perfiles = [
-            ("🔋 Silencioso", "silencioso", "Prioriza batería/silencio sobre velocidad."),
-            ("⚖️ Equilibrado", "equilibrado", "El punto medio recomendado para el uso diario."),
-            ("🚀 Rendimiento", "rendimiento", "Máxima velocidad — más consumo y ruido de ventiladores."),
+            (t("opt_perfil_silencioso"), "silencioso"),
+            (t("opt_perfil_equilibrado"), "equilibrado"),
+            (t("opt_perfil_rendimiento"), "rendimiento"),
         ]
-        for texto, clave, _ in perfiles:
+        for texto, clave in perfiles:
             ctk.CTkButton(fila_perfiles, text=texto,
-                          command=lambda c=clave: self._accion_cambiar_perfil(c)).pack(
+                          command=lambda c=clave, n=texto: self._accion_cambiar_perfil(c, n)).pack(
                 side="left", padx=6, pady=6)
 
         # ---- Analizador de espacio en disco ----
         panel_disco = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_disco.pack(fill="x", padx=8, pady=8)
-        ctk.CTkLabel(panel_disco, text="📁 ¿Qué está ocupando el espacio?",
+        ctk.CTkLabel(panel_disco, text=t("opt_disco_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
         ctk.CTkLabel(panel_disco,
-                     text="Analiza una unidad y muestra las carpetas que más espacio ocupan (2 niveles de "
-                          "profundidad, tamaño aproximado) — útil para encontrar qué vale la pena revisar antes de borrar nada.",
+                     text=t("opt_disco_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=16, pady=(0, 10))
-        ctk.CTkButton(panel_disco, text="Analizar espacio en disco",
+        ctk.CTkButton(panel_disco, text=t("opt_btn_analizar"),
                       command=self.mostrar_espacio_disco).pack(anchor="w", padx=16, pady=(0, 16))
 
         # ---- Qué está usando la RAM o el CPU, y qué apps tienes abiertas ----
         panel_ram_procesos = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_ram_procesos.pack(fill="x", padx=8, pady=8)
-        ctk.CTkLabel(panel_ram_procesos, text="🧠 Procesos y aplicaciones abiertas",
+        ctk.CTkLabel(panel_ram_procesos, text=t("opt_procesos_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
         ctk.CTkLabel(panel_ram_procesos,
-                     text="RAM/CPU: los procesos que más recursos están usando ahora, de mayor a menor — útil "
-                          "para ver exactamente qué está apretando en vez de solo saber que 'está al 90%'. "
-                          "Ventanas: solo lo que de verdad tienes abierto en pantalla (como Alt+Tab) — cerrar "
-                          "ahí le pide al programa que se cierre normal, con oportunidad de guardar cambios, "
-                          "no lo termina de golpe. Siempre con confirmación antes.",
+                     text=t("opt_procesos_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=16, pady=(0, 10))
         fila_modo_procesos = ctk.CTkFrame(panel_ram_procesos, fg_color="transparent")
         fila_modo_procesos.pack(fill="x", padx=16, pady=(0, 8))
         self.pestana_procesos = ctk.CTkSegmentedButton(
-            fila_modo_procesos, values=["RAM", "CPU", "Ventanas"], command=self._cambiar_modo_procesos)
-        self.pestana_procesos.set("RAM")
+            fila_modo_procesos,
+            values=[t("opt_tab_ram"), t("opt_tab_cpu"), t("opt_tab_ventanas")],
+            command=self._cambiar_modo_procesos)
+        self.pestana_procesos.set(t("opt_tab_ram"))
         self.pestana_procesos.pack(side="left", padx=(0, 10))
-        ctk.CTkButton(fila_modo_procesos, text="Actualizar",
-                      command=lambda: self._mostrar_procesos_recursos(self.pestana_procesos.get())).pack(
+        ctk.CTkButton(fila_modo_procesos, text=t("opt_btn_actualizar"),
+                      command=lambda: self._mostrar_procesos_recursos(
+                          self._modo_procesos_actual())).pack(
             side="left")
         self.lista_procesos_ram = ctk.CTkScrollableFrame(panel_ram_procesos, fg_color="#141720",
                                                            corner_radius=10, height=260)
         self.lista_procesos_ram.pack(fill="x", padx=16, pady=(0, 16))
-        ctk.CTkLabel(self.lista_procesos_ram, text="Presiona \"Actualizar\" para ver la lista.",
+        ctk.CTkLabel(self.lista_procesos_ram, text=t("opt_presiona_actualizar"),
                      text_color="gray60").pack(padx=8, pady=8)
 
-    def _cambiar_modo_procesos(self, valor):
-        self._mostrar_procesos_recursos(valor)
+    def _codigo_modo_procesos(self, valor):
+        """Traduce el texto visible de la pestaña a un código interno estable.
 
-    def _accion_cambiar_perfil(self, clave):
-        self.lbl_resultado_opt.configure(text=f"Cambiando a perfil '{clave}'...")
+        BUG evitado: antes el resto del código comparaba el valor de la
+        pestaña contra los literales "RAM"/"CPU"/"Ventanas". Al traducir la
+        pestaña, "Ventanas" pasa a ser "Windows" en la build en inglés y esas
+        comparaciones fallaban: _pintar_procesos_recursos se iba por la rama
+        de procesos con datos de ventanas y reventaba con KeyError. Ahora el
+        texto visible se convierte a código UNA vez, aquí, y todo lo demás
+        trabaja con "ram"/"cpu"/"ventanas", que nunca se traducen."""
+        if valor == t("opt_tab_cpu"):
+            return "cpu"
+        if valor == t("opt_tab_ventanas"):
+            return "ventanas"
+        return "ram"
+
+    def _modo_procesos_actual(self):
+        """Código del modo seleccionado ahora mismo (o "ram" si aún no hay)."""
+        if hasattr(self, "pestana_procesos") and self.pestana_procesos.winfo_exists():
+            return self._codigo_modo_procesos(self.pestana_procesos.get())
+        return "ram"
+
+    def _cambiar_modo_procesos(self, valor):
+        self._mostrar_procesos_recursos(self._codigo_modo_procesos(valor))
+
+    def _accion_cambiar_perfil(self, clave, nombre=None):
+        # BUG corregido: antes se mostraba la CLAVE INTERNA ("silencioso") en
+        # los mensajes. En la build en inglés eso habría dicho "Switching to
+        # the 'silencioso' profile...". Ahora se muestra el nombre traducido
+        # y la clave se usa solo para hablar con powercfg y guardar prefs.
+        nombre = nombre or clave
+        self.lbl_resultado_opt.configure(text=t("opt_cambiando_perfil", perfil=nombre))
 
         def worker():
             exito, comando = opt.set_power_plan(clave)
-            msg = f"Plan de energía cambiado a '{clave}'." if exito else "No se pudo cambiar el plan de energía."
+            msg = (t("opt_perfil_cambiado", perfil=nombre) if exito
+                   else t("opt_perfil_error"))
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
-            self._log_dev(f"Cambiar perfil de energía ({clave})", comando, msg,
+            self._log_dev(t("opt_log_perfil", perfil=nombre), comando, msg,
                           seccion=t("seccion_optimizador"), exito=exito)
             if exito:
                 self.prefs["perfil_energia"] = clave
@@ -1724,17 +1754,25 @@ class TechCleanApp(ctk.CTk):
         """Consulta el plan de energía activo en un hilo aparte (powercfg es
         rápido, pero sigue siendo un subproceso — nunca directo en el hilo
         de la interfaz) y actualiza la etiqueta cuando termina."""
+        # BUG corregido: winfo_exists() es una llamada a Tk y se estaba
+        # haciendo desde este hilo de fondo, no desde el principal — además
+        # de que entre esa comprobación y el after() el widget podía morir.
+        # Ahora el hilo solo consulta powercfg y la comprobación ocurre ya
+        # dentro del hilo principal, justo antes de tocar el widget.
+        def pintar(actual):
+            if hasattr(self, "lbl_perfil_actual") and self.lbl_perfil_actual.winfo_exists():
+                self.lbl_perfil_actual.configure(
+                    text=t("opt_plan_activo", plan=actual or t("opt_plan_no_leido")))
+
         def worker():
             actual = opt.get_active_power_plan_name()
-            if hasattr(self, "lbl_perfil_actual") and self.lbl_perfil_actual.winfo_exists():
-                self.after(0, lambda: self.lbl_perfil_actual.configure(
-                    text=f"Plan activo: {actual or 'No se pudo leer'}"))
+            self.after(0, lambda: pintar(actual))
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Analizador de espacio en disco ----------------
     def mostrar_espacio_disco(self):
         self._limpiar_contenido()
-        ctk.CTkButton(self.contenido, text="← Volver a Optimizar", fg_color="transparent",
+        ctk.CTkButton(self.contenido, text=t("opt_volver"), fg_color="transparent",
                       hover_color="#2a2d36", width=140, command=self.mostrar_optimizador).grid(
             row=0, column=0, sticky="w", pady=(0, 8))
         ctk.CTkLabel(self.contenido, text="Espacio en disco",
@@ -2018,18 +2056,18 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_procesos_recursos(self, modo):
         for w in self.lista_procesos_ram.winfo_children():
             w.destroy()
-        if modo == "RAM":
-            texto_espera = "Leyendo procesos..."
-        elif modo == "CPU":
-            texto_espera = "Midiendo uso de CPU (tarda un poco más, mide durante un momento corto)..."
+        if modo == "ram":
+            texto_espera = t("opt_leyendo_procesos")
+        elif modo == "cpu":
+            texto_espera = t("opt_midiendo_cpu")
         else:
-            texto_espera = "Leyendo ventanas abiertas..."
+            texto_espera = t("opt_leyendo_ventanas")
         ctk.CTkLabel(self.lista_procesos_ram, text=texto_espera, text_color="gray60").pack(padx=8, pady=8)
 
         def worker():
-            if modo == "RAM":
+            if modo == "ram":
                 procesos = opt.listar_procesos_por_ram(limite=15)
-            elif modo == "CPU":
+            elif modo == "cpu":
                 procesos = opt.listar_procesos_por_cpu(limite=15)
             else:
                 procesos = opt.listar_ventanas_abiertas()
@@ -2042,12 +2080,12 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_procesos_ram.winfo_children():
             w.destroy()
         if not procesos:
-            texto_vacio = ("No hay ventanas abiertas detectadas." if modo == "Ventanas"
-                            else "No se pudo leer la lista de procesos.")
+            texto_vacio = (t("opt_sin_ventanas") if modo == "ventanas"
+                            else t("opt_sin_procesos"))
             ctk.CTkLabel(self.lista_procesos_ram, text=texto_vacio, text_color="gray60").pack(padx=8, pady=8)
             return
 
-        if modo == "Ventanas":
+        if modo == "ventanas":
             for v in procesos:
                 riesgo, _ = opt.evaluar_riesgo_proceso(v["proceso"])
                 fila = ctk.CTkFrame(self.lista_procesos_ram, fg_color=COLOR_BG_PANEL, corner_radius=8)
@@ -2059,10 +2097,11 @@ class TechCleanApp(ctk.CTk):
                 ctk.CTkLabel(col_texto, text=v["proceso"], font=ctk.CTkFont(size=11),
                              text_color="gray60", anchor="w").pack(fill="x", anchor="w")
                 if riesgo == "bloqueado":
-                    ctk.CTkButton(fila, text="Protegido", width=90, fg_color="gray30",
+                    ctk.CTkButton(fila, text=t("opt_protegido"), width=90, fg_color="gray30",
                                   hover_color="gray30", state="disabled").pack(side="right", padx=10, pady=6)
                 else:
-                    ctk.CTkButton(fila, text="Cerrar", width=80, fg_color=COLOR_CRIT, hover_color="#c0392b",
+                    ctk.CTkButton(fila, text=t("comun_cerrar"), width=80, fg_color=COLOR_CRIT,
+                                  hover_color="#c0392b",
                                   command=lambda hwnd=v["hwnd"], titulo=v["titulo"]:
                                   self._confirmar_cerrar_ventana(hwnd, titulo)).pack(side="right", padx=10, pady=6)
             return
@@ -2074,7 +2113,8 @@ class TechCleanApp(ctk.CTk):
             nombre_mostrado = p["nombre"] + ("  🔒" if riesgo == "bloqueado" else "")
             ctk.CTkLabel(fila, text=nombre_mostrado, font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(
                 side="left", padx=10, pady=8, fill="x", expand=True)
-            texto_valor = opt.format_bytes(p["bytes_ram"]) if modo == "RAM" else f'{p["cpu_pct"]:.0f}% CPU'
+            texto_valor = (opt.format_bytes(p["bytes_ram"]) if modo == "ram"
+                           else t("opt_cpu_pct", pct=f'{p["cpu_pct"]:.0f}'))
             ctk.CTkLabel(fila, text=texto_valor, font=ctk.CTkFont(size=11),
                          text_color="gray60").pack(side="left", padx=(0, 10))
             if riesgo == "bloqueado":
@@ -2090,12 +2130,11 @@ class TechCleanApp(ctk.CTk):
         dialogo.title("Confirmar")
         dialogo.geometry("440x200")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text=f'¿Cerrar "{titulo}"?',
+        ctk.CTkLabel(dialogo, text=t("opt_conf_cerrar_titulo", titulo=titulo),
                      font=ctk.CTkFont(size=14, weight="bold"), wraplength=400, justify="center").pack(
             pady=(20, 6))
         ctk.CTkLabel(dialogo,
-                     text="Se le pide al programa que se cierre normal — si tiene cambios sin guardar, va a "
-                          "preguntar igual que si le dieras clic a la X, no se pierde nada de golpe.",
+                     text=t("opt_conf_cerrar_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=400, justify="center").pack(
             padx=20, pady=(0, 16))
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
@@ -2104,10 +2143,12 @@ class TechCleanApp(ctk.CTk):
         def confirmar():
             dialogo.destroy()
             exito = opt.cerrar_ventana(hwnd)
-            msg = f'Señal de cierre enviada a "{titulo}".' if exito else f'No se pudo cerrar "{titulo}".'
-            self._log_dev(f'Cerrar ventana "{titulo}"', "PostMessageW(hwnd, WM_CLOSE, 0, 0)",
+            msg = (t("opt_cerrar_ok", titulo=titulo) if exito
+                   else t("opt_cerrar_error", titulo=titulo))
+            self._log_dev(t("opt_log_cerrar_ventana", titulo=titulo),
+                          "PostMessageW(hwnd, WM_CLOSE, 0, 0)",
                           msg, seccion=t("seccion_optimizador"), exito=exito)
-            modo_actual = self.pestana_procesos.get() if hasattr(self, "pestana_procesos") else "RAM"
+            modo_actual = self._modo_procesos_actual()
             self.after(800, lambda: self._mostrar_procesos_recursos(modo_actual))
 
         ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
@@ -2219,10 +2260,11 @@ class TechCleanApp(ctk.CTk):
 
         def worker():
             exito, comando = opt.crear_limpieza_unica(minutos_desde_ahora=minutos)
-            msg = (f"Limpieza programada en {minutos} minutos (una sola vez)." if exito else
-                   "No se pudo programar (¿permisos suficientes?).")
+            msg = (t("opt_limpieza_unica_ok", minutos=minutos) if exito
+                   else t("opt_limpieza_unica_error"))
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
-            self._log_dev("Programar limpieza única", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
+            self._log_dev(t("opt_log_limpieza_unica"), comando, msg,
+                          seccion=t("seccion_optimizador"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Privacidad ----------------
