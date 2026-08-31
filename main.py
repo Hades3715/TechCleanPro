@@ -703,7 +703,7 @@ class TechCleanApp(ctk.CTk):
             liberado_disco, archivos, cmd2 = opt.clear_temp_files()
             msg = t("dash_arreglo_listo", procesos=procesos, archivos=archivos,
                     total=opt.format_bytes(liberado_ram + liberado_disco))
-            self._log_dev("Arreglar todo (Inicio)", f"{cmd1} + {cmd2}", msg, seccion="Inicio",
+            self._log_dev("Arreglar todo (Inicio)", f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
                           exito=True, bytes_liberados=liberado_ram + liberado_disco,
                           archivos_afectados=procesos + archivos)
             if hasattr(self, "lbl_salud_detalle") and self.lbl_salud_detalle.winfo_exists():
@@ -973,7 +973,7 @@ class TechCleanApp(ctk.CTk):
     def _accion_probar_sonido(self):
         threading.Thread(target=opt.reproducir_sonido_prueba, daemon=True).start()
         self._log_dev("Probar sonido", "winsound.Beep(880, 300)",
-                      "Tono de prueba reproducido.", seccion="Componentes", exito=True)
+                      "Tono de prueba reproducido.", seccion=t("seccion_componentes"), exito=True)
 
     def _accion_probar_disco(self):
         self.lbl_resultado_disco.configure(text="Preparando...")
@@ -992,7 +992,7 @@ class TechCleanApp(ctk.CTk):
                 msg = f'Escritura: {resultado["escritura_mbs"]} MB/s  ·  Lectura: {resultado["lectura_mbs"]} MB/s'
                 exito = True
             self._log_dev("Prueba de velocidad de disco", "Escritura/lectura de 256 MB de prueba", msg,
-                          seccion="Componentes", exito=exito)
+                          seccion=t("seccion_componentes"), exito=exito)
             if hasattr(self, "lbl_resultado_disco") and self.lbl_resultado_disco.winfo_exists():
                 self.after(0, lambda: self.lbl_resultado_disco.configure(text=msg))
         threading.Thread(target=worker, daemon=True).start()
@@ -1001,13 +1001,13 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.abrir_prueba_microfono()
         self._log_dev("Abrir prueba de micrófono", comando,
                       "Abriendo Configuración > Sonido (panel de Entrada, con medidor de nivel)." if exito
-                      else "No se pudo abrir.", seccion="Componentes", exito=exito)
+                      else "No se pudo abrir.", seccion=t("seccion_componentes"), exito=exito)
 
     def _accion_abrir_mezclador(self):
         exito, comando = opt.abrir_mezclador_volumen()
         self._log_dev("Abrir mezclador de volumen", comando,
                       "Abriendo el mezclador de volumen de Windows." if exito else "No se pudo abrir.",
-                      seccion="Componentes", exito=exito)
+                      seccion=t("seccion_componentes"), exito=exito)
 
     def _crear_tarjeta_componente(self, parent, titulo, row, col):
         tarjeta = ctk.CTkFrame(parent, fg_color=COLOR_BG_PANEL, corner_radius=16)
@@ -1269,7 +1269,7 @@ class TechCleanApp(ctk.CTk):
             resumen = (f'Bajada: {resultado["bajada_mbps"]} Mbps, Subida: {resultado["subida_mbps"]} Mbps'
                        if resultado["bajada_mbps"] is not None else resultado["error"])
             self._log_dev("Probar velocidad de internet", "Descarga/subida de prueba a speed.cloudflare.com",
-                          resumen, seccion="Componentes", exito=resultado["bajada_mbps"] is not None)
+                          resumen, seccion=t("seccion_componentes"), exito=resultado["bajada_mbps"] is not None)
         threading.Thread(target=worker, daemon=True).start()
 
         def watchdog():
@@ -1333,7 +1333,7 @@ class TechCleanApp(ctk.CTk):
 
             self.after(0, lambda: self._mostrar_popup_info("Reporte de hardware exportado", f"Se guardó en:\n{destino}"))
             self._log_dev("Exportar reporte de hardware", "N/A", f"Guardado en {destino}",
-                          seccion="Componentes", exito=True)
+                          seccion=t("seccion_componentes"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Drivers (informativo + canales oficiales) ----------------
@@ -1486,7 +1486,7 @@ class TechCleanApp(ctk.CTk):
             exito, comando = opt.escanear_hardware_nuevo()
             msg = "Listo — si Windows encontró algo nuevo, ya debería aparecer instalado." if exito \
                 else "No se pudo completar el escaneo."
-            self._log_dev("Buscar hardware nuevo", comando, msg, seccion="Drivers", exito=exito)
+            self._log_dev("Buscar hardware nuevo", comando, msg, seccion=t("seccion_drivers"), exito=exito)
             if hasattr(self, "lbl_escanear_hardware") and self.lbl_escanear_hardware.winfo_exists():
                 self.after(0, lambda: self.lbl_escanear_hardware.configure(text=msg))
             # Refrescar la lista de problemas después del escaneo, ya que
@@ -1518,7 +1518,7 @@ class TechCleanApp(ctk.CTk):
             exito, comando = opt.set_inicio_rapido(activar)
             texto = ("activado" if activar else "desactivado") if exito else "no se pudo cambiar (¿admin?)"
             self._log_dev("Inicio rápido de Windows", comando,
-                          f"Inicio rápido {texto}.", seccion="Drivers", exito=exito)
+                          f"Inicio rápido {texto}.", seccion=t("seccion_drivers"), exito=exito)
             if hasattr(self, "lbl_estado_inicio_rapido") and self.lbl_estado_inicio_rapido.winfo_exists():
                 self.after(0, lambda: self.lbl_estado_inicio_rapido.configure(text=texto))
         threading.Thread(target=worker, daemon=True).start()
@@ -1563,7 +1563,7 @@ class TechCleanApp(ctk.CTk):
                 texto = f"{len(titulos)} actualización(es) disponible(s): " + "; ".join(titulos[:5])
             if hasattr(self, "lbl_drivers_update") and self.lbl_drivers_update.winfo_exists():
                 self.after(0, lambda: self.lbl_drivers_update.configure(text=texto))
-            self._log_dev("Buscar actualizaciones de drivers", comando, texto, seccion="Componentes", exito=exito)
+            self._log_dev("Buscar actualizaciones de drivers", comando, texto, seccion=t("seccion_componentes"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_fabricante(self, info_fab):
@@ -1577,7 +1577,7 @@ class TechCleanApp(ctk.CTk):
     def _accion_abrir_admin_dispositivos(self):
         exito, comando = opt.abrir_administrador_dispositivos()
         self._log_dev("Abrir Administrador de dispositivos", comando,
-                      "Abierto." if exito else "No se pudo abrir.", seccion="Componentes", exito=exito)
+                      "Abierto." if exito else "No se pudo abrir.", seccion=t("seccion_componentes"), exito=exito)
 
     # ---------------- Optimizador ----------------
     def mostrar_optimizador(self):
@@ -1705,7 +1705,7 @@ class TechCleanApp(ctk.CTk):
             msg = f"Plan de energía cambiado a '{clave}'." if exito else "No se pudo cambiar el plan de energía."
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
             self._log_dev(f"Cambiar perfil de energía ({clave})", comando, msg,
-                          seccion="Optimizador", exito=exito)
+                          seccion=t("seccion_optimizador"), exito=exito)
             if exito:
                 self.prefs["perfil_energia"] = clave
                 prefs.guardar({"perfil_energia": clave})
@@ -1790,7 +1790,7 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._pintar_espacio_disco(unidad, carpetas))
             self._log_dev(f"Analizar espacio en disco ({unidad})",
                           f"Escaneo recursivo de {unidad} (2 niveles, solo lectura)",
-                          f"{len(carpetas)} carpetas encontradas", seccion="Optimizador", exito=True)
+                          f"{len(carpetas)} carpetas encontradas", seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_espacio_disco(self, unidad, carpetas):
@@ -1845,7 +1845,7 @@ class TechCleanApp(ctk.CTk):
             archivos = opt.listar_archivos_grandes(unidad, min_mb=100, limite=30)
             self.after(0, lambda: self._pintar_archivos_grandes(archivos))
             self._log_dev(f"Buscar archivos grandes ({unidad})", "Búsqueda por tamaño (solo lectura)",
-                          f"{len(archivos)} archivos encontrados", seccion="Optimizador", exito=True)
+                          f"{len(archivos)} archivos encontrados", seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_archivos_grandes(self, archivos):
@@ -1963,7 +1963,7 @@ class TechCleanApp(ctk.CTk):
         def worker():
             liberado, comando = opt.limpiar_cache_app(ruta)
             msg = f"Se liberaron {opt.format_bytes(liberado)} de {nombre}."
-            self._log_dev(f"Limpiar caché de {nombre}", comando, msg, seccion="Optimizador",
+            self._log_dev(f"Limpiar caché de {nombre}", comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado)
             self.after(0, lambda: self._mostrar_cache_apps())
         threading.Thread(target=worker, daemon=True).start()
@@ -1988,12 +1988,12 @@ class TechCleanApp(ctk.CTk):
                 msg = (f"{eliminados} archivo(s) enviados a la papelera ({opt.format_bytes(liberado)})."
                        if eliminados else f"No se pudo completar: {'; '.join(errores) if errores else 'error desconocido'}.")
                 self._log_dev("Enviar archivos a la papelera", "SHFileOperationW (FO_DELETE, FOF_ALLOWUNDO)",
-                              msg, seccion="Optimizador", exito=eliminados > 0, bytes_liberados=liberado)
+                              msg, seccion=t("seccion_optimizador"), exito=eliminados > 0, bytes_liberados=liberado)
                 if hasattr(self, "pestana_disco") and self.pestana_disco.winfo_exists():
                     self.after(0, lambda: self._cambiar_pestana_disco(self.pestana_disco.get()))
             threading.Thread(target=worker, daemon=True).start()
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text="Enviar a la papelera", fg_color=COLOR_WARN, text_color="black",
                       command=confirmar).pack(side="left", padx=8)
 
@@ -2002,7 +2002,7 @@ class TechCleanApp(ctk.CTk):
             liberado, afectados, comando = opt.trim_process_memory()
             msg = f"Memoria compactada en {afectados} procesos. Liberado aprox.: {opt.format_bytes(liberado)}"
             self.lbl_resultado_opt.configure(text=msg)
-            self._log_dev("Liberar RAM", comando, msg, seccion="Optimizador",
+            self._log_dev("Liberar RAM", comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_opt.configure(text="Liberando memoria...")
@@ -2098,11 +2098,11 @@ class TechCleanApp(ctk.CTk):
             exito = opt.cerrar_ventana(hwnd)
             msg = f'Señal de cierre enviada a "{titulo}".' if exito else f'No se pudo cerrar "{titulo}".'
             self._log_dev(f'Cerrar ventana "{titulo}"', "PostMessageW(hwnd, WM_CLOSE, 0, 0)",
-                          msg, seccion="Optimizador", exito=exito)
+                          msg, seccion=t("seccion_optimizador"), exito=exito)
             modo_actual = self.pestana_procesos.get() if hasattr(self, "pestana_procesos") else "RAM"
             self.after(800, lambda: self._mostrar_procesos_recursos(modo_actual))
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text="Cerrar", fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=confirmar).pack(side="left", padx=8)
 
@@ -2150,12 +2150,12 @@ class TechCleanApp(ctk.CTk):
                 exito, resultado = opt.terminar_proceso(pid)
                 msg = f'"{nombre}" terminado.' if exito else f'No se pudo terminar "{nombre}": {resultado}'
                 self._log_dev(f'Terminar proceso "{nombre}" (PID {pid})', f"psutil.Process({pid}).terminate()",
-                              msg, seccion="Optimizador", exito=exito)
+                              msg, seccion=t("seccion_optimizador"), exito=exito)
                 modo_actual = self.pestana_procesos.get() if hasattr(self, "pestana_procesos") else "RAM"
                 self.after(500, lambda: self._mostrar_procesos_recursos(modo_actual))
             threading.Thread(target=worker, daemon=True).start()
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text="Terminar", fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=confirmar).pack(side="left", padx=8)
 
@@ -2167,7 +2167,7 @@ class TechCleanApp(ctk.CTk):
             self.lbl_resultado_opt.configure(text=msg)
             self._log_dev("Estimar espacio recuperable",
                           "Escaneo recursivo de carpetas temporales (solo lectura, no borra nada)",
-                          msg, seccion="Optimizador", exito=True)
+                          msg, seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_opt.configure(text="Escaneando...")
 
@@ -2176,7 +2176,7 @@ class TechCleanApp(ctk.CTk):
             liberado, borrados, comando = opt.clear_temp_files()
             msg = f"{borrados} archivos eliminados. Espacio liberado: {opt.format_bytes(liberado)}"
             self.lbl_resultado_opt.configure(text=msg)
-            self._log_dev("Limpiar temporales", comando, msg, seccion="Optimizador",
+            self._log_dev("Limpiar temporales", comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_opt.configure(text="Limpiando archivos temporales...")
@@ -2185,13 +2185,13 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.empty_recycle_bin()
         msg = "Papelera vaciada correctamente." if exito else "No se pudo vaciar la papelera (¿estás en Windows?)."
         self.lbl_resultado_opt.configure(text=msg)
-        self._log_dev("Vaciar papelera", comando, msg, seccion="Optimizador", exito=exito)
+        self._log_dev("Vaciar papelera", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
 
     def _accion_flush_dns(self):
         exito, comando = opt.flush_dns()
         msg = "Caché DNS limpiada." if exito else "No se pudo limpiar la caché DNS."
         self.lbl_resultado_opt.configure(text=msg)
-        self._log_dev("Flush DNS", comando, msg, seccion="Optimizador", exito=exito)
+        self._log_dev("Flush DNS", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
 
     def _accion_limpiar_miniaturas(self):
         self.lbl_resultado_opt.configure(text="Limpiando caché de miniaturas...")
@@ -2201,7 +2201,7 @@ class TechCleanApp(ctk.CTk):
             msg = (f"{borrados} archivo(s) de miniaturas eliminados ({opt.format_bytes(liberado)})."
                    if borrados else "No había caché de miniaturas para limpiar.")
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
-            self._log_dev("Limpiar caché de miniaturas", comando, msg, seccion="Optimizador",
+            self._log_dev("Limpiar caché de miniaturas", comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2214,7 +2214,7 @@ class TechCleanApp(ctk.CTk):
             msg = (f"Limpieza programada en {minutos} minutos (una sola vez)." if exito else
                    "No se pudo programar (¿permisos suficientes?).")
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
-            self._log_dev("Programar limpieza única", comando, msg, seccion="Optimizador", exito=exito)
+            self._log_dev("Programar limpieza única", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Privacidad ----------------
@@ -2277,7 +2277,7 @@ class TechCleanApp(ctk.CTk):
             borrados, comando = opt.limpiar_accesos_recientes()
             msg = f"{borrados} acceso(s) reciente(s) eliminados." if borrados else "No había accesos recientes para limpiar."
             self.after(0, lambda: self.lbl_resultado_otros_priv.configure(text=msg))
-            self._log_dev("Vaciar accesos recientes", comando, msg, seccion="Privacidad",
+            self._log_dev("Vaciar accesos recientes", comando, msg, seccion=t("seccion_privacidad"),
                           exito=True, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2285,20 +2285,20 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.limpiar_portapapeles()
         msg = "Portapapeles vaciado." if exito else "No se pudo vaciar el portapapeles."
         self.lbl_resultado_otros_priv.configure(text=msg)
-        self._log_dev("Vaciar portapapeles", comando, msg, seccion="Privacidad", exito=exito)
+        self._log_dev("Vaciar portapapeles", comando, msg, seccion=t("seccion_privacidad"), exito=exito)
 
     def _accion_borrar_historial(self, nombre):
         exito, msg, comando = priv.clear_browser_history(nombre)
         self.lbl_resultado_priv.configure(text=msg)
         self._log_dev(f"Borrar historial ({nombre})", comando or "N/A", msg,
-                      seccion="Privacidad", exito=exito)
+                      seccion=t("seccion_privacidad"), exito=exito)
 
     def _accion_borrar_cache(self, nombre):
         exito, liberado, msg = priv.clear_browser_cache(nombre)
         texto = f"{msg} ({opt.format_bytes(liberado)} liberados)" if exito else msg
         self.lbl_resultado_priv.configure(text=texto)
         self._log_dev(f"Limpiar caché ({nombre})", "Eliminación recursiva de carpeta Cache", texto,
-                      seccion="Privacidad", exito=exito, bytes_liberados=liberado)
+                      seccion=t("seccion_privacidad"), exito=exito, bytes_liberados=liberado)
 
     # ---------------- Acción rápida (usada desde el Dashboard) ----------------
     def _accion_optimizacion_rapida(self):
@@ -2308,7 +2308,7 @@ class TechCleanApp(ctk.CTk):
             msg = t("dash_optimizacion_lista", procesos=procesos, ram=opt.format_bytes(liberado_ram),
                     archivos=archivos, disco=opt.format_bytes(liberado_disco))
             self.lbl_resultado_user.configure(text=msg)
-            self._log_dev("Optimización rápida", f"{cmd1} + {cmd2}", msg, seccion="Inicio",
+            self._log_dev("Optimización rápida", f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
                           exito=True, bytes_liberados=liberado_ram + liberado_disco,
                           archivos_afectados=procesos + archivos)
         threading.Thread(target=worker, daemon=True).start()
@@ -2318,7 +2318,7 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.empty_recycle_bin()
         msg = t("dash_papelera_vaciada") if exito else t("dash_papelera_error")
         self.lbl_resultado_user.configure(text=msg)
-        self._log_dev("Vaciar papelera (inicio)", comando, msg, seccion="Inicio", exito=exito)
+        self._log_dev("Vaciar papelera (inicio)", comando, msg, seccion=t("seccion_inicio"), exito=exito)
 
     # ---------------- Seguridad ----------------
     def mostrar_seguridad(self):
@@ -2431,7 +2431,7 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.iniciar_escaneo_defender(tipo)
         msg = f"Escaneo {tipo} iniciado — corre en segundo plano." if exito else "No se pudo iniciar el escaneo."
         self._mostrar_popup_info("Windows Defender", msg)
-        self._log_dev(f"Iniciar escaneo Defender ({tipo})", comando, msg, seccion="Seguridad", exito=exito)
+        self._log_dev(f"Iniciar escaneo Defender ({tipo})", comando, msg, seccion=t("seccion_seguridad"), exito=exito)
 
     # ---- Permisos de privacidad (cámara/micrófono/ubicación) ----
     def _mostrar_permisos_privacidad(self):
@@ -2537,7 +2537,7 @@ class TechCleanApp(ctk.CTk):
             msg = (f'"{os.path.basename(ruta)}" bloqueado — ya no tendrá acceso a internet.'
                    if exito else "No se pudo crear la regla (¿permisos de administrador?).")
             self._log_dev(f"Bloquear en firewall: {os.path.basename(ruta)}", comando, msg,
-                          seccion="Seguridad", exito=exito)
+                          seccion=t("seccion_seguridad"), exito=exito)
             self.after(0, lambda: self._mostrar_popup_info("Firewall", msg))
             self.after(0, self._mostrar_firewall)
         threading.Thread(target=worker, daemon=True).start()
@@ -2546,7 +2546,7 @@ class TechCleanApp(ctk.CTk):
         def worker():
             exito, comando = opt.desbloquear_app_firewall(nombre_regla)
             msg = "Regla eliminada — el programa vuelve a tener acceso a internet." if exito else "No se pudo eliminar la regla."
-            self._log_dev(f"Desbloquear en firewall: {nombre_regla}", comando, msg, seccion="Seguridad", exito=exito)
+            self._log_dev(f"Desbloquear en firewall: {nombre_regla}", comando, msg, seccion=t("seccion_seguridad"), exito=exito)
             self.after(0, self._mostrar_firewall)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2742,7 +2742,7 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.crear_punto_restauracion("TechClean Pro - antes de reparar")
         msg = "Punto de restauración creado." if exito else \
               "No se pudo crear el punto de restauración (¿Protección del sistema desactivada?). Continuando de todas formas."
-        self._log_dev("Crear punto de restauración", comando, msg, seccion="Reparar", exito=exito)
+        self._log_dev("Crear punto de restauración", comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reparar_sfc(self):
         def ejecutar(callback_progreso, evento_cancelar):
@@ -2807,7 +2807,7 @@ class TechCleanApp(ctk.CTk):
         # forma de volver a verlo ni de detenerlo.
         dialogo.protocol("WM_DELETE_WINDOW", cancelar)
 
-        btn_cancelar = ctk.CTkButton(dialogo, text="Cancelar", fg_color=COLOR_CRIT, hover_color="#c0392b",
+        btn_cancelar = ctk.CTkButton(dialogo, text=t("comun_cancelar"), fg_color=COLOR_CRIT, hover_color="#c0392b",
                                       command=cancelar)
         btn_cancelar.pack(pady=(0, 20))
 
@@ -2822,7 +2822,7 @@ class TechCleanApp(ctk.CTk):
             cancelado = evento_cancelar.is_set()
             msg = ("Cancelado — no se completó la reparación." if cancelado else
                    (f"Listo.\n{resumen}" if exito else f"Hubo un problema.\n{resumen}"))
-            self._log_dev(nombre_para_historial, comando, msg, seccion="Reparar", exito=exito and not cancelado)
+            self._log_dev(nombre_para_historial, comando, msg, seccion=t("seccion_reparar"), exito=exito and not cancelado)
 
             def cerrar():
                 if dialogo.winfo_exists():
@@ -2839,7 +2839,7 @@ class TechCleanApp(ctk.CTk):
             msg = ("Red reiniciada. Si algo sigue sin funcionar, reinicia el equipo para completar el proceso."
                    if exito else "No se pudo completar la reparación de red.")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Reparar conexión de red", comando, msg, seccion="Reparar", exito=exito)
+            self._log_dev("Reparar conexión de red", comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_elegir_adaptador(self):
@@ -2870,7 +2870,7 @@ class TechCleanApp(ctk.CTk):
             ctk.CTkButton(fila, text="Reiniciar", width=90,
                           command=lambda n=a["nombre"]: (dialogo.destroy(), self._accion_reiniciar_adaptador(n))).pack(
                 side="right", padx=8, pady=6)
-        ctk.CTkButton(dialogo, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(pady=(0, 12))
+        ctk.CTkButton(dialogo, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(pady=(0, 12))
 
     def _accion_reiniciar_adaptador(self, nombre):
         self.lbl_resultado_reparar.configure(text=f"Reiniciando adaptador '{nombre}'...")
@@ -2880,14 +2880,14 @@ class TechCleanApp(ctk.CTk):
             msg = (f"Adaptador '{nombre}' reiniciado." if exito else
                    f"No se pudo reiniciar '{nombre}' (¿permisos de administrador?).")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev(f"Reiniciar adaptador de red ({nombre})", comando, msg, seccion="Reparar", exito=exito)
+            self._log_dev(f"Reiniciar adaptador de red ({nombre})", comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_reparar_store(self):
         exito, comando = opt.reparar_windows_store()
         msg = "Reiniciando la Tienda de Windows..." if exito else "No se pudo ejecutar wsreset.exe."
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Reparar Tienda de Windows", comando, msg, seccion="Reparar", exito=exito)
+        self._log_dev("Reparar Tienda de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reiniciar_explorador(self):
         self.lbl_resultado_reparar.configure(text="Reiniciando el Explorador de Windows...")
@@ -2896,21 +2896,21 @@ class TechCleanApp(ctk.CTk):
             exito, comando = opt.reiniciar_explorador()
             msg = "Explorador de Windows reiniciado." if exito else "No se pudo reiniciar el Explorador."
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Reiniciar Explorador de Windows", comando, msg, seccion="Reparar", exito=exito)
+            self._log_dev("Reiniciar Explorador de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_abrir_efectos_visuales(self):
         exito, comando = opt.abrir_opciones_rendimiento_visual()
         msg = "Abriendo Opciones de rendimiento de Windows." if exito else "No se pudo abrir."
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Abrir opciones de efectos visuales", comando, msg, seccion="Reparar", exito=exito)
+        self._log_dev("Abrir opciones de efectos visuales", comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reducir_animaciones(self):
         exito, comando = opt.reducir_animaciones_ahora(activar_reduccion=True)
         msg = ("Aplicado — arrastre de solo contorno y sin animación al minimizar/restaurar."
                if exito else "No se pudo aplicar.")
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Reducir animaciones (rápido)", comando, msg, seccion="Reparar", exito=exito)
+        self._log_dev("Reducir animaciones (rápido)", comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _pintar_estado_indexacion(self, estado):
         if not (hasattr(self, "lbl_estado_indexacion") and self.lbl_estado_indexacion.winfo_exists()):
@@ -2936,7 +2936,7 @@ class TechCleanApp(ctk.CTk):
             if hasattr(self, "lbl_estado_indexacion") and self.lbl_estado_indexacion.winfo_exists():
                 self.after(0, lambda: self.lbl_estado_indexacion.configure(text="activa" if activar else "pausada"))
             self._log_dev("Indexación de búsqueda " + ("reanudada" if activar else "pausada"),
-                          comando, msg, seccion="Reparar", exito=exito)
+                          comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_revisar_disco(self):
@@ -2947,7 +2947,7 @@ class TechCleanApp(ctk.CTk):
             msg = ("Programado. La próxima vez que reinicies, Windows revisará el disco C: automáticamente."
                    if exito else "No se pudo programar la revisión (¿necesitas permisos de administrador?).")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Revisar disco en el próximo reinicio", comando, msg, seccion="Reparar", exito=exito)
+            self._log_dev("Revisar disco en el próximo reinicio", comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_buscar_actualizaciones(self):
@@ -2964,7 +2964,7 @@ class TechCleanApp(ctk.CTk):
                 extra = f"\n(y {len(titulos) - 10} más)" if len(titulos) > 10 else ""
                 msg = f"{len(titulos)} actualización(es) pendiente(s):\n{lista}{extra}\n\nInstálalas desde Configuración > Windows Update."
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Buscar actualizaciones de Windows", comando, msg, seccion="Reparar", exito=exito)
+            self._log_dev("Buscar actualizaciones de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Aplicaciones: inicio de Windows + desinstalador ----------------
@@ -3039,7 +3039,7 @@ class TechCleanApp(ctk.CTk):
         msg = (f'"{app["nombre"]}" {"activado" if activar else "desactivado"} en el inicio de Windows.'
                if exito else f'No se pudo cambiar "{app["nombre"]}".')
         self._log_dev(f'{"Activar" if activar else "Desactivar"} app de inicio', "N/A", msg,
-                      seccion="Aplicaciones", exito=exito)
+                      seccion=t("seccion_aplicaciones"), exito=exito)
         self._mostrar_inicio_windows()
 
     def _mostrar_desinstalador(self):
@@ -3108,9 +3108,9 @@ class TechCleanApp(ctk.CTk):
             msg = (f'Se abrió el desinstalador de "{programa["nombre"]}". Sigue sus pasos en pantalla.'
                    if exito else f'No se pudo iniciar la desinstalación de "{programa["nombre"]}".')
             self._log_dev(f'Desinstalar "{programa["nombre"]}"', comando, msg,
-                          seccion="Aplicaciones", exito=exito)
+                          seccion=t("seccion_aplicaciones"), exito=exito)
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text="Desinstalar", fg_color=COLOR_CRIT, command=confirmar).pack(side="left", padx=8)
 
     # ---------------- Servicios de Windows ----------------
@@ -3162,7 +3162,7 @@ class TechCleanApp(ctk.CTk):
             self._servicios_cache = servicios
             self.after(0, self._filtrar_servicios)
             self._log_dev("Listar servicios de Windows", "Get-Service", f"{len(servicios)} servicios encontrados",
-                          seccion="Aplicaciones", exito=True)
+                          seccion=t("seccion_aplicaciones"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_servicios_consumo(self, top):
@@ -3273,12 +3273,12 @@ class TechCleanApp(ctk.CTk):
                 msg = (f'Servicio "{nombre_mostrar}" {"detenido" if accion == "detener" else "iniciado"} correctamente.'
                        if exito else f'No se pudo {accion} "{nombre_mostrar}" (¿permisos de administrador?).')
                 self._log_dev(f'{"Detener" if accion == "detener" else "Iniciar"} servicio "{nombre_mostrar}"',
-                              comando, msg, seccion="Aplicaciones", exito=exito)
+                              comando, msg, seccion=t("seccion_aplicaciones"), exito=exito)
                 self._servicios_cache = None
                 self.after(0, self._mostrar_servicios)
             threading.Thread(target=worker, daemon=True).start()
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text="Confirmar", fg_color=COLOR_WARN, text_color="black",
                       command=confirmar).pack(side="left", padx=8)
 
@@ -3313,7 +3313,7 @@ class TechCleanApp(ctk.CTk):
             exito, apps, comando = opt.listar_actualizaciones_winget()
             self._log_dev("Buscar actualizaciones (winget)", comando,
                           f"{len(apps)} con actualización disponible" if exito else "No se pudo consultar winget",
-                          seccion="Aplicaciones", exito=exito)
+                          seccion=t("seccion_aplicaciones"), exito=exito)
             self.after(0, lambda: self._pintar_winget(apps if exito else None, disponible=True))
         threading.Thread(target=worker, daemon=True).start()
 
@@ -3460,7 +3460,7 @@ class TechCleanApp(ctk.CTk):
                 self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente)
                 self._log_dev("Activar widget flotante",
                               "Toplevel siempre-encima con psutil (1s CPU/RAM/Red, 4s GPU/temp)",
-                              "Widget mostrado en pantalla", seccion="Segundo Plano", exito=True)
+                              "Widget mostrado en pantalla", seccion=t("seccion_segundo_plano"), exito=True)
             else:
                 self.performance_widget.mostrar()
             encender = True
@@ -3594,7 +3594,7 @@ class TechCleanApp(ctk.CTk):
             liberado, procesos, cmd = opt.trim_process_memory()
             self._log_dev("Antes de jugar: liberar RAM", cmd,
                           f"RAM compactada en {procesos} procesos ({opt.format_bytes(liberado)}).",
-                          seccion="Gaming", exito=True, bytes_liberados=liberado, archivos_afectados=procesos)
+                          seccion=t("seccion_gaming"), exito=True, bytes_liberados=liberado, archivos_afectados=procesos)
 
             if not self.autopilot.activo:
                 self.after(0, self._toggle_autopilot)
@@ -3602,7 +3602,7 @@ class TechCleanApp(ctk.CTk):
             exito_fps, comando_fps = opt.abrir_contador_fps_windows()
             self._log_dev("Antes de jugar: abrir FPS", comando_fps,
                           "Overlay de FPS abierto." if exito_fps else "No se pudo abrir el overlay de FPS.",
-                          seccion="Gaming", exito=exito_fps)
+                          seccion=t("seccion_gaming"), exito=exito_fps)
 
             msg = (f"Listo — RAM liberada ({opt.format_bytes(liberado)}), Modo Juego activado"
                    + (" y overlay de FPS abierto." if exito_fps else ", pero no se pudo abrir el overlay de FPS."))
@@ -3630,7 +3630,7 @@ class TechCleanApp(ctk.CTk):
                     "Modo Juego activado", comando_plan,
                     "Autopiloto iniciado y plan de energía cambiado a Rendimiento."
                     if exito_plan else "Autopiloto iniciado (no se pudo cambiar el plan de energía).",
-                    seccion="Gaming", exito=True)
+                    seccion=t("seccion_gaming"), exito=True)
             threading.Thread(target=worker, daemon=True).start()
         else:
             self.autopilot.detener()
@@ -3646,21 +3646,21 @@ class TechCleanApp(ctk.CTk):
                 self._log_dev(
                     "Modo Juego desactivado", comando_plan,
                     "Autopiloto detenido y plan de energía restaurado a Equilibrado.",
-                    seccion="Gaming", exito=True)
+                    seccion=t("seccion_gaming"), exito=True)
             threading.Thread(target=worker, daemon=True).start()
 
     def _accion_abrir_fps(self):
         exito, comando = opt.abrir_contador_fps_windows()
         msg = ("Abriendo el overlay de Rendimiento de Xbox Game Bar." if exito else
                "No se pudo abrir — revisa que 'Xbox Game Bar' esté activado en Configuración > Juegos.")
-        self._log_dev("Abrir contador de FPS (Xbox Game Bar)", comando, msg, seccion="Gaming", exito=exito)
+        self._log_dev("Abrir contador de FPS (Xbox Game Bar)", comando, msg, seccion=t("seccion_gaming"), exito=exito)
         if not exito:
             self._mostrar_popup_info("Xbox Game Bar", msg)
 
     def _accion_abrir_enfoque_asistido(self):
         exito, comando = opt.abrir_configuracion_enfoque_asistido()
         msg = "Abriendo configuración de Enfoque asistido." if exito else "No se pudo abrir la configuración."
-        self._log_dev("Abrir Enfoque asistido", comando, msg, seccion="Gaming", exito=exito)
+        self._log_dev("Abrir Enfoque asistido", comando, msg, seccion=t("seccion_gaming"), exito=exito)
 
     def _toggle_limpieza_programada(self):
         encender = bool(self.switch_limpieza.get())
@@ -3679,7 +3679,7 @@ class TechCleanApp(ctk.CTk):
                 exito, comando = opt.crear_limpieza_programada(frecuencia=frecuencia, hora=hora)
                 msg = (t("segplano_programada_ok", frecuencia=etiqueta_frecuencia, hora=hora)
                        if exito else t("segplano_programada_error"))
-                self._log_dev("Limpieza programada activada", comando, msg, seccion="Segundo Plano", exito=exito)
+                self._log_dev("Limpieza programada activada", comando, msg, seccion=t("seccion_segundo_plano"), exito=exito)
                 if exito:
                     self.prefs["limpieza_hora"] = hora
                     prefs.guardar({"limpieza_hora": hora})
@@ -3689,7 +3689,7 @@ class TechCleanApp(ctk.CTk):
                 exito, comando = opt.quitar_limpieza_programada()
                 self._log_dev("Limpieza programada desactivada", comando,
                               t("segplano_quitada_ok") if exito else t("segplano_quitada_error"),
-                              seccion="Segundo Plano", exito=exito)
+                              seccion=t("seccion_segundo_plano"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Preferencias entre sesiones ----------------
@@ -3825,13 +3825,13 @@ class TechCleanApp(ctk.CTk):
                     self._modo_ahorro_bateria_activo = True
                     exito, comando = opt.set_power_plan("silencioso")
                     msg = f"Batería al {info['porcentaje']:.0f}% — se activó el plan Silencioso para ahorrar."
-                    self._log_dev("Ahorro de batería automático", comando, msg, seccion="Automático", exito=exito)
+                    self._log_dev("Ahorro de batería automático", comando, msg, seccion=t("seccion_automatico"), exito=exito)
                     opt.notificar_windows("TechClean Pro — Batería baja", msg)
                 elif self._modo_ahorro_bateria_activo and (info["cargando"] or info["porcentaje"] > umbral + 10):
                     self._modo_ahorro_bateria_activo = False
                     exito, comando = opt.set_power_plan("equilibrado")
                     self._log_dev("Ahorro de batería automático desactivado", comando,
-                                  "Se restauró el plan Equilibrado.", seccion="Automático", exito=exito)
+                                  "Se restauró el plan Equilibrado.", seccion=t("seccion_automatico"), exito=exito)
             threading.Thread(target=worker, daemon=True).start()
         self.after(self._intervalo(30000), self._chequear_bateria_automatica)
 
@@ -4044,7 +4044,7 @@ class TechCleanApp(ctk.CTk):
                      font=ctk.CTkFont(family="Consolas", size=11), text_color="gray60").grid(
             row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 8))
 
-    def _log_dev(self, accion, comando, resultado, seccion="General", exito=True,
+    def _log_dev(self, accion, comando, resultado, seccion=None, exito=True,
                  bytes_liberados=0, archivos_afectados=0):
         """
         Punto único de registro: alimenta la consola dev Y el historial.
@@ -4057,6 +4057,13 @@ class TechCleanApp(ctk.CTk):
         cualquier hilo — la función interna solo se ejecuta en el hilo
         principal, sin importar desde dónde se llamó a _log_dev.
         """
+        # seccion se resuelve AQUI y no como valor por defecto en la firma:
+        # un t(...) en la firma se evaluaria al importar el modulo, antes de
+        # que establecer_idioma() corra, y quedaria congelado en el idioma
+        # que tuviera idiomas.py por defecto.
+        if seccion is None:
+            seccion = t("seccion_general")
+
         def _hacer():
             if self.dev_console is not None:
                 try:
@@ -4187,7 +4194,7 @@ class TechCleanApp(ctk.CTk):
     # ---------------- BIOS / UEFI ----------------
     def mostrar_bios(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="⚡ Energía",
+        ctk.CTkLabel(self.contenido, text=t("energia_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, sticky="w", pady=(0, 16))
 
@@ -4196,23 +4203,19 @@ class TechCleanApp(ctk.CTk):
         panel.grid(row=1, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
 
         ctk.CTkLabel(panel,
-                     text="Todas estas acciones son del sistema operativo (no algo que la app simule). "
-                          "Guarda tu trabajo antes de Apagar, Reiniciar o entrar a BIOS — con Suspender e "
-                          "Hibernar no hace falta, todo sigue abierto tal cual estaba al reanudar.",
+                     text=t("energia_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=850, justify="left").pack(
             padx=20, pady=(20, 16), anchor="w")
 
         acciones = [
-            ("⏻  Apagar", "Apaga el equipo por completo.", self._confirmar_apagar, COLOR_CRIT, "white"),
-            ("🔄  Reiniciar", "Reinicio normal — vuelve a Windows directo, sin entrar a BIOS.",
+            (t("energia_apagar"), t("energia_apagar_desc"), self._confirmar_apagar, COLOR_CRIT, "white"),
+            (t("energia_reiniciar"), t("energia_reiniciar_desc"),
              self._confirmar_reiniciar, COLOR_CRIT, "white"),
-            ("🌙  Suspender", "Bajo consumo, reanuda casi al instante — todo sigue abierto tal cual.",
+            (t("energia_suspender"), t("energia_suspender_desc"),
              self._accion_suspender, "#2a2d36", "white"),
-            ("❄  Hibernar", "Guarda todo en disco y apaga del todo — cero consumo mientras hiberna, "
-             "arranca un poco más lento que Suspender al volver.",
+            (t("energia_hibernar"), t("energia_hibernar_desc"),
              self._accion_hibernar, "#2a2d36", "white"),
-            ("🔧  Reiniciar a BIOS/UEFI", "Reinicia y entra directo al menú de configuración de UEFI, sin "
-             "tener que presionar teclas durante el arranque.",
+            (t("energia_bios"), t("energia_bios_desc"),
              self._confirmar_reinicio_bios, COLOR_WARN, "black"),
         ]
         for texto, descripcion, cmd, color, color_texto in acciones:
@@ -4227,24 +4230,25 @@ class TechCleanApp(ctk.CTk):
 
     def _confirmar_apagar(self):
         self._confirmar_accion_energia(
-            "¿Apagar el equipo?", "Se apagará en 5 segundos. Guarda tu trabajo antes de confirmar.",
-            "Apagar", lambda: self._ejecutar_accion_energia(opt.apagar_equipo, "Apagar equipo"))
+            t("energia_conf_apagar_tit"), t("energia_conf_apagar_msg"),
+            t("energia_conf_apagar_btn"),
+            lambda: self._ejecutar_accion_energia(opt.apagar_equipo, t("energia_log_apagar")))
 
     def _confirmar_reiniciar(self):
         self._confirmar_accion_energia(
-            "¿Reiniciar el equipo?", "Se reiniciará en 5 segundos. Guarda tu trabajo antes de confirmar.",
-            "Reiniciar", lambda: self._ejecutar_accion_energia(opt.reiniciar_equipo, "Reiniciar equipo"))
+            t("energia_conf_reiniciar_tit"), t("energia_conf_reiniciar_msg"),
+            t("energia_conf_reiniciar_btn"),
+            lambda: self._ejecutar_accion_energia(opt.reiniciar_equipo, t("energia_log_reiniciar")))
 
     def _confirmar_reinicio_bios(self):
         self._confirmar_accion_energia(
-            "¿Reiniciar y entrar a la BIOS/UEFI?",
-            "El equipo se reiniciará en 5 segundos y entrará directo a la BIOS/UEFI. Guarda tu trabajo antes "
-            "de confirmar.",
-            "Reiniciar a BIOS", lambda: self._ejecutar_accion_energia(opt.restart_to_uefi, "Reiniciar a UEFI/BIOS"))
+            t("energia_conf_bios_tit"), t("energia_conf_bios_msg"),
+            t("energia_conf_bios_btn"),
+            lambda: self._ejecutar_accion_energia(opt.restart_to_uefi, t("energia_log_bios")))
 
     def _confirmar_accion_energia(self, titulo, mensaje, texto_boton, accion_confirmada):
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Confirmar")
+        dialogo.title(t("comun_confirmar_titulo"))
         dialogo.geometry("420x200")
         dialogo.grab_set()
         ctk.CTkLabel(dialogo, text=titulo, font=ctk.CTkFont(size=15, weight="bold"),
@@ -4258,28 +4262,29 @@ class TechCleanApp(ctk.CTk):
             dialogo.destroy()
             accion_confirmada()
 
-        ctk.CTkButton(fila, text="Cancelar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
         ctk.CTkButton(fila, text=texto_boton, fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=confirmar).pack(side="left", padx=8)
 
     def _ejecutar_accion_energia(self, funcion, nombre_para_historial):
         exito, comando = funcion()
-        resultado = "Iniciado correctamente." if exito else "Falló (¿estás en Windows con privilegios?)"
-        self._log_dev(nombre_para_historial, comando, resultado, seccion="Energía", exito=exito)
+        resultado = t("energia_log_ok") if exito else t("energia_log_error")
+        self._log_dev(nombre_para_historial, comando, resultado, seccion=t("seccion_energia"), exito=exito)
 
     def _accion_suspender(self):
         def worker():
             exito, comando = opt.suspender_equipo()
-            self._log_dev("Suspender equipo", comando,
-                          "Suspendido." if exito else "No se pudo suspender.", seccion="Energía", exito=exito)
+            self._log_dev(t("energia_log_suspender"), comando,
+                          t("energia_log_suspendido") if exito else t("energia_log_suspender_error"),
+                          seccion=t("seccion_energia"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_hibernar(self):
         def worker():
             exito, comando = opt.hibernar_equipo()
-            self._log_dev("Hibernar equipo", comando,
-                          "Hibernado." if exito else "No se pudo hibernar (¿está deshabilitada la hibernación?).",
-                          seccion="Energía", exito=exito)
+            self._log_dev(t("energia_log_hibernar"), comando,
+                          t("energia_log_hibernado") if exito else t("energia_log_hibernar_error"),
+                          seccion=t("seccion_energia"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Ajustes (créditos + easter egg + inicio automático) ----------------
@@ -4578,7 +4583,7 @@ class TechCleanApp(ctk.CTk):
             with open(destino, "w", encoding="utf-8") as f:
                 json.dump(self.prefs, f, ensure_ascii=False, indent=2)
             self.lbl_resultado_config.configure(text=t("ajustes_exportar_exito", destino=destino))
-            self._log_dev("Exportar configuración", "N/A", f"Guardada en {destino}", seccion="Ajustes", exito=True)
+            self._log_dev("Exportar configuración", "N/A", f"Guardada en {destino}", seccion=t("seccion_ajustes"), exito=True)
         except Exception as e:
             self.lbl_resultado_config.configure(text=t("ajustes_exportar_error", error=e))
 
@@ -4596,7 +4601,7 @@ class TechCleanApp(ctk.CTk):
             prefs.guardar(datos)
             self.prefs = prefs.cargar()
             self.lbl_resultado_config.configure(text=t("ajustes_importar_exito"))
-            self._log_dev("Importar configuración", "N/A", f"Importada desde {origen}", seccion="Ajustes", exito=True)
+            self._log_dev("Importar configuración", "N/A", f"Importada desde {origen}", seccion=t("seccion_ajustes"), exito=True)
         except Exception as e:
             self.lbl_resultado_config.configure(text=t("ajustes_importar_error", error=e))
 
@@ -4616,7 +4621,7 @@ class TechCleanApp(ctk.CTk):
             self.prefs = prefs.cargar()
             self.lbl_resultado_config.configure(text=t("ajustes_restablecer_exito"))
             self._log_dev("Restablecer configuración", "N/A",
-                          "Preferencias restablecidas a valores de fábrica", seccion="Ajustes", exito=True)
+                          "Preferencias restablecidas a valores de fábrica", seccion=t("seccion_ajustes"), exito=True)
 
         ctk.CTkButton(fila, text=t("ajustes_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(
             side="left", padx=8)
@@ -4657,7 +4662,7 @@ class TechCleanApp(ctk.CTk):
             return
         self._log_dev("Abrir página de donación", comando,
                       "Abriendo en el navegador." if exito else "No se pudo abrir.",
-                      seccion="Ajustes", exito=exito)
+                      seccion=t("seccion_ajustes"), exito=exito)
 
     def _accion_buscar_actualizacion_manual(self):
         self.lbl_resultado_actualizacion.configure(text=t("ajustes_buscando"))
@@ -4740,7 +4745,7 @@ class TechCleanApp(ctk.CTk):
         self.prefs["idioma"] = codigo
         prefs.guardar({"idioma": codigo})
         self._log_dev("Cambiar idioma", "N/A", f"Idioma guardado: {valor_mostrado} (se aplica al reiniciar)",
-                      seccion="Ajustes", exito=True)
+                      seccion=t("seccion_ajustes"), exito=True)
 
         dialogo = ctk.CTkToplevel(self)
         dialogo.title("Reiniciar para aplicar")
@@ -4760,7 +4765,7 @@ class TechCleanApp(ctk.CTk):
         prefs.guardar({"modo_ligero": activo})
         self._log_dev("Modo Ligero " + ("activado" if activo else "desactivado"), "N/A",
                       "Se aplica en el próximo refresco de cada temporizador (unos segundos).",
-                      seccion="Ajustes", exito=True)
+                      seccion=t("seccion_ajustes"), exito=True)
 
     def _guardar_umbral_ram(self, valor):
         self.prefs["umbral_ram_auto"] = valor
@@ -4770,7 +4775,7 @@ class TechCleanApp(ctk.CTk):
         # falta recrear el objeto entero.
         self.autopilot.umbral_ram = valor
         self._log_dev("Umbral de liberación automática de RAM", "N/A",
-                      f"Ahora se libera RAM sola al llegar a {valor}%.", seccion="Ajustes", exito=True)
+                      f"Ahora se libera RAM sola al llegar a {valor}%.", seccion=t("seccion_ajustes"), exito=True)
 
     def _guardar_umbral_salud(self, tipo, valor):
         clave = "umbral_salud_ram" if tipo == "ram" else "umbral_salud_disco"
@@ -4780,7 +4785,7 @@ class TechCleanApp(ctk.CTk):
         # self.prefs cada vez que corre, así que el próximo refresco de
         # Inicio ya usa el valor nuevo solo.
         self._log_dev(f"Umbral de salud ({tipo})", "N/A",
-                      f"Ahora avisa desde {valor}%.", seccion="Ajustes", exito=True)
+                      f"Ahora avisa desde {valor}%.", seccion=t("seccion_ajustes"), exito=True)
 
     def _accion_probar_error(self):
         """Provoca un error A PROPÓSITO (dividir por cero) para que se vea
@@ -4936,7 +4941,7 @@ class TechCleanApp(ctk.CTk):
                 pass
 
             self._log_dev("Diagnóstico completo", "N/A", f"{exitos} OK, {fallos} con error.",
-                          seccion="Sistema", exito=(fallos == 0))
+                          seccion=t("seccion_sistema"), exito=(fallos == 0))
             self.after(0, lambda: _finalizar(texto_final, exitos, fallos))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -5038,7 +5043,7 @@ class TechCleanApp(ctk.CTk):
                 lbl_estado.configure(text="Listo.")
                 btn_copiar.configure(state="normal", command=lambda: self._copiar_al_portapapeles(texto_final))
             self.after(0, _mostrar)
-            self._log_dev("Reporte de rendimiento", "N/A", "Generado correctamente", seccion="Ajustes", exito=True)
+            self._log_dev("Reporte de rendimiento", "N/A", "Generado correctamente", seccion=t("seccion_ajustes"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _copiar_al_portapapeles(self, texto):
@@ -5082,7 +5087,7 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.set_startup(habilitar)
         resultado = (t("ajustes_inicio_agregado") if habilitar else t("ajustes_inicio_quitado")) \
             if exito else t("ajustes_inicio_error")
-        self._log_dev("Inicio automático", comando, resultado, seccion="Ajustes", exito=exito)
+        self._log_dev("Inicio automático", comando, resultado, seccion=t("seccion_ajustes"), exito=exito)
         if not exito:
             if habilitar:
                 self.switch_inicio.deselect()
