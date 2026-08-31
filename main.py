@@ -2220,7 +2220,7 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Privacidad ----------------
     def mostrar_privacidad(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Privacidad — Historial de navegación",
+        ctk.CTkLabel(self.contenido, text=t("priv_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 16))
 
@@ -2233,10 +2233,10 @@ class TechCleanApp(ctk.CTk):
 
         navegadores = priv.detect_installed_browsers()
         if not navegadores:
-            ctk.CTkLabel(panel, text="No se detectaron navegadores compatibles en este equipo.").pack(
+            ctk.CTkLabel(panel, text=t("priv_sin_navegadores")).pack(
                 padx=16, pady=16)
         else:
-            self.lbl_resultado_priv = ctk.CTkLabel(panel, text="Cierra el navegador antes de limpiar sus datos.",
+            self.lbl_resultado_priv = ctk.CTkLabel(panel, text=t("priv_cierra_navegador"),
                                                     font=ctk.CTkFont(size=13), wraplength=800, justify="left")
             self.lbl_resultado_priv.pack(padx=16, pady=16, anchor="w")
 
@@ -2245,9 +2245,9 @@ class TechCleanApp(ctk.CTk):
                 fila.pack(fill="x", padx=16, pady=6)
                 ctk.CTkLabel(fila, text=nombre, width=100, anchor="w",
                              font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
-                ctk.CTkButton(fila, text="Borrar historial", width=140,
+                ctk.CTkButton(fila, text=t("priv_btn_historial"), width=140,
                               command=lambda n=nombre: self._accion_borrar_historial(n)).pack(side="left", padx=6)
-                ctk.CTkButton(fila, text="Limpiar caché", width=140,
+                ctk.CTkButton(fila, text=t("priv_btn_cache"), width=140,
                               command=lambda n=nombre: self._accion_borrar_cache(n)).pack(side="left", padx=6)
 
             self._boton_ver_reporte(panel)
@@ -2255,49 +2255,51 @@ class TechCleanApp(ctk.CTk):
         # ---- Otras huellas de actividad (independiente de navegadores) ----
         panel_otros = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_otros.pack(fill="x", padx=8, pady=8)
-        ctk.CTkLabel(panel_otros, text="🗂 Otras huellas de actividad",
+        ctk.CTkLabel(panel_otros, text=t("priv_otras_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
         self.lbl_resultado_otros_priv = ctk.CTkLabel(panel_otros, text="", font=ctk.CTkFont(size=12),
                                                        text_color="gray70")
         self.lbl_resultado_otros_priv.pack(anchor="w", padx=16, pady=(0, 8))
         fila_otros = ctk.CTkFrame(panel_otros, fg_color="transparent")
         fila_otros.pack(padx=16, pady=(0, 16), fill="x")
-        ctk.CTkButton(fila_otros, text="Vaciar accesos recientes", command=self._accion_limpiar_recientes).pack(
+        ctk.CTkButton(fila_otros, text=t("priv_btn_recientes"), command=self._accion_limpiar_recientes).pack(
             side="left", padx=(0, 8))
-        ctk.CTkButton(fila_otros, text="Vaciar portapapeles", command=self._accion_limpiar_portapapeles).pack(
+        ctk.CTkButton(fila_otros, text=t("priv_btn_portapapeles"), command=self._accion_limpiar_portapapeles).pack(
             side="left")
         ctk.CTkLabel(panel_otros,
-                     text="Accesos recientes: borra los atajos a archivos/carpetas que Windows recuerda, no los "
-                          "archivos en sí. Portapapeles: borra lo último que copiaste (texto o imagen).",
+                     text=t("priv_otras_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             padx=16, pady=(0, 16), anchor="w")
 
     def _accion_limpiar_recientes(self):
         def worker():
             borrados, comando = opt.limpiar_accesos_recientes()
-            msg = f"{borrados} acceso(s) reciente(s) eliminados." if borrados else "No había accesos recientes para limpiar."
+            msg = (t("priv_recientes_ok", cantidad=borrados) if borrados
+                   else t("priv_recientes_vacio"))
             self.after(0, lambda: self.lbl_resultado_otros_priv.configure(text=msg))
-            self._log_dev("Vaciar accesos recientes", comando, msg, seccion=t("seccion_privacidad"),
+            self._log_dev(t("priv_btn_recientes"), comando, msg, seccion=t("seccion_privacidad"),
                           exito=True, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_limpiar_portapapeles(self):
         exito, comando = opt.limpiar_portapapeles()
-        msg = "Portapapeles vaciado." if exito else "No se pudo vaciar el portapapeles."
+        msg = t("priv_portapapeles_ok") if exito else t("priv_portapapeles_error")
         self.lbl_resultado_otros_priv.configure(text=msg)
-        self._log_dev("Vaciar portapapeles", comando, msg, seccion=t("seccion_privacidad"), exito=exito)
+        self._log_dev(t("priv_btn_portapapeles"), comando, msg,
+                      seccion=t("seccion_privacidad"), exito=exito)
 
     def _accion_borrar_historial(self, nombre):
         exito, msg, comando = priv.clear_browser_history(nombre)
         self.lbl_resultado_priv.configure(text=msg)
-        self._log_dev(f"Borrar historial ({nombre})", comando or "N/A", msg,
+        self._log_dev(t("priv_log_historial", navegador=nombre), comando or "N/A", msg,
                       seccion=t("seccion_privacidad"), exito=exito)
 
     def _accion_borrar_cache(self, nombre):
         exito, liberado, msg = priv.clear_browser_cache(nombre)
-        texto = f"{msg} ({opt.format_bytes(liberado)} liberados)" if exito else msg
+        texto = (t("priv_cache_liberado", mensaje=msg, tamano=opt.format_bytes(liberado))
+                 if exito else msg)
         self.lbl_resultado_priv.configure(text=texto)
-        self._log_dev(f"Limpiar caché ({nombre})", "Eliminación recursiva de carpeta Cache", texto,
+        self._log_dev(t("priv_log_cache", navegador=nombre), t("priv_log_cache_cmd"), texto,
                       seccion=t("seccion_privacidad"), exito=exito, bytes_liberados=liberado)
 
     # ---------------- Acción rápida (usada desde el Dashboard) ----------------
@@ -2308,7 +2310,7 @@ class TechCleanApp(ctk.CTk):
             msg = t("dash_optimizacion_lista", procesos=procesos, ram=opt.format_bytes(liberado_ram),
                     archivos=archivos, disco=opt.format_bytes(liberado_disco))
             self.lbl_resultado_user.configure(text=msg)
-            self._log_dev("Optimización rápida", f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
+            self._log_dev(t("dash_log_optimizacion"), f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
                           exito=True, bytes_liberados=liberado_ram + liberado_disco,
                           archivos_afectados=procesos + archivos)
         threading.Thread(target=worker, daemon=True).start()
@@ -2318,7 +2320,7 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.empty_recycle_bin()
         msg = t("dash_papelera_vaciada") if exito else t("dash_papelera_error")
         self.lbl_resultado_user.configure(text=msg)
-        self._log_dev("Vaciar papelera (inicio)", comando, msg, seccion=t("seccion_inicio"), exito=exito)
+        self._log_dev(t("dash_log_papelera"), comando, msg, seccion=t("seccion_inicio"), exito=exito)
 
     # ---------------- Seguridad ----------------
     def mostrar_seguridad(self):

@@ -11,6 +11,8 @@ import sqlite3
 import platform
 import psutil
 
+from idiomas import t
+
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -107,10 +109,10 @@ def _elegir_perfil_firefox(perfil_base):
 
 def clear_browser_history(nombre):
     if nombre not in BROWSERS:
-        return False, "Navegador no soportado", ""
+        return False, t("privmod_no_soportado"), ""
 
     if is_browser_running(nombre):
-        return False, f"{nombre} está abierto. Ciérralo antes de borrar su historial.", ""
+        return False, t("privmod_abierto_hist", navegador=nombre), ""
 
     datos = BROWSERS[nombre]
 
@@ -119,7 +121,7 @@ def clear_browser_history(nombre):
             perfil_base = datos["perfil"]
             perfil_elegido = _elegir_perfil_firefox(perfil_base)
             if perfil_elegido is None:
-                return False, "No se encontró perfil de Firefox", ""
+                return False, t("privmod_sin_perfil_ff"), ""
             db_path = os.path.join(perfil_base, perfil_elegido, datos["history_file"])
             comando = f'DELETE FROM moz_places; -- sobre {db_path}'
             if os.path.exists(db_path):
@@ -128,7 +130,7 @@ def clear_browser_history(nombre):
                 conn.execute("DELETE FROM moz_places WHERE id NOT IN (SELECT place_id FROM moz_bookmarks)")
                 conn.commit()
                 conn.close()
-            return True, f"Historial de {nombre} borrado correctamente.", comando
+            return True, t("privmod_hist_ok", navegador=nombre), comando
         else:
             history_path = os.path.join(datos["perfil"], datos["history_file"])
             comando = f'DELETE FROM urls; DELETE FROM visits; -- sobre {history_path}'
@@ -138,28 +140,28 @@ def clear_browser_history(nombre):
                 conn.execute("DELETE FROM urls")
                 conn.commit()
                 conn.close()
-            return True, f"Historial de {nombre} borrado correctamente.", comando
+            return True, t("privmod_hist_ok", navegador=nombre), comando
     except sqlite3.OperationalError:
-        return False, f"No se pudo abrir la base de datos de {nombre} (¿sigue en uso?).", ""
+        return False, t("privmod_db_error", navegador=nombre), ""
     except Exception as e:
-        return False, f"Error al borrar historial de {nombre}: {e}", ""
+        return False, t("privmod_hist_error", navegador=nombre, error=e), ""
 
 
 def clear_browser_cache(nombre):
     if nombre not in BROWSERS:
-        return False, 0, "Navegador no soportado"
+        return False, 0, t("privmod_no_soportado")
 
     if is_browser_running(nombre):
-        return False, 0, f"{nombre} está abierto. Ciérralo antes de limpiar su caché."
+        return False, 0, t("privmod_abierto_cache", navegador=nombre)
 
     datos = BROWSERS[nombre]
     cache_dir_name = datos.get("cache_dir")
     if not cache_dir_name:
-        return False, 0, f"{nombre} no tiene ruta de caché configurada en esta versión."
+        return False, 0, t("privmod_sin_ruta", navegador=nombre)
 
     cache_path = os.path.join(datos["perfil"], cache_dir_name)
     if not os.path.isdir(cache_path):
-        return True, 0, f"{nombre} no tenía caché acumulado."
+        return True, 0, t("privmod_sin_cache", navegador=nombre)
 
     liberado = 0
     for root, _, files in os.walk(cache_path):
@@ -171,6 +173,6 @@ def clear_browser_cache(nombre):
                 pass
     try:
         shutil.rmtree(cache_path, ignore_errors=True)
-        return True, liberado, f"Caché de {nombre} eliminado ({cache_path})"
+        return True, liberado, t("privmod_cache_ok", navegador=nombre, ruta=cache_path)
     except Exception as e:
-        return False, 0, f"Error al limpiar caché de {nombre}: {e}"
+        return False, 0, t("privmod_cache_error", navegador=nombre, error=e)
