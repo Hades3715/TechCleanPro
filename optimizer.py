@@ -1240,33 +1240,24 @@ def set_servicio_windows(nombre, accion):
 # legítimas para detenerse (por ejemplo, usar un antivirus de terceros),
 # así que solo llevan una advertencia fuerte, no un bloqueo.
 
+# Estos diccionarios se construyen AL IMPORTAR el modulo, antes de que
+# establecer_idioma() haya corrido, asi que guardan el NOMBRE de la clave y
+# no el texto: t() se llama al consultarlos, en evaluar_riesgo_servicio().
 SERVICIOS_BLOQUEADOS = {
-    "rpcss": "Llamadas a procedimiento remoto (RPC) — casi todo Windows depende de esto para que sus "
-             "propias partes se comuniquen entre sí. Detenerlo puede dejar el sistema sin responder de "
-             "inmediato.",
-    "dcomlaunch": "Inicia procesos DCOM que usan muchos programas y el propio Windows — trabaja junto con "
-                  "RPC, detenerlo tiene el mismo riesgo.",
-    "winmgmt": "Instrumental de administración de Windows (WMI) — muchas herramientas del sistema (incluida "
-               "esta app) dependen de esto para leer información del equipo.",
-    "plugplay": "Detecta el hardware conectado — sin esto, Windows deja de reconocer dispositivos nuevos "
-                "e incluso puede tener problemas con el ya conectado.",
-    "power": "Administra los estados de energía del equipo (suspender, hibernar, cambios de batería) — "
-             "detenerlo puede causar comportamiento errático con el encendido/apagado.",
-    "bfe": "Motor de filtrado base — el firewall de Windows y buena parte de las conexiones de red dependen "
-           "de este servicio para funcionar en absoluto.",
-    "cryptsvc": "Servicios criptográficos — necesarios para Windows Update, verificación de certificados, y "
-                "que muchos programas firmados digitalmente puedan ejecutarse con normalidad.",
+    "rpcss": "riesgo_srv_rpcss",
+    "dcomlaunch": "riesgo_srv_dcomlaunch",
+    "winmgmt": "riesgo_srv_winmgmt",
+    "plugplay": "riesgo_srv_plugplay",
+    "power": "riesgo_srv_power",
+    "bfe": "riesgo_srv_bfe",
+    "cryptsvc": "riesgo_srv_cryptsvc",
 }
 
 SERVICIOS_ADVERTENCIA = {
-    "windefend": "Es el antivirus de Windows — solo detenlo si ya tienes otro antivirus de terceros "
-                 "instalado y activo. Sin ningún antivirus corriendo, el equipo queda expuesto.",
-    "mpssvc": "Es el Firewall de Windows — solo detenlo si ya tienes otro firewall de terceros activo. Sin "
-              "ninguno, el equipo queda expuesto a la red sin ese filtro.",
-    "wuauserv": "Windows Update — detenerlo pausa las actualizaciones de seguridad del sistema. Bien para "
-                "pausar temporalmente, pero no se recomienda dejarlo así por mucho tiempo.",
-    "dnscache": "Cliente DNS — sin esto, la navegación web se puede sentir bastante más lenta (cada sitio "
-                "tarda más en resolver su dirección), aunque internet sigue funcionando.",
+    "windefend": "riesgo_srv_windefend",
+    "mpssvc": "riesgo_srv_mpssvc",
+    "wuauserv": "riesgo_srv_wuauserv",
+    "dnscache": "riesgo_srv_dnscache",
 }
 
 
@@ -1279,9 +1270,9 @@ def evaluar_riesgo_servicio(nombre):
     """
     clave = (nombre or "").strip().lower()
     if clave in SERVICIOS_BLOQUEADOS:
-        return "bloqueado", SERVICIOS_BLOQUEADOS[clave]
+        return "bloqueado", t(SERVICIOS_BLOQUEADOS[clave])
     if clave in SERVICIOS_ADVERTENCIA:
-        return "advertencia", SERVICIOS_ADVERTENCIA[clave]
+        return "advertencia", t(SERVICIOS_ADVERTENCIA[clave])
     return "normal", None
 
 
@@ -2609,32 +2600,21 @@ def listar_procesos_por_ram(limite=15):
 # para cerrarlos desde aquí y las consecuencias son inmediatas y graves.
 
 PROCESOS_BLOQUEADOS = {
-    # nombre en minúsculas -> por qué NUNCA se debe cerrar desde aquí
-    "system": "Es el núcleo de Windows en sí, no un programa — no se puede ni se debe terminar.",
-    "system idle process": "Representa el tiempo de CPU sin usar, no es un programa real.",
-    "csrss.exe": "Proceso central de Windows — terminarlo congela o reinicia el equipo al instante.",
-    "wininit.exe": "Inicialización del sistema operativo — terminarlo puede colgar Windows por completo.",
-    "winlogon.exe": "Maneja el inicio de sesión de Windows — terminarlo te cierra la sesión al instante.",
-    "services.exe": "Controla todos los servicios de Windows — terminarlo puede colgar el sistema entero.",
-    "lsass.exe": "Seguridad de Windows (inicio de sesión, permisos) — terminarlo reinicia el equipo solo, "
-                 "de forma automática, como medida de protección.",
-    "smss.exe": "Administrador de sesiones — crítico durante todo el tiempo que el equipo está encendido.",
-    "svchost.exe": "Contenedor de servicios de Windows — hay varios abiertos a la vez y terminar el "
-                   "equivocado puede afectar red, sonido u otras partes del sistema sin previo aviso.",
-    "memory compression": "Es una función NORMAL de Windows (desde Windows 10), no un problema: comprime "
-                           "páginas de memoria poco usadas para aprovechar mejor la RAM en vez de recurrir al "
-                           "disco, que es mucho más lento. Verla usando 1 GB o más es señal de que está "
-                           "haciendo su trabajo, no de que algo esté mal — y no se puede cerrar de forma "
-                           "independiente, es parte del propio administrador de memoria de Windows.",
+    "system": "riesgo_proc_system",
+    "system idle process": "riesgo_proc_idle",
+    "csrss.exe": "riesgo_proc_csrss",
+    "wininit.exe": "riesgo_proc_wininit",
+    "winlogon.exe": "riesgo_proc_winlogon",
+    "services.exe": "riesgo_proc_services",
+    "lsass.exe": "riesgo_proc_lsass",
+    "smss.exe": "riesgo_proc_smss",
+    "svchost.exe": "riesgo_proc_svchost",
+    "memory compression": "riesgo_proc_memcomp",
 }
 
 PROCESOS_RECUPERABLES = {
-    # nombre en minúsculas -> qué pasa si se cierra (molesto, pero no fatal)
-    "explorer.exe": "Es la barra de tareas y el Explorador de archivos — al cerrarlo desaparecen "
-                     "temporalmente, pero se pueden volver a abrir sin reiniciar (Reparar → Reiniciar "
-                     "el Explorador de Windows).",
-    "dwm.exe": "Dibuja los efectos visuales de Windows (ventanas, transparencias) — Windows lo reinicia "
-               "solo si se cierra, pero la pantalla puede parpadear en negro un momento.",
+    "explorer.exe": "riesgo_proc_explorer",
+    "dwm.exe": "riesgo_proc_dwm",
 }
 
 
@@ -2647,9 +2627,9 @@ def evaluar_riesgo_proceso(nombre):
     """
     clave = (nombre or "").strip().lower()
     if clave in PROCESOS_BLOQUEADOS:
-        return "bloqueado", PROCESOS_BLOQUEADOS[clave]
+        return "bloqueado", t(PROCESOS_BLOQUEADOS[clave])
     if clave in PROCESOS_RECUPERABLES:
-        return "recuperable", PROCESOS_RECUPERABLES[clave]
+        return "recuperable", t(PROCESOS_RECUPERABLES[clave])
     return "normal", None
 
 

@@ -23,6 +23,8 @@ except ImportError:
     HAS_PYSTRAY = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+from idiomas import t
+
 ICON_PATH = os.path.join(BASE_DIR, "assets", "icono.ico")
 
 COLOR_OK = (46, 204, 113, 255)
@@ -121,10 +123,10 @@ class TrayIcon:
             # que el clic IZQUIERDO en el ícono no hacía nada — solo el
             # clic derecho (que muestra el menú completo) funcionaba. Ahora
             # el clic izquierdo abre el panel directo, como se espera.
-            pystray.MenuItem("Abrir panel completo", lambda: self.on_mostrar_panel(), default=True),
-            pystray.MenuItem("Mostrar/Ocultar widget", lambda: self.on_toggle_widget()),
-            pystray.MenuItem("Modo Juego (ON/OFF)", lambda: self.on_toggle_auto()),
-            pystray.MenuItem("Salir de TechClean Pro", lambda: self._salir()),
+            pystray.MenuItem(t("tray_abrir_panel"), lambda: self.on_mostrar_panel(), default=True),
+            pystray.MenuItem(t("tray_toggle_widget"), lambda: self.on_toggle_widget()),
+            pystray.MenuItem(t("tray_modo_juego"), lambda: self.on_toggle_auto()),
+            pystray.MenuItem(t("tray_salir"), lambda: self._salir()),
         )
         self.icon = pystray.Icon("TechCleanPro", _crear_icono_imagen(), "TechClean Pro", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()

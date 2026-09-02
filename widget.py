@@ -19,6 +19,7 @@ import tkinter as tk
 
 import psutil
 import system_monitor as sysmon
+from idiomas import t
 import optimizer as opt
 import preferences as prefs
 
@@ -133,7 +134,7 @@ class PerformanceWidget(tk.Toplevel):
         # ---- Panel expandido: tarjetas de Rendimiento / Atajos / Sistema ----
         self.frame_expandido = tk.Frame(self, bg=COLOR_BG)
 
-        tarjeta_rend = self._tarjeta(self.frame_expandido, "RENDIMIENTO")
+        tarjeta_rend = self._tarjeta(self.frame_expandido, t("wid_card_rendimiento"))
         fila_rend = tk.Frame(tarjeta_rend, bg=COLOR_CARD)
         fila_rend.pack(fill="x", padx=10, pady=(0, 10))
         self._metricas_grandes = {}
@@ -151,27 +152,32 @@ class PerformanceWidget(tk.Toplevel):
             self._barras[clave] = barra
 
         # ---- Atajos: cuadrícula de íconos, estilo panel de utilidades ----
-        tarjeta_atajos = self._tarjeta(self.frame_expandido, "ATAJOS")
+        tarjeta_atajos = self._tarjeta(self.frame_expandido, t("wid_card_atajos"))
         fila_atajos = tk.Frame(tarjeta_atajos, bg=COLOR_CARD)
         fila_atajos.pack(padx=10, pady=(0, 10), anchor="w")
+        # Cada atajo lleva una CLAVE interna ademas del tooltip traducido: el
+        # boton de Modo Juego se guarda aparte para poder pintarlo despues, y
+        # antes eso se decidia comparando el tooltip contra el literal
+        # "Modo Juego" — al traducirlo, esa comparacion habria fallado y el
+        # boton nunca se habria coloreado al activar el modo.
         atajos = [
-            ("🧹", "Liberar RAM", self._liberar_ram_manual),
-            ("🗑", "Vaciar papelera", self._vaciar_papelera_manual),
-            ("🎮", "Modo Juego", self._toggle_modo_juego_manual),
-            ("🎯", "Ver FPS (Xbox Game Bar)", self._abrir_fps_manual),
-            ("🖥", "Abrir panel completo", self._abrir_panel_completo),
+            ("🧹", "ram", t("wid_atajo_ram"), self._liberar_ram_manual),
+            ("🗑", "papelera", t("wid_atajo_papelera"), self._vaciar_papelera_manual),
+            ("🎮", "modo_juego", t("wid_atajo_modo_juego"), self._toggle_modo_juego_manual),
+            ("🎯", "fps", t("wid_atajo_fps"), self._abrir_fps_manual),
+            ("🖥", "panel", t("wid_atajo_panel"), self._abrir_panel_completo),
         ]
-        for icono, tooltip, accion in atajos:
+        for icono, clave_atajo, tooltip, accion in atajos:
             btn = tk.Label(fila_atajos, text=icono, bg=COLOR_CARD_ALT, fg=COLOR_TXT,
                             font=("Segoe UI", 13), cursor="hand2", width=3, height=1)
             btn.pack(side="left", padx=(0, 6))
             btn.bind("<Button-1>", lambda e, fn=accion: fn())
             self._crear_tooltip(btn, tooltip)
-            if tooltip == "Modo Juego":
+            if clave_atajo == "modo_juego":
                 self._botones_atajos["modo_juego"] = btn
 
         # ---- Sistema: filas con puntito de color + texto ----
-        tarjeta_sistema = self._tarjeta(self.frame_expandido, "SISTEMA")
+        tarjeta_sistema = self._tarjeta(self.frame_expandido, t("wid_card_sistema"))
         self.filas_sistema = {}
         for clave in ("disco", "bateria", "temp", "uptime"):
             fila = tk.Frame(tarjeta_sistema, bg=COLOR_CARD)
@@ -327,10 +333,10 @@ class PerformanceWidget(tk.Toplevel):
             self._net_prev_time = ahora
 
             if self.lbl_cpu:
-                self.lbl_cpu.configure(text=f"CPU {cpu:.0f}%", fg=_color(cpu))
+                self.lbl_cpu.configure(text=t("wid_cpu", pct=f"{cpu:.0f}"), fg=_color(cpu))
             if self.lbl_ram:
-                self.lbl_ram.configure(text=f"RAM {ram:.0f}%", fg=_color(ram))
-            gpu_txt = f"GPU {gpu:.0f}%" if gpu is not None else "GPU N/D"
+                self.lbl_ram.configure(text=t("wid_ram", pct=f"{ram:.0f}"), fg=_color(ram))
+            gpu_txt = t("wid_gpu", pct=f"{gpu:.0f}") if gpu is not None else t("wid_gpu_nd")
             if self.lbl_gpu:
                 self.lbl_gpu.configure(text=gpu_txt, fg=_color(gpu))
             if self.lbl_net_up:
@@ -353,25 +359,27 @@ class PerformanceWidget(tk.Toplevel):
                 disco = sysmon.get_disk_info()
                 bateria = psutil.sensors_battery()
                 if bateria:
-                    bateria_txt = f'Batería: {bateria.percent:.0f}%' + (' (cargando)' if bateria.power_plugged else '')
+                    bateria_txt = (t("wid_bateria", pct=f"{bateria.percent:.0f}")
+                                   + (t("wid_bateria_cargando") if bateria.power_plugged else ""))
                     color_bateria = COLOR_OK if (bateria.power_plugged or bateria.percent > 30) else COLOR_WARN
                 else:
-                    bateria_txt = "Batería: equipo de escritorio"
+                    bateria_txt = t("wid_bateria_escritorio")
                     color_bateria = COLOR_TXT_DIM
 
-                temp_cpu_txt = (f"Temperatura CPU: {self._cpu_temp_cache:.0f}°C"
-                                 if self._cpu_temp_cache is not None else "Temperatura CPU: no disponible")
+                temp_cpu_txt = (t("wid_temp", temp=f"{self._cpu_temp_cache:.0f}")
+                                if self._cpu_temp_cache is not None else t("wid_temp_nd"))
                 color_temp = _color(self._cpu_temp_cache) if self._cpu_temp_cache is not None else COLOR_TXT_DIM
 
                 uptime = sysmon.get_uptime_seconds()
                 horas, minutos = int(uptime // 3600), int((uptime % 3600) // 60)
 
                 filas_valores = {
-                    "disco": (f'Disco: {disco["porcentaje"]:.0f}% usado ({disco["libre_gb"]} GB libres)',
+                    "disco": (t("wid_disco", pct=f'{disco["porcentaje"]:.0f}',
+                                libres=disco["libre_gb"]),
                               _color(disco["porcentaje"])),
                     "bateria": (bateria_txt, color_bateria),
                     "temp": (temp_cpu_txt, color_temp),
-                    "uptime": (f"Encendido hace: {horas}h {minutos}m", COLOR_TXT_DIM),
+                    "uptime": (t("wid_uptime", horas=horas, minutos=minutos), COLOR_TXT_DIM),
                 }
                 for clave, (texto, color) in filas_valores.items():
                     punto, lbl_texto = self.filas_sistema[clave]
