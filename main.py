@@ -2721,13 +2721,11 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Reparar ----------------
     def mostrar_reparar(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Reparar el sistema",
+        ctk.CTkLabel(self.contenido, text=t("rep_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
         ctk.CTkLabel(self.contenido,
-                     text="Herramientas oficiales de Windows para arreglar problemas comunes. La mayoría "
-                          "necesita permisos de administrador para completarse. Algunas pueden tardar varios "
-                          "minutos — la app no se congela, pero espera a que termine antes de cerrarla.",
+                     text=t("rep_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
@@ -2735,32 +2733,20 @@ class TechCleanApp(ctk.CTk):
         panel = ctk.CTkScrollableFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel.grid(row=2, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
 
-        self.lbl_resultado_reparar = ctk.CTkLabel(panel, text="Selecciona una reparación para comenzar.",
+        self.lbl_resultado_reparar = ctk.CTkLabel(panel, text=t("rep_selecciona"),
                                                     font=ctk.CTkFont(size=13), wraplength=850, justify="left")
         self.lbl_resultado_reparar.pack(padx=16, pady=16, anchor="w")
 
         acciones = [
-            ("🩹 Reparar archivos del sistema", self._accion_reparar_sfc,
-             "Verifica y repara archivos protegidos de Windows dañados (sfc /scannow). 5-15 min aprox."),
-            ("🔍 Revisar imagen de Windows (rápido)", self._accion_revisar_salud_imagen,
-             "Solo revisa si hace falta reparar — no cambia nada. Mucho más rápido que la reparación completa "
-             "de abajo. Empieza por aquí antes de lanzarte a la reparación larga."),
-            ("🧱 Reparar imagen de Windows", self._accion_reparar_dism,
-             "Repara el almacén de componentes del sistema (DISM). Útil si sfc no fue suficiente. 10-20 min "
-             "aprox. — puede tardar bastante más en equipos con poca RAM o disco lento, y es normal."),
-            ("🌐 Reparar conexión de red (completo)", self._accion_reparar_red,
-             "Reinicia Winsock, TCP/IP y limpia DNS. Puede pedir reiniciar el equipo."),
-            ("📶 Reiniciar solo un adaptador de red", self._accion_elegir_adaptador,
-             "Más quirúrgico: deshabilita y vuelve a habilitar un adaptador puntual, sin tocar Winsock/TCP-IP."),
-            ("🛍 Reparar Tienda de Windows", self._accion_reparar_store,
-             "wsreset.exe — arregla 'la Tienda no abre o no descarga'. No borra apps instaladas."),
-            ("💽 Revisar disco en el próximo reinicio", self._accion_revisar_disco,
-             "Programa un chequeo de errores del disco para la próxima vez que reinicies (requiere admin)."),
-            ("🔄 Buscar actualizaciones de Windows", self._accion_buscar_actualizaciones,
-             "Solo busca e informa (no instala nada). Contacta a Windows Update: puede tardar 30-90 seg."),
-            ("🖥 Reiniciar el Explorador de Windows", self._accion_reiniciar_explorador,
-             "Arregla iconos que no cargan, el menú Inicio que no responde, o la barra de tareas congelada — "
-             "sin reiniciar todo el equipo. Se ve un parpadeo de un par de segundos, es normal."),
+            (t("rep_btn_sfc"), self._accion_reparar_sfc, t("rep_desc_sfc")),
+            (t("rep_btn_scanhealth"), self._accion_revisar_salud_imagen, t("rep_desc_scanhealth")),
+            (t("rep_btn_dism"), self._accion_reparar_dism, t("rep_desc_dism")),
+            (t("rep_btn_red"), self._accion_reparar_red, t("rep_desc_red")),
+            (t("rep_btn_adaptador"), self._accion_elegir_adaptador, t("rep_desc_adaptador")),
+            (t("rep_btn_store"), self._accion_reparar_store, t("rep_desc_store")),
+            (t("rep_btn_disco"), self._accion_revisar_disco, t("rep_desc_disco")),
+            (t("rep_btn_updates"), self._accion_buscar_actualizaciones, t("rep_desc_updates")),
+            (t("rep_btn_explorador"), self._accion_reiniciar_explorador, t("rep_desc_explorador")),
         ]
         for texto, cmd, descripcion in acciones:
             fila = ctk.CTkFrame(panel, fg_color="#141720", corner_radius=10)
@@ -2775,50 +2761,44 @@ class TechCleanApp(ctk.CTk):
         # ---- Rendimiento para equipos justos de recursos ----
         panel_rend = ctk.CTkFrame(panel, fg_color="#141720", corner_radius=10)
         panel_rend.pack(fill="x", padx=16, pady=6)
-        ctk.CTkLabel(panel_rend, text="🐢 Para equipos con poca RAM o gráficos integrados débiles",
+        ctk.CTkLabel(panel_rend, text=t("rep_rend_titulo"),
                      font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=16, pady=(14, 4))
         ctk.CTkLabel(panel_rend,
-                     text="Estas dos ayudan más cuanto más justo de recursos esté el equipo — en una PC potente "
-                          "casi no se nota la diferencia.",
+                     text=t("rep_rend_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=16, pady=(0, 10))
 
         fila_visual = ctk.CTkFrame(panel_rend, fg_color="transparent")
         fila_visual.pack(fill="x", padx=16, pady=(0, 4))
-        ctk.CTkButton(fila_visual, text="🎨 Ajustar efectos visuales (todos)", width=260,
+        ctk.CTkButton(fila_visual, text=t("rep_btn_efectos"), width=260,
                       command=self._accion_abrir_efectos_visuales).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(fila_visual,
-                     text="Abre el diálogo oficial de Windows — con un clic en 'Ajustar para obtener el mejor "
-                          "rendimiento' se apagan animaciones, transparencias y sombras de una vez.",
+                     text=t("rep_desc_efectos"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=560, justify="left").pack(
             side="left")
 
         fila_visual_rapido = ctk.CTkFrame(panel_rend, fg_color="transparent")
         fila_visual_rapido.pack(fill="x", padx=16, pady=(0, 8))
-        ctk.CTkButton(fila_visual_rapido, text="⚡ Reducir 2 animaciones ahora (sin diálogo)", width=260,
+        ctk.CTkButton(fila_visual_rapido, text=t("rep_btn_animaciones"), width=260,
                       fg_color="#2a2d36", hover_color="#3a3e4a",
                       command=self._accion_reducir_animaciones).pack(side="left", padx=(0, 10))
         ctk.CTkLabel(fila_visual_rapido,
-                     text="Aplica en el acto (sin abrir ninguna ventana) solo dos: arrastrar ventanas sin ver "
-                          "el contenido completo, y sin animación al minimizar/restaurar. Para todo lo demás "
-                          "(transparencias, sombras), usa el botón de arriba.",
+                     text=t("rep_desc_animaciones"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=560, justify="left").pack(
             side="left")
 
         fila_indexacion = ctk.CTkFrame(panel_rend, fg_color="transparent")
         fila_indexacion.pack(fill="x", padx=16, pady=(0, 14))
-        ctk.CTkLabel(fila_indexacion, text="🔍 Indexación de búsqueda:", font=ctk.CTkFont(size=12)).pack(
+        ctk.CTkLabel(fila_indexacion, text=t("rep_indexacion_label"), font=ctk.CTkFont(size=12)).pack(
             side="left", padx=(0, 8))
-        self.lbl_estado_indexacion = ctk.CTkLabel(fila_indexacion, text="leyendo...",
+        self.lbl_estado_indexacion = ctk.CTkLabel(fila_indexacion, text=t("rep_leyendo_minus"),
                                                     font=ctk.CTkFont(size=12), text_color="gray60")
         self.lbl_estado_indexacion.pack(side="left", padx=(0, 10))
         self.switch_indexacion = ctk.CTkSwitch(fila_indexacion, text="",
                                                 command=self._toggle_indexacion_busqueda)
         self.switch_indexacion.pack(side="left")
         ctk.CTkLabel(panel_rend,
-                     text="Pausarla libera algo de RAM/CPU de forma constante en segundo plano, a cambio de que "
-                          "buscar por CONTENIDO de archivos sea más lento (buscar por nombre sigue igual). "
-                          "Reversible cuando quieras con este mismo switch.",
+                     text=t("rep_indexacion_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=16, pady=(0, 14))
 
@@ -2833,14 +2813,13 @@ class TechCleanApp(ctk.CTk):
         fila_restauracion = ctk.CTkFrame(panel, fg_color="transparent")
         fila_restauracion.pack(fill="x", padx=16, pady=(4, 16))
         self.switch_punto_restauracion = ctk.CTkSwitch(
-            fila_restauracion, text="🛟 Crear punto de restauración antes de reparar archivos/imagen del sistema",
+            fila_restauracion, text=t("rep_switch_punto"),
             command=self._toggle_punto_restauracion)
         if self.prefs.get("crear_punto_restauracion", True):
             self.switch_punto_restauracion.select()
         self.switch_punto_restauracion.pack(anchor="w")
         ctk.CTkLabel(panel,
-                     text="Recomendado: si algo sale mal, puedes deshacer los cambios desde 'Restaurar sistema' "
-                          "de Windows. Necesita que la Protección del sistema esté activada.",
+                     text=t("rep_punto_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=(28, 16), pady=(0, 4))
 
@@ -2865,26 +2844,23 @@ class TechCleanApp(ctk.CTk):
         — es una red de seguridad extra, no un requisito."""
         if not self.prefs.get("crear_punto_restauracion", True):
             return
-        exito, comando = opt.crear_punto_restauracion("TechClean Pro - antes de reparar")
-        msg = "Punto de restauración creado." if exito else \
-              "No se pudo crear el punto de restauración (¿Protección del sistema desactivada?). Continuando de todas formas."
-        self._log_dev("Crear punto de restauración", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        exito, comando = opt.crear_punto_restauracion(t("rep_punto_nombre"))
+        msg = t("rep_punto_ok") if exito else t("rep_punto_error")
+        self._log_dev(t("rep_log_punto"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reparar_sfc(self):
         def ejecutar(callback_progreso, evento_cancelar):
             self._crear_punto_restauracion_si_corresponde()
             return opt.reparar_archivos_sistema(callback_progreso=callback_progreso,
                                                  evento_cancelar=evento_cancelar)
-        self._iniciar_reparacion_larga("🩹 Reparando archivos del sistema", ejecutar,
-                                        "Reparar archivos del sistema (sfc)")
+        self._iniciar_reparacion_larga(t("rep_titulo_sfc"), ejecutar, t("rep_log_sfc"))
 
     def _accion_reparar_dism(self):
         def ejecutar(callback_progreso, evento_cancelar):
             self._crear_punto_restauracion_si_corresponde()
             return opt.reparar_imagen_windows(callback_progreso=callback_progreso,
                                                evento_cancelar=evento_cancelar)
-        self._iniciar_reparacion_larga("🧱 Reparando imagen de Windows", ejecutar,
-                                        "Reparar imagen de Windows (DISM)")
+        self._iniciar_reparacion_larga(t("rep_titulo_dism"), ejecutar, t("rep_log_dism"))
 
     def _accion_revisar_salud_imagen(self):
         # Solo revisa, no cambia nada — a diferencia de la reparación
@@ -2892,8 +2868,7 @@ class TechCleanApp(ctk.CTk):
         def ejecutar(callback_progreso, evento_cancelar):
             return opt.revisar_salud_imagen_windows(callback_progreso=callback_progreso,
                                                       evento_cancelar=evento_cancelar)
-        self._iniciar_reparacion_larga("🔍 Revisando imagen de Windows", ejecutar,
-                                        "Revisar salud de imagen de Windows (DISM /ScanHealth)")
+        self._iniciar_reparacion_larga(t("rep_titulo_scanhealth"), ejecutar, t("rep_log_scanhealth"))
 
     def _iniciar_reparacion_larga(self, titulo, funcion_reparacion, nombre_para_historial):
         """
@@ -2915,18 +2890,17 @@ class TechCleanApp(ctk.CTk):
         # el resto de la app queda bloqueado hasta que termine o canceles,
         # como el resto de ventanas de confirmación de la app.
         ctk.CTkLabel(dialogo, text=titulo, font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(24, 8))
-        lbl_tiempo = ctk.CTkLabel(dialogo, text="Tiempo transcurrido: 0:00",
+        lbl_tiempo = ctk.CTkLabel(dialogo, text=t("rep_tiempo", minutos=0, segundos="00"),
                                     font=ctk.CTkFont(size=20, weight="bold"))
         lbl_tiempo.pack(pady=(0, 6))
         ctk.CTkLabel(dialogo,
-                     text="Puede tardar bastante en equipos con poca RAM o disco lento — es normal. Puedes "
-                          "cancelar cuando quieras, sin tener que cerrar la app.",
+                     text=t("rep_larga_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=380, justify="center").pack(
             padx=20, pady=(0, 16))
 
         def cancelar():
             evento_cancelar.set()
-            btn_cancelar.configure(state="disabled", text="Cancelando...")
+            btn_cancelar.configure(state="disabled", text=t("rep_cancelando"))
 
         # La "X" de la ventana también cancela en vez de no hacer nada —
         # cerrar la ventana sin más dejaría el proceso corriendo sin
@@ -2941,13 +2915,15 @@ class TechCleanApp(ctk.CTk):
             if not dialogo.winfo_exists():
                 return
             minutos, seg = divmod(int(segundos), 60)
-            self.after(0, lambda: lbl_tiempo.configure(text=f"Tiempo transcurrido: {minutos}:{seg:02d}"))
+            self.after(0, lambda: lbl_tiempo.configure(
+                text=t("rep_tiempo", minutos=minutos, segundos=f"{seg:02d}")))
 
         def worker():
             exito, resumen, comando = funcion_reparacion(progreso, evento_cancelar)
             cancelado = evento_cancelar.is_set()
-            msg = ("Cancelado — no se completó la reparación." if cancelado else
-                   (f"Listo.\n{resumen}" if exito else f"Hubo un problema.\n{resumen}"))
+            msg = (t("rep_cancelado") if cancelado else
+                   (t("rep_listo", resumen=resumen) if exito
+                    else t("rep_problema", resumen=resumen)))
             self._log_dev(nombre_para_historial, comando, msg, seccion=t("seccion_reparar"), exito=exito and not cancelado)
 
             def cerrar():
@@ -2958,18 +2934,17 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_reparar_red(self):
-        self.lbl_resultado_reparar.configure(text="Reiniciando componentes de red...")
+        self.lbl_resultado_reparar.configure(text=t("rep_red_reiniciando"))
 
         def worker():
             exito, comando = opt.reparar_red()
-            msg = ("Red reiniciada. Si algo sigue sin funcionar, reinicia el equipo para completar el proceso."
-                   if exito else "No se pudo completar la reparación de red.")
+            msg = t("rep_red_ok") if exito else t("rep_red_error")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Reparar conexión de red", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+            self._log_dev(t("rep_log_red"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_elegir_adaptador(self):
-        self.lbl_resultado_reparar.configure(text="Leyendo adaptadores de red...")
+        self.lbl_resultado_reparar.configure(text=t("rep_leyendo_adaptadores"))
 
         def worker():
             adaptadores = opt.listar_adaptadores_red()
@@ -2978,73 +2953,76 @@ class TechCleanApp(ctk.CTk):
 
     def _mostrar_selector_adaptador(self, adaptadores):
         if not adaptadores:
-            self._actualizar_resultado_reparar("No se encontraron adaptadores de red activos.")
+            self._actualizar_resultado_reparar(t("rep_sin_adaptadores"))
             return
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Elegir adaptador")
+        dialogo.title(t("rep_elegir_adaptador"))
         dialogo.geometry("420x260")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text="¿Qué adaptador quieres reiniciar?",
+        ctk.CTkLabel(dialogo, text=t("rep_que_adaptador"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(16, 8))
         lista = ctk.CTkScrollableFrame(dialogo, fg_color=COLOR_BG_PANEL)
         lista.pack(fill="both", expand=True, padx=16, pady=8)
         for a in adaptadores:
             fila = ctk.CTkFrame(lista, fg_color="#141720", corner_radius=8)
             fila.pack(fill="x", pady=3)
-            ctk.CTkLabel(fila, text=f'{a["nombre"]} — {a["descripcion"]}', font=ctk.CTkFont(size=11),
+            ctk.CTkLabel(fila, text=t("rep_adaptador_detalle", nombre=a["nombre"],
+                                      descripcion=a["descripcion"]), font=ctk.CTkFont(size=11),
                          anchor="w", wraplength=300, justify="left").pack(side="left", padx=8, pady=8, fill="x", expand=True)
-            ctk.CTkButton(fila, text="Reiniciar", width=90,
+            ctk.CTkButton(fila, text=t("rep_btn_reiniciar"), width=90,
                           command=lambda n=a["nombre"]: (dialogo.destroy(), self._accion_reiniciar_adaptador(n))).pack(
                 side="right", padx=8, pady=6)
         ctk.CTkButton(dialogo, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(pady=(0, 12))
 
     def _accion_reiniciar_adaptador(self, nombre):
-        self.lbl_resultado_reparar.configure(text=f"Reiniciando adaptador '{nombre}'...")
+        self.lbl_resultado_reparar.configure(text=t("rep_adaptador_reiniciando", nombre=nombre))
 
         def worker():
             exito, comando = opt.reiniciar_adaptador_red(nombre)
-            msg = (f"Adaptador '{nombre}' reiniciado." if exito else
-                   f"No se pudo reiniciar '{nombre}' (¿permisos de administrador?).")
+            msg = (t("rep_adaptador_ok", nombre=nombre) if exito
+                   else t("rep_adaptador_error", nombre=nombre))
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev(f"Reiniciar adaptador de red ({nombre})", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+            self._log_dev(t("rep_log_adaptador", nombre=nombre), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_reparar_store(self):
         exito, comando = opt.reparar_windows_store()
-        msg = "Reiniciando la Tienda de Windows..." if exito else "No se pudo ejecutar wsreset.exe."
+        msg = t("rep_store_ok") if exito else t("rep_store_error")
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Reparar Tienda de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        self._log_dev(t("rep_log_store"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reiniciar_explorador(self):
-        self.lbl_resultado_reparar.configure(text="Reiniciando el Explorador de Windows...")
+        self.lbl_resultado_reparar.configure(text=t("rep_explorador_reiniciando"))
 
         def worker():
             exito, comando = opt.reiniciar_explorador()
-            msg = "Explorador de Windows reiniciado." if exito else "No se pudo reiniciar el Explorador."
+            msg = t("rep_explorador_ok") if exito else t("rep_explorador_error")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Reiniciar Explorador de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+            self._log_dev(t("rep_log_explorador"), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_abrir_efectos_visuales(self):
         exito, comando = opt.abrir_opciones_rendimiento_visual()
-        msg = "Abriendo Opciones de rendimiento de Windows." if exito else "No se pudo abrir."
+        msg = t("rep_efectos_ok") if exito else t("rep_efectos_error")
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Abrir opciones de efectos visuales", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        self._log_dev(t("rep_log_efectos"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reducir_animaciones(self):
         exito, comando = opt.reducir_animaciones_ahora(activar_reduccion=True)
-        msg = ("Aplicado — arrastre de solo contorno y sin animación al minimizar/restaurar."
-               if exito else "No se pudo aplicar.")
+        msg = t("rep_animaciones_ok") if exito else t("rep_animaciones_error")
         self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev("Reducir animaciones (rápido)", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        self._log_dev(t("rep_log_animaciones"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _pintar_estado_indexacion(self, estado):
         if not (hasattr(self, "lbl_estado_indexacion") and self.lbl_estado_indexacion.winfo_exists()):
             return
         if estado is None:
-            self.lbl_estado_indexacion.configure(text="no se pudo leer")
+            self.lbl_estado_indexacion.configure(text=t("rep_idx_no_leido"))
             return
-        self.lbl_estado_indexacion.configure(text="activa" if estado else "pausada")
+        self.lbl_estado_indexacion.configure(
+            text=t("rep_idx_activa") if estado else t("rep_idx_pausada"))
         if hasattr(self, "switch_indexacion") and self.switch_indexacion.winfo_exists():
             if estado:
                 self.switch_indexacion.select()
@@ -3053,44 +3031,47 @@ class TechCleanApp(ctk.CTk):
 
     def _toggle_indexacion_busqueda(self):
         activar = bool(self.switch_indexacion.get())  # switch ON = indexación activa
-        self.lbl_estado_indexacion.configure(text="aplicando...")
+        self.lbl_estado_indexacion.configure(text=t("rep_idx_aplicando"))
 
         def worker():
             exito, comando = opt.pausar_indexacion_busqueda(pausar=not activar)
-            msg = (("Indexación reanudada." if activar else "Indexación pausada.") if exito
-                   else "No se pudo cambiar (¿permisos de administrador?).")
+            msg = ((t("rep_idx_reanudada") if activar else t("rep_idx_pausada_msg")) if exito
+                   else t("rep_idx_error"))
             if hasattr(self, "lbl_estado_indexacion") and self.lbl_estado_indexacion.winfo_exists():
-                self.after(0, lambda: self.lbl_estado_indexacion.configure(text="activa" if activar else "pausada"))
-            self._log_dev("Indexación de búsqueda " + ("reanudada" if activar else "pausada"),
+                self.after(0, lambda: self.lbl_estado_indexacion.configure(
+                    text=t("rep_idx_activa") if activar else t("rep_idx_pausada")))
+            self._log_dev(t("rep_log_idx_reanudada") if activar else t("rep_log_idx_pausada"),
                           comando, msg, seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_revisar_disco(self):
-        self.lbl_resultado_reparar.configure(text="Programando...")
+        self.lbl_resultado_reparar.configure(text=t("rep_programando"))
 
         def worker():
             exito, comando = opt.revisar_disco_en_reinicio("C:")
-            msg = ("Programado. La próxima vez que reinicies, Windows revisará el disco C: automáticamente."
-                   if exito else "No se pudo programar la revisión (¿necesitas permisos de administrador?).")
+            msg = t("rep_disco_ok") if exito else t("rep_disco_error")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Revisar disco en el próximo reinicio", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+            self._log_dev(t("rep_log_disco"), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_buscar_actualizaciones(self):
-        self.lbl_resultado_reparar.configure(text="Buscando actualizaciones de Windows... esto puede tardar 30-90 segundos.")
+        self.lbl_resultado_reparar.configure(text=t("rep_buscando_updates"))
 
         def worker():
             exito, titulos, comando = opt.buscar_actualizaciones_pendientes()
             if not exito:
-                msg = "No se pudo consultar Windows Update en este momento."
+                msg = t("rep_updates_error")
             elif not titulos:
-                msg = "Tu Windows está al día — no hay actualizaciones pendientes."
+                msg = t("rep_updates_al_dia")
             else:
                 lista = "\n".join(f"• {titulo}" for titulo in titulos[:10])
-                extra = f"\n(y {len(titulos) - 10} más)" if len(titulos) > 10 else ""
-                msg = f"{len(titulos)} actualización(es) pendiente(s):\n{lista}{extra}\n\nInstálalas desde Configuración > Windows Update."
+                extra = (t("rep_updates_extra", cantidad=len(titulos) - 10)
+                         if len(titulos) > 10 else "")
+                msg = t("rep_updates_lista", cantidad=len(titulos), lista=lista, extra=extra)
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
-            self._log_dev("Buscar actualizaciones de Windows", comando, msg, seccion=t("seccion_reparar"), exito=exito)
+            self._log_dev(t("rep_log_updates"), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     # ---------------- Aplicaciones: inicio de Windows + desinstalador ----------------
