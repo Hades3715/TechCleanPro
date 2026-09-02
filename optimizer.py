@@ -151,7 +151,7 @@ def estimate_reclaimable_space():
     """Calcula cuánto espacio se podría recuperar SIN borrar nada todavía."""
     candidatos = []
     temp_dir = tempfile.gettempdir()
-    candidatos.append(("Archivos temporales del usuario", temp_dir))
+    candidatos.append((t("optmod_temp_usuario"), temp_dir))
 
     if IS_WINDOWS:
         win_temp = r"C:\Windows\Temp"
@@ -483,7 +483,7 @@ def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_pr
         proceso = subprocess.Popen(comando_lista, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, creationflags=subprocess.CREATE_NO_WINDOW)
     except Exception as e:
-        return False, f"No se pudo iniciar: {e}", False
+        return False, t("optmod_no_inicio", error=e), False
 
     inicio = time.time()
     cancelado = False
@@ -520,7 +520,7 @@ def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_pr
         salida = proceso.stdout.read() if proceso.stdout else ""
     except Exception:
         salida = ""
-    resumen = (salida or "").strip()[-600:] or "El proceso terminó sin salida detallada."
+    resumen = (salida or "").strip()[-600:] or t("optmod_sin_salida")
     return proceso.returncode == 0, resumen, False
 
 
@@ -1329,7 +1329,7 @@ def enviar_a_papelera(rutas):
         resultado = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operacion))
         if resultado == 0 and not operacion.fAnyOperationsAborted:
             return len(rutas), bytes_totales, []
-        return 0, 0, [f"La operación de la papelera no se completó (código {resultado})."]
+        return 0, 0, [t("optmod_papelera_codigo", codigo=resultado)]
     except Exception as e:
         return 0, 0, [str(e)]
 
@@ -1413,13 +1413,15 @@ def _ruta_localappdata():
 
 def listar_cache_apps_comunes():
     base = _ruta_localappdata()
+    # Se arma DENTRO de la funcion, no a nivel de modulo, asi que aqui t() ya
+    # tiene el idioma fijado y se puede traducir directo.
     candidatos = {
-        "Steam (caché de descarga)": os.path.join(base, "..", "Roaming", "Steam", "htmlcache"),
-        "Discord (caché)": os.path.join(base, "Discord", "Cache"),
-        "OneDrive (logs/caché)": os.path.join(base, "Microsoft", "OneDrive", "logs"),
-        "Caché de pip (Python)": os.path.join(base, "pip", "Cache"),
-        "Caché de npm (Node.js)": os.path.join(base, "npm-cache"),
-        "Caché de Spotify": os.path.join(base, "Spotify", "Storage"),
+        t("optmod_cache_steam"): os.path.join(base, "..", "Roaming", "Steam", "htmlcache"),
+        t("optmod_cache_discord"): os.path.join(base, "Discord", "Cache"),
+        t("optmod_cache_onedrive"): os.path.join(base, "Microsoft", "OneDrive", "logs"),
+        t("optmod_cache_pip"): os.path.join(base, "pip", "Cache"),
+        t("optmod_cache_npm"): os.path.join(base, "npm-cache"),
+        t("optmod_cache_spotify"): os.path.join(base, "Spotify", "Storage"),
     }
     resultados = []
     for nombre, ruta in candidatos.items():
@@ -2682,9 +2684,9 @@ def terminar_proceso(pid):
         proceso.terminate()
         return True, nombre
     except psutil.NoSuchProcess:
-        return False, "El proceso ya no existe (puede que se haya cerrado solo)."
+        return False, t("optmod_proc_no_existe")
     except psutil.AccessDenied:
-        return False, "Permiso denegado — es un proceso protegido del sistema."
+        return False, t("optmod_permiso_denegado")
     except Exception as e:
         return False, str(e)
 

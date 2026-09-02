@@ -99,28 +99,31 @@ threading.excepthook = _manejar_excepcion_de_hilo
 # cualquier método. Se asigna en TechCleanApp.__init__.
 _instancia_app = None
 
+# Se construye AL IMPORTAR el modulo, antes de que establecer_idioma() haya
+# corrido, asi que guarda el NOMBRE de la clave y no el texto: t() se llama al
+# imprimir la ayuda, ya con el idioma fijado.
 COMANDOS_DISPONIBLES = {
-    "/ram": "Libera memoria RAM (compacta procesos en segundo plano)",
-    "/temporales": "Limpia archivos temporales",
-    "/papelera": "Vacía la papelera de reciclaje",
-    "/dns": "Limpia la caché DNS",
-    "/rapido": "Optimización con un clic (RAM + temporales)",
-    "/inicio": "Vuelve a Inicio",
-    "/componentes": "Abre Componentes del equipo",
-    "/optimizar": "Abre Optimizar (RAM/CPU, ventanas abiertas, espacio en disco)",
-    "/reparar": "Abre Reparar el sistema",
-    "/seguridad": "Abre Seguridad (antivirus, permisos, firewall, usuarios)",
-    "/gaming": "Abre Gaming (Modo Juego, FPS, biblioteca de juegos)",
-    "/apps": "Abre Aplicaciones (inicio de Windows / desinstalador)",
-    "/privacidad": "Abre Privacidad",
-    "/historial": "Abre el Historial de actividad",
-    "/widget": "Muestra u oculta el widget flotante",
-    "/auto": "Activa o desactiva el Modo Juego",
-    "/fps": "Abre el contador de FPS (Xbox Game Bar)",
-    "/bios": "Abre Energía (apagar, reiniciar, suspender, hibernar, BIOS)",
-    "/ajustes": "Abre Ajustes",
-    "/salir": "Vuelve a Inicio",
-    "/help": "Muestra esta lista de comandos",
+    "/ram": "cmd_ram",
+    "/temporales": "cmd_temporales",
+    "/papelera": "cmd_papelera",
+    "/dns": "cmd_dns",
+    "/rapido": "cmd_rapido",
+    "/inicio": "cmd_inicio",
+    "/componentes": "cmd_componentes",
+    "/optimizar": "cmd_optimizar",
+    "/reparar": "cmd_reparar",
+    "/seguridad": "cmd_seguridad",
+    "/gaming": "cmd_gaming",
+    "/apps": "cmd_apps",
+    "/privacidad": "cmd_privacidad",
+    "/historial": "cmd_historial",
+    "/widget": "cmd_widget",
+    "/auto": "cmd_auto",
+    "/fps": "cmd_fps",
+    "/bios": "cmd_bios",
+    "/ajustes": "cmd_ajustes",
+    "/salir": "cmd_salir",
+    "/help": "cmd_help",
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -287,17 +290,18 @@ class DevConsole(ctk.CTkFrame):
         self.textbox = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Consolas", size=12),
                                        fg_color="#0d0f13", text_color="#7CFC7C")
         self.textbox.pack(fill="both", expand=True, padx=12, pady=(0, 6))
-        self.textbox.insert("end", "$ TechClean Pro — consola lista. Escribe /help para ver los comandos.\n")
+        self.textbox.insert("end", t("consola_lista") + "\n")
         self.textbox.configure(state="disabled")
 
         if self.on_comando is not None:
             fila = ctk.CTkFrame(self, fg_color="transparent")
             fila.pack(fill="x", padx=12, pady=(0, 12))
-            self.entry = ctk.CTkEntry(fila, placeholder_text="Escribe un comando (/help para ver la lista) y presiona Enter...",
+            self.entry = ctk.CTkEntry(fila, placeholder_text=t("consola_placeholder"),
                                        font=ctk.CTkFont(family="Consolas", size=12))
             self.entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
             self.entry.bind("<Return>", self._enviar)
-            ctk.CTkButton(fila, text="Ejecutar", width=90, command=self._enviar).pack(side="left")
+            ctk.CTkButton(fila, text=t("consola_ejecutar"), width=90,
+                          command=self._enviar).pack(side="left")
             self.entry.focus_set()
 
     def _enviar(self, event=None):
@@ -322,7 +326,7 @@ class DevConsole(ctk.CTkFrame):
             return
         self.textbox.configure(state="normal")
         ts = datetime.now().strftime("%H:%M:%S")
-        self.textbox.insert("end", f"[{ts}] ACCIÓN: {accion}\n")
+        self.textbox.insert("end", f'[{ts}] {t("consola_accion")}: {accion}\n')
         self.textbox.insert("end", f"          CMD:    {comando}\n")
         self.textbox.insert("end", f"          RESULT: {resultado}\n\n")
         self.textbox.see("end")
@@ -343,7 +347,7 @@ class ComandoConsole(ctk.CTkFrame):
         self.textbox = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Consolas", size=12),
                                        fg_color="#0d0f13", text_color="#9fd3ff")
         self.textbox.pack(fill="both", expand=True, padx=12, pady=(12, 6))
-        self.textbox.insert("end", "Escribe /help o ayuda para ver los comandos disponibles.\n")
+        self.textbox.insert("end", t("consola_ayuda") + "\n")
         self.textbox.configure(state="disabled")
 
         fila = ctk.CTkFrame(self, fg_color="transparent")
@@ -378,7 +382,7 @@ class TechCleanApp(ctk.CTk):
         _instancia_app = self
         self._ultimo_aviso_error = 0.0
 
-        self.title("TechClean Pro" + (" — Edición Administrador" if EDICION == "admin" else ""))
+        self.title("TechClean Pro" + (t("app_edicion_admin") if EDICION == "admin" else ""))
         try:
             self.iconbitmap(ICON_PATH)
         except Exception:
@@ -569,7 +573,7 @@ class TechCleanApp(ctk.CTk):
         opt.relaunch_as_admin()
 
     def _boton_ver_reporte(self, panel):
-        ctk.CTkButton(panel, text="📋 Ver qué se ejecutó / se borró (reporte completo)",
+        ctk.CTkButton(panel, text=t("comun_ver_reporte"),
                       fg_color="#2a2d36", hover_color="#3a3e4a",
                       command=self.mostrar_reporte).pack(padx=16, pady=(0, 16), anchor="w")
 
@@ -821,7 +825,8 @@ class TechCleanApp(ctk.CTk):
             self.gauge_ram.set_value(ram["porcentaje"], f'{ram["usado_gb"]} / {ram["total_gb"]} GB')
 
             cpu = sysmon.get_cpu_info()
-            self.gauge_cpu.set_value(cpu["porcentaje"], f'{cpu["nucleos_fisicos"]} núcleos físicos')
+            self.gauge_cpu.set_value(cpu["porcentaje"],
+                                     t("dash_nucleos_fisicos", n=cpu["nucleos_fisicos"]))
 
             disco = sysmon.get_disk_info()
             self.gauge_disco.set_value(disco["porcentaje"], f'{disco["libre_gb"]} GB libres')
@@ -1078,7 +1083,7 @@ class TechCleanApp(ctk.CTk):
                 if datos is not None:
                     self._pintar_componentes(datos)
                 elif hasattr(self, "panel_cpu") and self.panel_cpu.winfo_exists():
-                    self.panel_cpu.configure(text=f"No se pudo leer (reintentando...): {error}")
+                    self.panel_cpu.configure(text=t("comp_reintentando", error=error))
                 self.after(self._intervalo(3000), self._refrescar_componentes)
             self.after(0, _terminar)
 
@@ -1949,7 +1954,8 @@ class TechCleanApp(ctk.CTk):
                          wraplength=520, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
             ctk.CTkLabel(fila, text=opt.format_bytes(a["bytes"]), font=ctk.CTkFont(size=12, weight="bold"),
                          width=80).pack(side="left", padx=4)
-            ctk.CTkButton(fila, text="🗑 A la papelera", width=110, fg_color="#2a2d36", hover_color="#3a3e4a",
+            ctk.CTkButton(fila, text=t("disco_btn_papelera_uno"), width=110, fg_color="#2a2d36",
+                          hover_color="#3a3e4a",
                           command=lambda r=a["ruta"]: self._confirmar_borrar_archivos([r])).pack(
                 side="left", padx=(4, 12), pady=8)
 
@@ -2088,12 +2094,12 @@ class TechCleanApp(ctk.CTk):
     def _accion_liberar_ram(self):
         def worker():
             liberado, afectados, comando = opt.trim_process_memory()
-            msg = f"Memoria compactada en {afectados} procesos. Liberado aprox.: {opt.format_bytes(liberado)}"
+            msg = t("opt_ram_ok", procesos=afectados, tamano=opt.format_bytes(liberado))
             self.lbl_resultado_opt.configure(text=msg)
-            self._log_dev("Liberar RAM", comando, msg, seccion=t("seccion_optimizador"),
+            self._log_dev(t("opt_log_ram"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
         threading.Thread(target=worker, daemon=True).start()
-        self.lbl_resultado_opt.configure(text="Liberando memoria...")
+        self.lbl_resultado_opt.configure(text=t("opt_liberando_ram"))
 
     def _mostrar_procesos_recursos(self, modo):
         for w in self.lista_procesos_ram.winfo_children():
@@ -2201,34 +2207,29 @@ class TechCleanApp(ctk.CTk):
         riesgo, motivo = opt.evaluar_riesgo_proceso(nombre)
         if riesgo == "bloqueado":
             self._mostrar_popup_info(
-                "Proceso protegido",
-                f'"{nombre}" es un proceso crítico del sistema y TechClean Pro no permite terminarlo desde '
-                f'aquí.\n\n{motivo}')
+                t("proc_protegido_titulo"),
+                t("proc_protegido_msg", nombre=nombre, motivo=motivo))
             return
 
         dialogo = ctk.CTkToplevel(self)
         dialogo.title("Confirmar")
         dialogo.geometry("440x260")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text=f'¿Terminar "{nombre}" (PID {pid})?',
+        ctk.CTkLabel(dialogo, text=t("proc_conf_titulo", nombre=nombre, pid=pid),
                      font=ctk.CTkFont(size=14, weight="bold"), wraplength=400, justify="center").pack(
             pady=(20, 6))
 
         if riesgo == "recuperable":
-            ctk.CTkLabel(dialogo, text=f"⚠ {motivo}",
+            ctk.CTkLabel(dialogo, text=t("proc_aviso_riesgo", motivo=motivo),
                          font=ctk.CTkFont(size=11, weight="bold"), text_color=COLOR_WARN,
                          wraplength=400, justify="center").pack(padx=20, pady=(0, 10))
         else:
             ctk.CTkLabel(dialogo,
-                         text="Si es un programa que tienes abierto con trabajo sin guardar (un navegador, un "
-                              "editor, un juego), vas a perder ese trabajo — igual que si lo cerraras de golpe "
-                              "sin guardar. Si no reconoces el nombre y no es un proceso de Windows, "
-                              "normalmente es seguro cerrarlo.",
+                         text=t("proc_aviso_normal"),
                          font=ctk.CTkFont(size=11), text_color=COLOR_WARN, wraplength=400, justify="center").pack(
                 padx=20, pady=(0, 10))
         ctk.CTkLabel(dialogo,
-                     text="Consejo: si es un programa que reconoces (no algo de Windows), mejor ciérralo desde "
-                          "el programa mismo — así te da la opción de guardar antes.",
+                     text=t("proc_consejo"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=400, justify="center").pack(
             padx=20, pady=(0, 16))
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
@@ -2239,60 +2240,62 @@ class TechCleanApp(ctk.CTk):
 
             def worker():
                 exito, resultado = opt.terminar_proceso(pid)
-                msg = f'"{nombre}" terminado.' if exito else f'No se pudo terminar "{nombre}": {resultado}'
-                self._log_dev(f'Terminar proceso "{nombre}" (PID {pid})', f"psutil.Process({pid}).terminate()",
+                msg = (t("proc_terminado", nombre=nombre) if exito
+                       else t("proc_error", nombre=nombre, error=resultado))
+                self._log_dev(t("proc_log_terminar", nombre=nombre, pid=pid),
+                              f"psutil.Process({pid}).terminate()",
                               msg, seccion=t("seccion_optimizador"), exito=exito)
-                modo_actual = self.pestana_procesos.get() if hasattr(self, "pestana_procesos") else "RAM"
+                modo_actual = self._modo_procesos_actual()
                 self.after(500, lambda: self._mostrar_procesos_recursos(modo_actual))
             threading.Thread(target=worker, daemon=True).start()
 
         ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
-        ctk.CTkButton(fila, text="Terminar", fg_color=COLOR_CRIT, hover_color="#c0392b",
+        ctk.CTkButton(fila, text=t("proc_btn_terminar"), fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=confirmar).pack(side="left", padx=8)
 
     def _accion_estimar_espacio(self):
         def worker():
             resultados, total = opt.estimate_reclaimable_space()
-            detalle = "\n".join(f'• {r["categoria"]}: {opt.format_bytes(r["bytes"])}' for r in resultados)
-            msg = f"Espacio recuperable estimado: {opt.format_bytes(total)}\n{detalle}"
+            detalle = "\n".join(t("opt_espacio_detalle", categoria=r["categoria"],
+                                   tamano=opt.format_bytes(r["bytes"])) for r in resultados)
+            msg = t("opt_espacio_estimado", total=opt.format_bytes(total), detalle=detalle)
             self.lbl_resultado_opt.configure(text=msg)
-            self._log_dev("Estimar espacio recuperable",
-                          "Escaneo recursivo de carpetas temporales (solo lectura, no borra nada)",
+            self._log_dev(t("opt_log_estimar"), t("opt_log_estimar_cmd"),
                           msg, seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
-        self.lbl_resultado_opt.configure(text="Escaneando...")
+        self.lbl_resultado_opt.configure(text=t("opt_escaneando"))
 
     def _accion_limpiar_temp(self):
         def worker():
             liberado, borrados, comando = opt.clear_temp_files()
-            msg = f"{borrados} archivos eliminados. Espacio liberado: {opt.format_bytes(liberado)}"
+            msg = t("opt_temp_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
             self.lbl_resultado_opt.configure(text=msg)
-            self._log_dev("Limpiar temporales", comando, msg, seccion=t("seccion_optimizador"),
+            self._log_dev(t("opt_log_temp"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
-        self.lbl_resultado_opt.configure(text="Limpiando archivos temporales...")
+        self.lbl_resultado_opt.configure(text=t("opt_limpiando_temp"))
 
     def _accion_vaciar_papelera(self):
         exito, comando = opt.empty_recycle_bin()
-        msg = "Papelera vaciada correctamente." if exito else "No se pudo vaciar la papelera (¿estás en Windows?)."
+        msg = t("opt_papelera_ok") if exito else t("opt_papelera_error")
         self.lbl_resultado_opt.configure(text=msg)
-        self._log_dev("Vaciar papelera", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
+        self._log_dev(t("opt_log_papelera"), comando, msg, seccion=t("seccion_optimizador"), exito=exito)
 
     def _accion_flush_dns(self):
         exito, comando = opt.flush_dns()
-        msg = "Caché DNS limpiada." if exito else "No se pudo limpiar la caché DNS."
+        msg = t("opt_dns_ok") if exito else t("opt_dns_error")
         self.lbl_resultado_opt.configure(text=msg)
-        self._log_dev("Flush DNS", comando, msg, seccion=t("seccion_optimizador"), exito=exito)
+        self._log_dev(t("opt_log_dns"), comando, msg, seccion=t("seccion_optimizador"), exito=exito)
 
     def _accion_limpiar_miniaturas(self):
-        self.lbl_resultado_opt.configure(text="Limpiando caché de miniaturas...")
+        self.lbl_resultado_opt.configure(text=t("opt_limpiando_miniaturas"))
 
         def worker():
             borrados, liberado, comando = opt.limpiar_cache_miniaturas()
-            msg = (f"{borrados} archivo(s) de miniaturas eliminados ({opt.format_bytes(liberado)})."
-                   if borrados else "No había caché de miniaturas para limpiar.")
+            msg = (t("opt_miniaturas_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
+                   if borrados else t("opt_miniaturas_vacio"))
             self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
-            self._log_dev("Limpiar caché de miniaturas", comando, msg, seccion=t("seccion_optimizador"),
+            self._log_dev(t("opt_log_miniaturas"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -3598,9 +3601,9 @@ class TechCleanApp(ctk.CTk):
         else:
             if self.performance_widget is None:
                 self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente)
-                self._log_dev("Activar widget flotante",
-                              "Toplevel siempre-encima con psutil (1s CPU/RAM/Red, 4s GPU/temp)",
-                              "Widget mostrado en pantalla", seccion=t("seccion_segundo_plano"), exito=True)
+                self._log_dev(t("gaming_log_widget"), t("gaming_widget_cmd"),
+                              t("gaming_widget_mostrado"),
+                              seccion=t("seccion_segundo_plano"), exito=True)
             else:
                 self.performance_widget.mostrar()
             encender = True
@@ -3733,8 +3736,8 @@ class TechCleanApp(ctk.CTk):
                 self.after(0, self._toggle_autopilot)
 
             exito_fps, comando_fps = opt.abrir_contador_fps_windows()
-            self._log_dev("Antes de jugar: abrir FPS", comando_fps,
-                          "Overlay de FPS abierto." if exito_fps else "No se pudo abrir el overlay de FPS.",
+            self._log_dev(t("gaming_log_antes_fps"), comando_fps,
+                          t("gaming_fps_abierto") if exito_fps else t("gaming_fps_no_abierto"),
                           seccion=t("seccion_gaming"), exito=exito_fps)
 
             msg = (t("gaming_listo_con_fps", tamano=opt.format_bytes(liberado)) if exito_fps
@@ -3857,16 +3860,13 @@ class TechCleanApp(ctk.CTk):
 
     def _sugerir_modo_ligero(self):
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Sugerencia")
+        dialogo.title(t("ligero_titulo_ventana"))
         dialogo.geometry("420x220")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text="🪶 Modo Ligero",
+        ctk.CTkLabel(dialogo, text=t("ligero_titulo"),
                      font=ctk.CTkFont(size=15, weight="bold")).pack(pady=(20, 6))
         ctk.CTkLabel(dialogo,
-                     text="Tu equipo parece de gama modesta. TechClean Pro puede espaciar sus propias "
-                          "actualizaciones en pantalla (widget, Componentes, ícono de bandeja) para consumir "
-                          "menos mientras sigue vigilando igual — nada de funciones se pierde, solo se actualizan "
-                          "un poco menos seguido. ¿Lo activo?",
+                     text=t("ligero_texto"),
                      font=ctk.CTkFont(size=12), wraplength=380, justify="left").pack(padx=20, pady=(0, 16))
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=10)
@@ -3876,9 +3876,9 @@ class TechCleanApp(ctk.CTk):
             self.prefs["modo_ligero"] = True
             prefs.guardar({"modo_ligero": True})
 
-        ctk.CTkButton(fila, text="No, gracias", fg_color="gray40", command=dialogo.destroy).pack(
+        ctk.CTkButton(fila, text=t("ligero_no"), fg_color="gray40", command=dialogo.destroy).pack(
             side="left", padx=8)
-        ctk.CTkButton(fila, text="Sí, activarlo", command=activar).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("ligero_si"), command=activar).pack(side="left", padx=8)
 
     def _intervalo(self, base_ms):
         """Todos los temporizadores recurrentes de la app pasan por aquí:
@@ -3900,8 +3900,8 @@ class TechCleanApp(ctk.CTk):
                 if ahora - self._ultima_alerta_temp > 600:
                     self._ultima_alerta_temp = ahora
                     opt.notificar_windows(
-                        "TechClean Pro — Temperatura alta",
-                        f"La CPU está en {temp:.0f}°C (tu umbral es {umbral:.0f}°C).")
+                        t("alerta_temp_titulo"),
+                        t("alerta_temp_msg", temp=f"{temp:.0f}", umbral=f"{umbral:.0f}"))
         threading.Thread(target=worker, daemon=True).start()
 
     def _chequear_alerta_temperatura(self):
@@ -3957,14 +3957,15 @@ class TechCleanApp(ctk.CTk):
                 if not info["cargando"] and info["porcentaje"] <= umbral and not self._modo_ahorro_bateria_activo:
                     self._modo_ahorro_bateria_activo = True
                     exito, comando = opt.set_power_plan("silencioso")
-                    msg = f"Batería al {info['porcentaje']:.0f}% — se activó el plan Silencioso para ahorrar."
-                    self._log_dev("Ahorro de batería automático", comando, msg, seccion=t("seccion_automatico"), exito=exito)
-                    opt.notificar_windows("TechClean Pro — Batería baja", msg)
+                    msg = t("bateria_msg", pct=f"{info['porcentaje']:.0f}")
+                    self._log_dev(t("bateria_log_on"), comando, msg,
+                                  seccion=t("seccion_automatico"), exito=exito)
+                    opt.notificar_windows(t("bateria_titulo"), msg)
                 elif self._modo_ahorro_bateria_activo and (info["cargando"] or info["porcentaje"] > umbral + 10):
                     self._modo_ahorro_bateria_activo = False
                     exito, comando = opt.set_power_plan("equilibrado")
-                    self._log_dev("Ahorro de batería automático desactivado", comando,
-                                  "Se restauró el plan Equilibrado.", seccion=t("seccion_automatico"), exito=exito)
+                    self._log_dev(t("bateria_log_off"), comando,
+                                  t("bateria_restaurado"), seccion=t("seccion_automatico"), exito=exito)
             threading.Thread(target=worker, daemon=True).start()
         self.after(self._intervalo(30000), self._chequear_bateria_automatica)
 
@@ -4227,62 +4228,64 @@ class TechCleanApp(ctk.CTk):
         consola = consola if consola is not None else self.consola_comandos
         # El mismo motor de comandos alimenta el panel oculto del cliente Y
         # la Consola Dev del admin — se etiqueta el origen correcto en el Historial.
-        seccion_origen = "Consola Dev" if EDICION == "admin" else "Panel oculto"
+        seccion_origen = t("consola_seccion_dev") if EDICION == "admin" else t("consola_seccion_oculto")
 
         if comando in ("/help", "/ayuda", "ayuda", "help", "?"):
-            lineas = [f'{c}  —  {desc}' for c, desc in COMANDOS_DISPONIBLES.items()]
+            lineas = [f'{c}  —  {t(clave)}' for c, clave in COMANDOS_DISPONIBLES.items()]
             consola.imprimir("\n".join(lineas))
             return
 
         if comando == "/ram":
-            consola.imprimir("Liberando memoria RAM...")
+            consola.imprimir(t("consola_liberando_ram"))
 
             def worker():
                 liberado, afectados, _ = opt.trim_process_memory()
-                msg = f"Listo. RAM compactada en {afectados} procesos ({opt.format_bytes(liberado)} liberados)."
+                msg = t("consola_ram_ok", procesos=afectados, tamano=opt.format_bytes(liberado))
                 self.after(0, lambda: consola.imprimir(msg))
-                self._log_dev(f"Liberar RAM ({seccion_origen})", "N/A", msg, seccion=seccion_origen,
+                self._log_dev(t("consola_log_ram", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
             threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/temporales":
-            consola.imprimir("Limpiando archivos temporales...")
+            consola.imprimir(t("consola_limpiando_temp"))
 
             def worker():
                 liberado, borrados, _ = opt.clear_temp_files()
-                msg = f"Listo. {borrados} archivos eliminados ({opt.format_bytes(liberado)} liberados)."
+                msg = t("consola_temp_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
                 self.after(0, lambda: consola.imprimir(msg))
-                self._log_dev(f"Limpiar temporales ({seccion_origen})", "N/A", msg, seccion=seccion_origen,
+                self._log_dev(t("consola_log_temp", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
             threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/papelera":
             exito, _ = opt.empty_recycle_bin()
-            msg = "Papelera vaciada correctamente." if exito else "No se pudo vaciar la papelera."
+            msg = t("consola_papelera_ok") if exito else t("consola_papelera_error")
             consola.imprimir(msg)
-            self._log_dev(f"Vaciar papelera ({seccion_origen})", "N/A", msg, seccion=seccion_origen, exito=exito)
+            self._log_dev(t("consola_log_papelera", origen=seccion_origen), "N/A", msg,
+                          seccion=seccion_origen, exito=exito)
             return
 
         if comando == "/dns":
             exito, _ = opt.flush_dns()
-            msg = "Caché DNS limpiada." if exito else "No se pudo limpiar la caché DNS."
+            msg = t("consola_dns_ok") if exito else t("consola_dns_error")
             consola.imprimir(msg)
-            self._log_dev(f"Flush DNS ({seccion_origen})", "N/A", msg, seccion=seccion_origen, exito=exito)
+            self._log_dev(t("consola_log_dns", origen=seccion_origen), "N/A", msg,
+                          seccion=seccion_origen, exito=exito)
             return
 
         if comando == "/rapido":
-            consola.imprimir("Ejecutando optimización con un clic...")
+            consola.imprimir(t("consola_rapido"))
 
             def worker():
                 liberado_ram, procesos, _ = opt.trim_process_memory()
                 liberado_disco, archivos, _ = opt.clear_temp_files()
-                msg = (f"Listo. RAM compactada en {procesos} procesos "
-                       f"({opt.format_bytes(liberado_ram)}); {archivos} temporales eliminados "
-                       f"({opt.format_bytes(liberado_disco)}).")
+                msg = t("consola_rapido_ok", procesos=procesos,
+                        ram=opt.format_bytes(liberado_ram), archivos=archivos,
+                        disco=opt.format_bytes(liberado_disco))
                 self.after(0, lambda: consola.imprimir(msg))
-                self._log_dev(f"Optimización rápida ({seccion_origen})", "N/A", msg, seccion=seccion_origen,
+                self._log_dev(t("consola_log_rapido", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado_ram + liberado_disco,
                               archivos_afectados=procesos + archivos)
             threading.Thread(target=worker, daemon=True).start()
@@ -4303,27 +4306,29 @@ class TechCleanApp(ctk.CTk):
             "/salir": self.mostrar_dashboard,
         }
         if comando in navegacion:
-            consola.imprimir("Abriendo...")
+            consola.imprimir(t("consola_abriendo"))
             self.after(300, navegacion[comando])
             return
 
         if comando == "/widget":
             self._toggle_widget()
-            consola.imprimir("Widget flotante activado/mostrado." if self.performance_widget else
-                              "No se pudo activar el widget.")
+            consola.imprimir(t("consola_widget_ok") if self.performance_widget
+                             else t("consola_widget_error"))
             return
 
         if comando == "/auto":
             self._toggle_autopilot()
-            consola.imprimir("Modo Juego: " + ("activado." if self.autopilot.activo else "desactivado."))
+            consola.imprimir(t("consola_modo_juego",
+                                estado=t("consola_activado") if self.autopilot.activo
+                                else t("consola_desactivado")))
             return
 
         if comando == "/fps":
             exito, _ = opt.abrir_contador_fps_windows()
-            consola.imprimir("Abriendo Xbox Game Bar..." if exito else "No se pudo abrir Xbox Game Bar.")
+            consola.imprimir(t("consola_fps_ok") if exito else t("consola_fps_error"))
             return
 
-        consola.imprimir(f'Comando no reconocido: "{texto}". Escribe /help para ver la lista.')
+        consola.imprimir(t("consola_no_reconocido", comando=texto))
 
     # ---------------- BIOS / UEFI ----------------
     def mostrar_bios(self):
@@ -4618,16 +4623,13 @@ class TechCleanApp(ctk.CTk):
         sep_reporte_rendimiento = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
         sep_reporte_rendimiento.pack(fill="x", padx=20, pady=10)
 
-        ctk.CTkLabel(panel, text="📊 Reporte de rendimiento",
+        ctk.CTkLabel(panel, text=t("rend_titulo"),
                      font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=20, pady=(10, 4))
         ctk.CTkLabel(panel,
-                     text="Junta en un solo texto todo lo relacionado a qué tan rápido va tu equipo — CPU, RAM, "
-                          "disco, temperatura, arranques recientes, apps de inicio y servicios que más consumen "
-                          "— listo para copiar y compartir con quien te esté ayudando a diagnosticar algo, sin "
-                          "tener que ir pantalla por pantalla contándole uno por uno.",
+                     text=t("rend_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
             padx=20, pady=(0, 8), anchor="w")
-        ctk.CTkButton(panel, text="📋 Generar reporte de rendimiento",
+        ctk.CTkButton(panel, text=t("rend_btn_generar"),
                       command=self._accion_reporte_rendimiento, width=240).pack(anchor="w", padx=20, pady=(0, 20))
 
         sep_icono_bandeja = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
@@ -4732,7 +4734,9 @@ class TechCleanApp(ctk.CTk):
             with open(destino, "w", encoding="utf-8") as f:
                 json.dump(self.prefs, f, ensure_ascii=False, indent=2)
             self.lbl_resultado_config.configure(text=t("ajustes_exportar_exito", destino=destino))
-            self._log_dev("Exportar configuración", "N/A", f"Guardada en {destino}", seccion=t("seccion_ajustes"), exito=True)
+            self._log_dev(t("ajustes_log_exportar"), "N/A",
+                          t("ajustes_exportar_guardada", destino=destino),
+                          seccion=t("seccion_ajustes"), exito=True)
         except Exception as e:
             self.lbl_resultado_config.configure(text=t("ajustes_exportar_error", error=e))
 
@@ -4750,7 +4754,9 @@ class TechCleanApp(ctk.CTk):
             prefs.guardar(datos)
             self.prefs = prefs.cargar()
             self.lbl_resultado_config.configure(text=t("ajustes_importar_exito"))
-            self._log_dev("Importar configuración", "N/A", f"Importada desde {origen}", seccion=t("seccion_ajustes"), exito=True)
+            self._log_dev(t("ajustes_log_importar"), "N/A",
+                          t("ajustes_importar_desde", origen=origen),
+                          seccion=t("seccion_ajustes"), exito=True)
         except Exception as e:
             self.lbl_resultado_config.configure(text=t("ajustes_importar_error", error=e))
 
@@ -4769,8 +4775,8 @@ class TechCleanApp(ctk.CTk):
             prefs.restablecer()
             self.prefs = prefs.cargar()
             self.lbl_resultado_config.configure(text=t("ajustes_restablecer_exito"))
-            self._log_dev("Restablecer configuración", "N/A",
-                          "Preferencias restablecidas a valores de fábrica", seccion=t("seccion_ajustes"), exito=True)
+            self._log_dev(t("ajustes_log_restablecer"), "N/A",
+                          t("ajustes_restablecida"), seccion=t("seccion_ajustes"), exito=True)
 
         ctk.CTkButton(fila, text=t("ajustes_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(
             side="left", padx=8)
@@ -4846,13 +4852,13 @@ class TechCleanApp(ctk.CTk):
 
     def _mostrar_aviso_actualizacion(self, resultado):
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Actualización disponible")
+        dialogo.title(t("upd_titulo_ventana"))
         dialogo.geometry("420x260")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text=f'🎉 TechClean Pro {resultado["version"]} ya está disponible',
+        ctk.CTkLabel(dialogo, text=t("upd_disponible", version=resultado["version"]),
                      font=ctk.CTkFont(size=15, weight="bold"), wraplength=380, justify="left").pack(
             padx=20, pady=(20, 6))
-        ctk.CTkLabel(dialogo, text=f'Tienes instalada la versión {APP_VERSION}.',
+        ctk.CTkLabel(dialogo, text=t("upd_instalada", version=APP_VERSION),
                      font=ctk.CTkFont(size=12), text_color="gray60").pack(padx=20, anchor="w")
         if resultado["notas"]:
             caja = ctk.CTkTextbox(dialogo, height=80, font=ctk.CTkFont(size=11))
@@ -4861,9 +4867,11 @@ class TechCleanApp(ctk.CTk):
             caja.configure(state="disabled")
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(side="bottom", pady=16)
-        ctk.CTkButton(fila, text="Ahora no", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=6)
-        ctk.CTkButton(fila, text="Abrir página de descarga",
-                      command=lambda: webbrowser.open(resultado["url"])).pack(side="left", padx=6)
+        ctk.CTkButton(fila, text=t("upd_ahora_no"), fg_color="gray40",
+                      command=dialogo.destroy).pack(side="left", padx=6)
+        ctk.CTkButton(fila, text=t("upd_descargar"),
+                      command=lambda u=resultado["url"]: threading.Thread(
+                          target=lambda: webbrowser.open(u), daemon=True).start()).pack(side="left", padx=6)
 
     def _preguntar_idioma_primera_vez(self):
         """
@@ -4905,27 +4913,29 @@ class TechCleanApp(ctk.CTk):
         codigo = next((c for c, nombre in idiomas.IDIOMAS_DISPONIBLES.items() if nombre == valor_mostrado), "es")
         self.prefs["idioma"] = codigo
         prefs.guardar({"idioma": codigo})
-        self._log_dev("Cambiar idioma", "N/A", f"Idioma guardado: {valor_mostrado} (se aplica al reiniciar)",
+        self._log_dev(t("ajustes_log_idioma"), "N/A",
+                      t("ajustes_idioma_guardado", idioma=valor_mostrado),
                       seccion=t("seccion_ajustes"), exito=True)
 
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Reiniciar para aplicar")
+        dialogo.title(t("ajustes_reiniciar_titulo"))
         dialogo.geometry("420x180")
         dialogo.grab_set()
         ctk.CTkLabel(dialogo, text=t("ajustes_idioma_reiniciar_aviso"),
                      font=ctk.CTkFont(size=13), wraplength=380, justify="center").pack(padx=20, pady=20)
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=10)
-        ctk.CTkButton(fila, text="Más tarde", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
-        ctk.CTkButton(fila, text="Cerrar ahora", fg_color=COLOR_CRIT, hover_color="#c0392b",
+        ctk.CTkButton(fila, text=t("ajustes_mas_tarde"), fg_color="gray40",
+                      command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("ajustes_cerrar_ahora"), fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=self._salir_definitivo).pack(side="left", padx=8)
 
     def _toggle_modo_ligero(self):
         activo = bool(self.switch_modo_ligero.get())
         self.prefs["modo_ligero"] = activo
         prefs.guardar({"modo_ligero": activo})
-        self._log_dev("Modo Ligero " + ("activado" if activo else "desactivado"), "N/A",
-                      "Se aplica en el próximo refresco de cada temporizador (unos segundos).",
+        self._log_dev(t("ajustes_log_modo_ligero_on") if activo else t("ajustes_log_modo_ligero_off"),
+                      "N/A", t("ajustes_modo_ligero_aplica"),
                       seccion=t("seccion_ajustes"), exito=True)
 
     def _guardar_umbral_ram(self, valor):
@@ -4935,8 +4945,9 @@ class TechCleanApp(ctk.CTk):
         # tener que reiniciar la app — es un atributo simple, no hace
         # falta recrear el objeto entero.
         self.autopilot.umbral_ram = valor
-        self._log_dev("Umbral de liberación automática de RAM", "N/A",
-                      f"Ahora se libera RAM sola al llegar a {valor}%.", seccion=t("seccion_ajustes"), exito=True)
+        self._log_dev(t("ajustes_log_umbral_ram"), "N/A",
+                      t("ajustes_umbral_ram_msg", valor=valor),
+                      seccion=t("seccion_ajustes"), exito=True)
 
     def _guardar_umbral_salud(self, tipo, valor):
         clave = "umbral_salud_ram" if tipo == "ram" else "umbral_salud_disco"
@@ -4945,8 +4956,9 @@ class TechCleanApp(ctk.CTk):
         # No hace falta tocar nada en vivo: _calcular_salud_sistema lee
         # self.prefs cada vez que corre, así que el próximo refresco de
         # Inicio ya usa el valor nuevo solo.
-        self._log_dev(f"Umbral de salud ({tipo})", "N/A",
-                      f"Ahora avisa desde {valor}%.", seccion=t("seccion_ajustes"), exito=True)
+        self._log_dev(t("ajustes_log_umbral_salud", tipo=tipo), "N/A",
+                      t("ajustes_umbral_salud_msg", valor=valor),
+                      seccion=t("seccion_ajustes"), exito=True)
 
     def _accion_probar_error(self):
         """Provoca un error A PROPÓSITO (dividir por cero) para que se vea
@@ -4963,7 +4975,7 @@ class TechCleanApp(ctk.CTk):
         report_callback_exception), así que es una prueba genuinamente
         distinta, no la misma repetida."""
         def worker():
-            raise RuntimeError("Error de prueba generado a propósito desde un hilo de fondo")
+            raise RuntimeError(t("ajustes_error_prueba_hilo"))
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_diagnostico_completo(self):
@@ -4983,25 +4995,25 @@ class TechCleanApp(ctk.CTk):
         en segundo plano.
         """
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Diagnóstico completo")
+        dialogo.title(t("diag_titulo_ventana"))
         dialogo.geometry("640x480")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text="🔬 Diagnóstico completo",
+        ctk.CTkLabel(dialogo, text=t("diag_titulo"),
                      font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 4))
-        lbl_estado = ctk.CTkLabel(dialogo, text="Ejecutando... puede tardar 1-3 minutos (algunas de estas "
-                                                   "consultas son pesadas). No cierres esta ventana.",
+        lbl_estado = ctk.CTkLabel(dialogo, text=t("diag_ejecutando"),
                                     font=ctk.CTkFont(size=11), text_color="gray60", wraplength=560,
                                     justify="center")
         lbl_estado.pack(padx=20, pady=(0, 10))
         caja = ctk.CTkTextbox(dialogo, font=ctk.CTkFont(family="Consolas", size=10))
         caja.pack(fill="both", expand=True, padx=20, pady=(0, 12))
-        caja.insert("1.0", "Iniciando...\n")
+        caja.insert("1.0", t("diag_iniciando") + "\n")
         caja.configure(state="disabled")
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=(0, 16))
-        btn_copiar = ctk.CTkButton(fila, text="📋 Copiar todo", state="disabled")
+        btn_copiar = ctk.CTkButton(fila, text=t("comun_copiar_todo"), state="disabled")
         btn_copiar.pack(side="left", padx=6)
-        ctk.CTkButton(fila, text="Cerrar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=6)
+        ctk.CTkButton(fila, text=t("comun_cerrar"), fg_color="gray40",
+                      command=dialogo.destroy).pack(side="left", padx=6)
 
         def _actualizar_caja(texto):
             if not dialogo.winfo_exists():
@@ -5017,58 +5029,58 @@ class TechCleanApp(ctk.CTk):
                 return
             _actualizar_caja(texto_final)
             lbl_estado.configure(
-                text=f"Listo — {exitos} de {exitos + fallos} funciones OK, {fallos} con error.",
+                text=t("diag_listo", exitos=exitos, total=exitos + fallos, fallos=fallos),
                 text_color=(COLOR_OK if fallos == 0 else COLOR_CRIT))
             btn_copiar.configure(state="normal", command=lambda: self._copiar_al_portapapeles(texto_final))
 
         def worker():
             pruebas = [
-                ("CPU (detalle)", lambda: sysmon.get_cpu_details()),
-                ("GPU", lambda: sysmon.get_gpu_info()),
-                ("Módulos de RAM", lambda: sysmon.get_ram_sticks()),
-                ("Memoria virtual", lambda: sysmon.get_memoria_virtual()),
-                ("Particiones de disco", lambda: sysmon.get_disk_partitions()),
-                ("Velocidad de disco", lambda: sysmon.get_disk_io_speed()),
-                ("Velocidad de red", lambda: sysmon.get_network_speed()),
-                ("Batería", lambda: sysmon.get_battery_info()),
-                ("Tiempo encendido", lambda: sysmon.get_uptime_seconds()),
-                ("Conteo de procesos", lambda: sysmon.get_process_count()),
-                ("Info del sistema", lambda: sysmon.get_system_info()),
-                ("Equipo modesto (heurística)", lambda: sysmon.es_equipo_modesto()),
-                ("Drivers instalados", lambda: sysmon.listar_drivers()),
-                ("Permisos de administrador", lambda: opt.is_admin()),
-                ("Limpieza programada activa", lambda: opt.limpieza_programada_activa()),
-                ("Espacio recuperable (estimado)", lambda: opt.estimate_reclaimable_space()),
-                ("Fabricante/soporte del equipo", lambda: opt.obtener_fabricante_soporte()),
-                ("Plan de energía activo", lambda: opt.get_active_power_plan_name()),
-                ("Carpetas pesadas", lambda: opt.listar_carpetas_pesadas("C:\\")),
-                ("Archivos grandes", lambda: opt.listar_archivos_grandes("C:\\")),
-                ("Instaladores viejos", lambda: opt.listar_instaladores_viejos()),
-                ("Caché de apps comunes", lambda: opt.listar_cache_apps_comunes()),
-                ("Estado de Windows Defender", lambda: opt.obtener_estado_defender()),
-                ("Estado de BitLocker", lambda: opt.obtener_estado_bitlocker()),
-                ("Estado de Windows Hello", lambda: opt.obtener_estado_windows_hello()),
-                ("Permisos de privacidad (cámara)", lambda: opt.listar_permisos_privacidad("webcam")),
-                ("Reglas de firewall bloqueadas", lambda: opt.listar_reglas_firewall_bloqueadas()),
-                ("Adaptadores de red", lambda: opt.listar_adaptadores_red()),
-                ("Programas instalados", lambda: opt.listar_programas_instalados()),
-                ("Servicios de Windows", lambda: opt.listar_servicios_windows()),
-                ("Disponibilidad de winget", lambda: opt.winget_disponible()),
-                ("Tareas programadas de terceros", lambda: opt.listar_tareas_programadas_terceros()),
-                ("Biblioteca de juegos", lambda: opt.listar_juegos_instalados()),
-                ("Dispositivos de audio", lambda: opt.listar_dispositivos_audio()),
-                ("Procesos por uso de RAM", lambda: opt.listar_procesos_por_ram()),
-                ("Procesos por uso de CPU", lambda: opt.listar_procesos_por_cpu()),
-                ("Estado de indexación de búsqueda", lambda: opt.obtener_estado_indexacion()),
-                ("Inicio automático (registro)", lambda: opt.is_startup_enabled()),
-                ("Apps de inicio con Windows", lambda: opt.listar_apps_inicio()),
-                ("Navegadores instalados", lambda: priv.detect_installed_browsers()),
+                (t("diagp_cpu_detalle"), lambda: sysmon.get_cpu_details()),
+                (t("diagp_gpu"), lambda: sysmon.get_gpu_info()),
+                (t("diagp_ram_modulos"), lambda: sysmon.get_ram_sticks()),
+                (t("diagp_memoria_virtual"), lambda: sysmon.get_memoria_virtual()),
+                (t("diagp_particiones"), lambda: sysmon.get_disk_partitions()),
+                (t("diagp_vel_disco"), lambda: sysmon.get_disk_io_speed()),
+                (t("diagp_vel_red"), lambda: sysmon.get_network_speed()),
+                (t("diagp_bateria"), lambda: sysmon.get_battery_info()),
+                (t("diagp_uptime"), lambda: sysmon.get_uptime_seconds()),
+                (t("diagp_procesos_conteo"), lambda: sysmon.get_process_count()),
+                (t("diagp_info_sistema"), lambda: sysmon.get_system_info()),
+                (t("diagp_equipo_modesto"), lambda: sysmon.es_equipo_modesto()),
+                (t("diagp_drivers"), lambda: sysmon.listar_drivers()),
+                (t("diagp_admin"), lambda: opt.is_admin()),
+                (t("diagp_limpieza_prog"), lambda: opt.limpieza_programada_activa()),
+                (t("diagp_espacio_recuperable"), lambda: opt.estimate_reclaimable_space()),
+                (t("diagp_fabricante"), lambda: opt.obtener_fabricante_soporte()),
+                (t("diagp_plan_energia"), lambda: opt.get_active_power_plan_name()),
+                (t("diagp_carpetas_pesadas"), lambda: opt.listar_carpetas_pesadas("C:\\")),
+                (t("diagp_archivos_grandes"), lambda: opt.listar_archivos_grandes("C:\\")),
+                (t("diagp_instaladores"), lambda: opt.listar_instaladores_viejos()),
+                (t("diagp_cache_apps"), lambda: opt.listar_cache_apps_comunes()),
+                (t("diagp_defender"), lambda: opt.obtener_estado_defender()),
+                (t("diagp_bitlocker"), lambda: opt.obtener_estado_bitlocker()),
+                (t("diagp_hello"), lambda: opt.obtener_estado_windows_hello()),
+                (t("diagp_permisos_camara"), lambda: opt.listar_permisos_privacidad("webcam")),
+                (t("diagp_firewall"), lambda: opt.listar_reglas_firewall_bloqueadas()),
+                (t("diagp_adaptadores"), lambda: opt.listar_adaptadores_red()),
+                (t("diagp_programas"), lambda: opt.listar_programas_instalados()),
+                (t("diagp_servicios"), lambda: opt.listar_servicios_windows()),
+                (t("diagp_winget"), lambda: opt.winget_disponible()),
+                (t("diagp_tareas"), lambda: opt.listar_tareas_programadas_terceros()),
+                (t("diagp_juegos"), lambda: opt.listar_juegos_instalados()),
+                (t("diagp_audio"), lambda: opt.listar_dispositivos_audio()),
+                (t("diagp_proc_ram"), lambda: opt.listar_procesos_por_ram()),
+                (t("diagp_proc_cpu"), lambda: opt.listar_procesos_por_cpu()),
+                (t("diagp_indexacion"), lambda: opt.obtener_estado_indexacion()),
+                (t("diagp_inicio_registro"), lambda: opt.is_startup_enabled()),
+                (t("diagp_apps_inicio"), lambda: opt.listar_apps_inicio()),
+                (t("diagp_navegadores"), lambda: priv.detect_installed_browsers()),
             ]
 
             lineas = [
-                "=== Diagnóstico completo — TechClean Pro ===",
-                f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                f"Versión: {APP_VERSION}  ·  Edición: {EDICION}",
+                t("diag_encabezado"),
+                t("diag_fecha", fecha=datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+                t("diag_version", version=APP_VERSION, edicion=EDICION),
                 "",
             ]
             exitos, fallos = 0, 0
@@ -5078,20 +5090,23 @@ class TechCleanApp(ctk.CTk):
                     resultado = fn()
                     duracion = time.time() - inicio
                     if isinstance(resultado, list):
-                        detalle = f"OK, {len(resultado)} elemento(s)"
+                        detalle = t("diag_ok_elementos", cantidad=len(resultado))
                     elif resultado is None:
-                        detalle = "OK (sin dato disponible en este equipo)"
+                        detalle = t("diag_ok_sin_dato")
                     else:
-                        detalle = "OK"
-                    lineas.append(f"✅ {etiqueta} — {detalle} ({duracion:.2f}s)")
+                        detalle = t("diag_ok")
+                    lineas.append(t("diag_linea_ok", etiqueta=etiqueta, detalle=detalle,
+                                    duracion=f"{duracion:.2f}"))
                     exitos += 1
                 except Exception as e:
                     duracion = time.time() - inicio
-                    lineas.append(f"❌ {etiqueta} — ERROR: {type(e).__name__}: {e} ({duracion:.2f}s)")
+                    lineas.append(t("diag_linea_error", etiqueta=etiqueta,
+                                    tipo=type(e).__name__, error=e,
+                                    duracion=f"{duracion:.2f}"))
                     fallos += 1
                 self.after(0, lambda texto="\n".join(lineas): _actualizar_caja(texto))
 
-            lineas += ["", f"Resumen: {exitos} de {exitos + fallos} funciones OK, {fallos} con error."]
+            lineas += ["", t("diag_resumen", exitos=exitos, total=exitos + fallos, fallos=fallos)]
             texto_final = "\n".join(lineas)
 
             try:
@@ -5101,7 +5116,8 @@ class TechCleanApp(ctk.CTk):
             except Exception:
                 pass
 
-            self._log_dev("Diagnóstico completo", "N/A", f"{exitos} OK, {fallos} con error.",
+            self._log_dev(t("diag_titulo_ventana"), "N/A",
+                          t("diag_log_resultado", exitos=exitos, fallos=fallos),
                           seccion=t("seccion_sistema"), exito=(fallos == 0))
             self.after(0, lambda: _finalizar(texto_final, exitos, fallos))
 
@@ -5116,12 +5132,12 @@ class TechCleanApp(ctk.CTk):
         rendimiento).
         """
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Reporte de rendimiento")
+        dialogo.title(t("rend_titulo_ventana"))
         dialogo.geometry("640x480")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text="📊 Reporte de rendimiento",
+        ctk.CTkLabel(dialogo, text=t("rend_titulo"),
                      font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 4))
-        lbl_estado = ctk.CTkLabel(dialogo, text="Reuniendo datos...", font=ctk.CTkFont(size=11),
+        lbl_estado = ctk.CTkLabel(dialogo, text=t("rend_reuniendo"), font=ctk.CTkFont(size=11),
                                     text_color="gray60")
         lbl_estado.pack(pady=(0, 10))
         caja = ctk.CTkTextbox(dialogo, font=ctk.CTkFont(family="Consolas", size=10))
@@ -5129,9 +5145,10 @@ class TechCleanApp(ctk.CTk):
         caja.configure(state="disabled")
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=(0, 16))
-        btn_copiar = ctk.CTkButton(fila, text="📋 Copiar todo", state="disabled")
+        btn_copiar = ctk.CTkButton(fila, text=t("comun_copiar_todo"), state="disabled")
         btn_copiar.pack(side="left", padx=6)
-        ctk.CTkButton(fila, text="Cerrar", fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=6)
+        ctk.CTkButton(fila, text=t("comun_cerrar"), fg_color="gray40",
+                      command=dialogo.destroy).pack(side="left", padx=6)
 
         def worker():
             cpu = sysmon.get_cpu_details(incluir_temperatura=True)
@@ -5154,43 +5171,50 @@ class TechCleanApp(ctk.CTk):
                 arranques = []
 
             lineas = [
-                "=== Reporte de rendimiento — TechClean Pro ===",
-                f"Fecha: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                f"Versión: {APP_VERSION}",
+                t("rend_encabezado"),
+                t("diag_fecha", fecha=datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
+                t("rend_version", version=APP_VERSION),
                 "",
-                "--- CPU ---",
-                f"Uso total: {cpu.get('porcentaje_total')}%",
-                f"Núcleos: {cpu.get('nucleos_fisicos')} físicos / {cpu.get('nucleos_logicos')} lógicos",
-                f"Frecuencia: {cpu.get('frecuencia_actual_mhz')} MHz (máx {cpu.get('frecuencia_max_mhz')} MHz)",
-                f"Temperatura: {cpu.get('temperatura_c')}°C" if cpu.get("temperatura_c") is not None
-                else "Temperatura: no disponible en este equipo",
+                t("rend_sec_cpu"),
+                t("rend_uso_total", pct=cpu.get("porcentaje_total")),
+                t("rend_nucleos", fisicos=cpu.get("nucleos_fisicos"),
+                  logicos=cpu.get("nucleos_logicos")),
+                t("rend_frecuencia", actual=cpu.get("frecuencia_actual_mhz"),
+                  maxima=cpu.get("frecuencia_max_mhz")),
+                (t("rend_temperatura", temp=cpu.get("temperatura_c"))
+                 if cpu.get("temperatura_c") is not None else t("rend_temp_nd")),
                 "",
-                "--- RAM ---",
-                f"Uso: {ram.get('porcentaje')}% ({ram.get('usado_gb')} / {ram.get('total_gb')} GB)",
-                f"Canal: {canal['modo']} (estimado)" if canal else "Canal: no se pudo estimar",
+                t("rend_sec_ram"),
+                t("rend_uso", pct=ram.get("porcentaje"), usado=ram.get("usado_gb"),
+                  total=ram.get("total_gb")),
+                (t("rend_canal", modo=canal["modo"]) if canal else t("rend_canal_nd")),
                 "",
-                "--- Disco ---",
-                f"Uso: {disco.get('porcentaje')}% ({disco.get('usado_gb')} / {disco.get('total_gb')} GB)",
+                t("rend_sec_disco"),
+                t("rend_uso", pct=disco.get("porcentaje"), usado=disco.get("usado_gb"),
+                  total=disco.get("total_gb")),
                 "",
-                "--- GPU ---",
-                f"{gpu.get('nombre', 'N/D')}",
+                t("rend_sec_gpu"),
+                f"{gpu.get('nombre', t('comp_nd'))}",
                 "",
-                f"--- Apps activas al iniciar Windows: {apps_activas if apps_activas is not None else 'N/D'} ---",
+                t("rend_apps_inicio",
+                  cantidad=apps_activas if apps_activas is not None else t("comp_nd")),
                 "",
-                "--- Servicios que más RAM consumen ---",
+                t("rend_sec_servicios"),
             ]
             if servicios_top:
                 for s in servicios_top[:5]:
-                    lineas.append(f"  {', '.join(s['servicios'][:3])}: {opt.format_bytes(s['bytes_ram'])}")
+                    lineas.append(t("rend_servicio", nombres=", ".join(s["servicios"][:3]),
+                                    tamano=opt.format_bytes(s["bytes_ram"])))
             else:
-                lineas.append("  (no se pudo leer)")
+                lineas.append(t("rend_servicios_nd"))
             lineas.append("")
-            lineas.append("--- Últimos arranques ---")
+            lineas.append(t("rend_sec_arranques"))
             if arranques:
                 for a in arranques[:5]:
-                    lineas.append(f"  {a['fecha']}: {a['segundos']:.0f} s")
+                    lineas.append(t("rend_arranque", fecha=a["fecha"],
+                                    segundos=f"{a['segundos']:.0f}"))
             else:
-                lineas.append("  (no registrado en este equipo)")
+                lineas.append(t("rend_arranques_nd"))
 
             texto_final = "\n".join(lineas)
 
@@ -5218,7 +5242,8 @@ class TechCleanApp(ctk.CTk):
         try:
             os.startfile(prefs.carpeta_datos())
         except Exception as e:
-            self._mostrar_popup_info("No se pudo abrir", f"No se pudo abrir la carpeta: {e}")
+            self._mostrar_popup_info(t("ajustes_no_abrir_titulo"),
+                                     t("ajustes_no_abrir_carpeta", error=e))
 
     def _guardar_icono_bandeja(self, valor):
         self.prefs["icono_bandeja_metrica"] = valor
@@ -5248,7 +5273,8 @@ class TechCleanApp(ctk.CTk):
         exito, comando = opt.set_startup(habilitar)
         resultado = (t("ajustes_inicio_agregado") if habilitar else t("ajustes_inicio_quitado")) \
             if exito else t("ajustes_inicio_error")
-        self._log_dev("Inicio automático", comando, resultado, seccion=t("seccion_ajustes"), exito=exito)
+        self._log_dev(t("ajustes_log_inicio_auto"), comando, resultado,
+                      seccion=t("seccion_ajustes"), exito=exito)
         if not exito:
             if habilitar:
                 self.switch_inicio.deselect()
@@ -5284,12 +5310,9 @@ class TechCleanApp(ctk.CTk):
         self._construir_sidebar()
 
         if nuevo_estado:
-            titulo, mensaje = "🔓 Panel oculto desbloqueado", (
-                "Apareció \"Panel oculto\" en el menú: puedes escribir comandos ahí "
-                "para ejecutar funciones de la app (escribe /help para ver la lista).")
+            titulo, mensaje = t("oculto_desbloqueado_titulo"), t("oculto_desbloqueado_msg")
         else:
-            titulo, mensaje = "Panel oculto ocultado de nuevo", (
-                "Ya no aparece en el menú. Vuelve a hacer 7 clics aquí para mostrarlo otra vez.")
+            titulo, mensaje = t("oculto_ocultado_titulo"), t("oculto_ocultado_msg")
             self.mostrar_dashboard()
         self._mostrar_popup_info(titulo, mensaje)
 
@@ -5307,9 +5330,9 @@ class TechCleanApp(ctk.CTk):
         dialogo.geometry("360x180")
         dialogo.grab_set()
         ctk.CTkLabel(dialogo, text="🪿 HONK!", font=ctk.CTkFont(size=32, weight="bold")).pack(pady=(24, 6))
-        ctk.CTkLabel(dialogo, text="Encontraste el secreto del ganso.\nAhora vuelve a optimizar tu PC.",
+        ctk.CTkLabel(dialogo, text=t("huevo_texto"),
                      font=ctk.CTkFont(size=12), justify="center").pack(pady=6)
-        ctk.CTkButton(dialogo, text="Ok, ok", command=dialogo.destroy).pack(pady=10)
+        ctk.CTkButton(dialogo, text=t("huevo_ok"), command=dialogo.destroy).pack(pady=10)
 
 
 if __name__ == "__main__":
