@@ -3059,7 +3059,7 @@ class TechCleanApp(ctk.CTk):
             elif not titulos:
                 msg = "Tu Windows está al día — no hay actualizaciones pendientes."
             else:
-                lista = "\n".join(f"• {t}" for t in titulos[:10])
+                lista = "\n".join(f"• {titulo}" for titulo in titulos[:10])
                 extra = f"\n(y {len(titulos) - 10} más)" if len(titulos) > 10 else ""
                 msg = f"{len(titulos)} actualización(es) pendiente(s):\n{lista}{extra}\n\nInstálalas desde Configuración > Windows Update."
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
@@ -3069,15 +3069,16 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Aplicaciones: inicio de Windows + desinstalador ----------------
     def mostrar_aplicaciones(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Aplicaciones",
+        ctk.CTkLabel(self.contenido, text=t("apps_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         self.pestana_apps = ctk.CTkSegmentedButton(
-            self.contenido, values=["Inicio de Windows", "Desinstalar programas", "Servicios",
-                                     "Actualizar apps", "Tareas programadas"],
+            self.contenido,
+            values=[t("apps_tab_inicio"), t("apps_tab_desinstalar"), t("apps_tab_servicios"),
+                    t("apps_tab_actualizar"), t("apps_tab_tareas")],
             command=self._cambiar_pestana_apps)
-        self.pestana_apps.set("Inicio de Windows")
+        self.pestana_apps.set(t("apps_tab_inicio"))
         self.pestana_apps.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         self.contenido.grid_rowconfigure(2, weight=1)
@@ -3089,16 +3090,19 @@ class TechCleanApp(ctk.CTk):
         self._mostrar_inicio_windows()
 
     def _cambiar_pestana_apps(self, valor):
-        if valor == "Inicio de Windows":
-            self._mostrar_inicio_windows()
-        elif valor == "Desinstalar programas":
+        """El texto de la pestaña está traducido: se resuelve contra las
+        mismas claves con las que se construyó, y el `else` cae en Inicio de
+        Windows, que es la pestaña por defecto."""
+        if valor == t("apps_tab_desinstalar"):
             self._mostrar_desinstalador()
-        elif valor == "Servicios":
+        elif valor == t("apps_tab_servicios"):
             self._mostrar_servicios()
-        elif valor == "Actualizar apps":
+        elif valor == t("apps_tab_actualizar"):
             self._mostrar_actualizar_apps()
-        else:
+        elif valor == t("apps_tab_tareas"):
             self._mostrar_tareas_programadas()
+        else:
+            self._mostrar_inicio_windows()
 
     def _limpiar_contenedor_apps(self):
         for w in self.contenedor_apps.winfo_children():
@@ -3107,26 +3111,40 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_inicio_windows(self):
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Apps que se abren automáticamente al encender el equipo (solo tu usuario). "
-                          "Desactivar una NO la desinstala — solo deja de abrirse sola.",
+                     text=t("apps_inicio_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         lista = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         lista.pack(fill="both", expand=True)
+        ctk.CTkLabel(lista, text=t("apps_cargando_inicio"), text_color="gray60").pack(padx=16, pady=16)
+        self.lista_inicio_frame = lista
 
-        apps = opt.listar_apps_inicio()
+        # BUG corregido: opt.listar_apps_inicio() lee el registro con winreg y
+        # se llamaba aqui mismo, en el hilo principal de Tkinter — justo lo que
+        # la regla de threading del CONTEXTO prohibe. Con muchas entradas la
+        # ventana se quedaba congelada al abrir la pestana. Ahora va en un hilo.
+        def worker():
+            apps = opt.listar_apps_inicio()
+            self.after(0, lambda: self._pintar_apps_inicio(apps))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_apps_inicio(self, apps):
+        if not (hasattr(self, "lista_inicio_frame") and self.lista_inicio_frame.winfo_exists()):
+            return
+        for w in self.lista_inicio_frame.winfo_children():
+            w.destroy()
         if not apps:
-            ctk.CTkLabel(lista, text="No se encontraron apps configuradas para iniciar con Windows.",
+            ctk.CTkLabel(self.lista_inicio_frame, text=t("apps_sin_inicio"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
 
         for app in apps:
-            fila = ctk.CTkFrame(lista, fg_color="#141720", corner_radius=10)
+            fila = ctk.CTkFrame(self.lista_inicio_frame, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=5)
             ctk.CTkLabel(fila, text=app["nombre"], font=ctk.CTkFont(size=13, weight="bold"),
                          anchor="w").pack(side="left", padx=12, pady=10)
-            switch = ctk.CTkSwitch(fila, text="Activo" if app["activo"] else "Inactivo",
+            switch = ctk.CTkSwitch(fila, text=t("apps_activo") if app["activo"] else t("apps_inactivo"),
                                     command=lambda a=app: self._toggle_app_inicio(a))
             if app["activo"]:
                 switch.select()
@@ -3135,23 +3153,24 @@ class TechCleanApp(ctk.CTk):
     def _toggle_app_inicio(self, app):
         activar = not app["activo"]
         exito = opt.set_app_inicio_activa(app["nombre"], app["comando"], activar)
-        msg = (f'"{app["nombre"]}" {"activado" if activar else "desactivado"} en el inicio de Windows.'
-               if exito else f'No se pudo cambiar "{app["nombre"]}".')
-        self._log_dev(f'{"Activar" if activar else "Desactivar"} app de inicio', "N/A", msg,
+        msg = (t("apps_inicio_cambiado", nombre=app["nombre"],
+                 estado=t("apps_activado") if activar else t("apps_desactivado"))
+               if exito else t("apps_inicio_error", nombre=app["nombre"]))
+        self._log_dev(t("apps_log_activar_inicio") if activar else t("apps_log_desactivar_inicio"),
+                      "N/A", msg,
                       seccion=t("seccion_aplicaciones"), exito=exito)
         self._mostrar_inicio_windows()
 
     def _mostrar_desinstalador(self):
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Programas instalados en este equipo. Al desinstalar se abre el desinstalador oficial "
-                          "de cada programa — sigue sus pasos para completar el proceso.",
+                     text=t("apps_desinst_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         lista = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         lista.pack(fill="both", expand=True)
-        ctk.CTkLabel(lista, text="Cargando lista de programas...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(lista, text=t("apps_cargando_programas"), text_color="gray60").pack(padx=16, pady=16)
 
         def worker():
             programas = opt.listar_programas_instalados()
@@ -3163,12 +3182,11 @@ class TechCleanApp(ctk.CTk):
         # mientras cargaba en segundo plano, no tocar widgets destruidos.
         if not (hasattr(self, "pestana_apps") and self.pestana_apps.winfo_exists()):
             return
-        if self.pestana_apps.get() != "Desinstalar programas":
+        if self.pestana_apps.get() != t("apps_tab_desinstalar"):
             return
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Programas instalados en este equipo. Al desinstalar se abre el desinstalador oficial "
-                          "de cada programa — sigue sus pasos para completar el proceso.",
+                     text=t("apps_desinst_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
@@ -3176,16 +3194,17 @@ class TechCleanApp(ctk.CTk):
         lista.pack(fill="both", expand=True)
 
         if not programas:
-            ctk.CTkLabel(lista, text="No se pudo leer la lista de programas instalados.",
+            ctk.CTkLabel(lista, text=t("apps_sin_programas"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
 
         for prog in programas:
             fila = ctk.CTkFrame(lista, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=5)
-            info = f'{prog["nombre"]}  ·  {prog["editor"]}  ·  v{prog["version"]}'
+            info = t("apps_prog_info", nombre=prog["nombre"], editor=prog["editor"],
+                     version=prog["version"])
             if prog["tamano_mb"]:
-                info += f'  ·  {prog["tamano_mb"]} MB'
+                info += t("apps_prog_tamano", mb=prog["tamano_mb"])
             ctk.CTkLabel(fila, text=info, font=ctk.CTkFont(size=12), anchor="w", wraplength=650,
                          justify="left").pack(side="left", padx=12, pady=10, fill="x", expand=True)
             ctk.CTkButton(fila, text="Desinstalar", fg_color=COLOR_CRIT, hover_color="#c0392b", width=110,
@@ -3193,10 +3212,10 @@ class TechCleanApp(ctk.CTk):
 
     def _confirmar_desinstalar(self, programa):
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Confirmar desinstalación")
+        dialogo.title(t("apps_conf_desinst_titulo"))
         dialogo.geometry("440x180")
         dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text=f'¿Abrir el desinstalador de "{programa["nombre"]}"?',
+        ctk.CTkLabel(dialogo, text=t("apps_conf_desinst_msg", nombre=programa["nombre"]),
                      font=ctk.CTkFont(size=13), wraplength=380, justify="center").pack(pady=20)
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=10)
@@ -3204,40 +3223,36 @@ class TechCleanApp(ctk.CTk):
         def confirmar():
             dialogo.destroy()
             exito, comando = opt.desinstalar_programa(programa["desinstalar_cmd"])
-            msg = (f'Se abrió el desinstalador de "{programa["nombre"]}". Sigue sus pasos en pantalla.'
-                   if exito else f'No se pudo iniciar la desinstalación de "{programa["nombre"]}".')
-            self._log_dev(f'Desinstalar "{programa["nombre"]}"', comando, msg,
+            msg = (t("apps_desinst_ok", nombre=programa["nombre"]) if exito
+                   else t("apps_desinst_error", nombre=programa["nombre"]))
+            self._log_dev(t("apps_log_desinstalar", nombre=programa["nombre"]), comando, msg,
                           seccion=t("seccion_aplicaciones"), exito=exito)
 
         ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
-        ctk.CTkButton(fila, text="Desinstalar", fg_color=COLOR_CRIT, command=confirmar).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("apps_btn_desinstalar"), fg_color=COLOR_CRIT,
+                      command=confirmar).pack(side="left", padx=8)
 
     # ---------------- Servicios de Windows ----------------
     def _mostrar_servicios(self):
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Servicios de Windows instalados en este equipo. Detener o iniciar un servicio del "
-                          "sistema puede afectar cómo funciona Windows — se pide confirmación antes de cualquier "
-                          "cambio, y solo tú decides con el nombre delante.",
+                     text=t("apps_serv_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         panel_consumo = ctk.CTkFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_consumo.pack(fill="x", pady=(0, 10))
-        ctk.CTkLabel(panel_consumo, text="🔋 Servicios que más RAM consumen todo el tiempo",
+        ctk.CTkLabel(panel_consumo, text=t("apps_serv_consumo_titulo"),
                      font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=14, pady=(12, 4))
         ctk.CTkLabel(panel_consumo,
-                     text="A diferencia de la lista de abajo (que solo dice si un servicio está corriendo o "
-                          "no), esto muestra cuáles están usando memoria de verdad en este momento — útil para "
-                          "ver qué sigue consumiendo recursos después de que ya arrancó todo. Varios servicios "
-                          "suelen compartir un mismo proceso de Windows; cuando pasa, se listan juntos porque "
-                          "no se puede separar el consumo de cada uno por separado.",
+                     text=t("apps_serv_consumo_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=900, justify="left").pack(
             anchor="w", padx=14, pady=(0, 10))
         self.lista_servicios_consumo = ctk.CTkScrollableFrame(panel_consumo, fg_color="#141720",
                                                                 corner_radius=10, height=160)
         self.lista_servicios_consumo.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkLabel(self.lista_servicios_consumo, text="Leyendo...", text_color="gray60").pack(padx=8, pady=8)
+        ctk.CTkLabel(self.lista_servicios_consumo, text=t("apps_leyendo"),
+                     text_color="gray60").pack(padx=8, pady=8)
 
         def worker_consumo():
             top = opt.listar_servicios_por_consumo(limite=12)
@@ -3246,13 +3261,14 @@ class TechCleanApp(ctk.CTk):
 
         fila_busqueda = ctk.CTkFrame(self.contenedor_apps, fg_color="transparent")
         fila_busqueda.pack(fill="x", pady=(0, 8))
-        self.entry_buscar_servicio = ctk.CTkEntry(fila_busqueda, placeholder_text="🔎 Buscar servicio por nombre...")
+        self.entry_buscar_servicio = ctk.CTkEntry(fila_busqueda,
+                                                  placeholder_text=t("apps_buscar_servicio"))
         self.entry_buscar_servicio.pack(side="left", fill="x", expand=True)
         self.entry_buscar_servicio.bind("<KeyRelease>", lambda e: self._filtrar_servicios())
 
         lista = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         lista.pack(fill="both", expand=True)
-        ctk.CTkLabel(lista, text="Cargando lista de servicios...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(lista, text=t("apps_cargando_servicios"), text_color="gray60").pack(padx=16, pady=16)
         self.lista_servicios_frame = lista
         self._servicios_cache = None
 
@@ -3260,7 +3276,8 @@ class TechCleanApp(ctk.CTk):
             servicios = opt.listar_servicios_windows()
             self._servicios_cache = servicios
             self.after(0, self._filtrar_servicios)
-            self._log_dev("Listar servicios de Windows", "Get-Service", f"{len(servicios)} servicios encontrados",
+            self._log_dev(t("apps_log_listar_servicios"), "Get-Service",
+                          t("apps_servicios_encontrados", cantidad=len(servicios)),
                           seccion=t("seccion_aplicaciones"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
@@ -3270,7 +3287,7 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_servicios_consumo.winfo_children():
             w.destroy()
         if not top:
-            ctk.CTkLabel(self.lista_servicios_consumo, text="No se pudo leer el consumo de servicios.",
+            ctk.CTkLabel(self.lista_servicios_consumo, text=t("apps_serv_consumo_error"),
                          text_color="gray60").pack(padx=8, pady=8)
             return
         for item in top:
@@ -3278,7 +3295,7 @@ class TechCleanApp(ctk.CTk):
             fila.pack(fill="x", padx=4, pady=3)
             nombres_texto = ", ".join(item["servicios"][:4])
             if len(item["servicios"]) > 4:
-                nombres_texto += f' (+{len(item["servicios"]) - 4} más)'
+                nombres_texto += t("apps_serv_mas", cantidad=len(item["servicios"]) - 4)
             ctk.CTkLabel(fila, text=nombres_texto, font=ctk.CTkFont(size=12), anchor="w",
                          wraplength=650, justify="left").pack(side="left", padx=10, pady=8, fill="x", expand=True)
             ctk.CTkLabel(fila, text=opt.format_bytes(item["bytes_ram"]), font=ctk.CTkFont(size=11),
@@ -3287,7 +3304,7 @@ class TechCleanApp(ctk.CTk):
     def _filtrar_servicios(self):
         if not (hasattr(self, "pestana_apps") and self.pestana_apps.winfo_exists()):
             return
-        if self.pestana_apps.get() != "Servicios":
+        if self.pestana_apps.get() != t("apps_tab_servicios"):
             return
         if not (hasattr(self, "lista_servicios_frame") and self.lista_servicios_frame.winfo_exists()):
             return
@@ -3297,11 +3314,11 @@ class TechCleanApp(ctk.CTk):
 
         servicios = self._servicios_cache
         if servicios is None:
-            ctk.CTkLabel(self.lista_servicios_frame, text="Cargando lista de servicios...",
+            ctk.CTkLabel(self.lista_servicios_frame, text=t("apps_cargando_servicios"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         if not servicios:
-            ctk.CTkLabel(self.lista_servicios_frame, text="No se pudo leer la lista de servicios.",
+            ctk.CTkLabel(self.lista_servicios_frame, text=t("apps_sin_servicios"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
 
@@ -3314,20 +3331,27 @@ class TechCleanApp(ctk.CTk):
             riesgo, _ = opt.evaluar_riesgo_servicio(s["nombre"])
             fila = ctk.CTkFrame(self.lista_servicios_frame, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            color_estado = COLOR_OK if s["estado"] == "Running" else "gray60"
-            texto = f'{s["nombre_visible"] or s["nombre"]}  ({s["nombre"]})  ·  {s["estado"]}'
+            # "Running" es el valor que devuelve Get-Service, no texto para
+            # mostrar: se compara contra el, pero al usuario se le ensena la
+            # version traducida.
+            corriendo = s["estado"] == "Running"
+            color_estado = COLOR_OK if corriendo else "gray60"
+            texto = t("apps_serv_detalle",
+                      visible=s["nombre_visible"] or s["nombre"], nombre=s["nombre"],
+                      estado=t("apps_serv_en_ejecucion") if corriendo else t("apps_serv_detenido"))
             texto += "  🔒" if riesgo == "bloqueado" else ""
             ctk.CTkLabel(fila, text=texto, font=ctk.CTkFont(size=12), text_color=color_estado, anchor="w",
                          wraplength=560, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
-            if riesgo == "bloqueado" and s["estado"] == "Running":
-                ctk.CTkButton(fila, text="Protegido", width=90, fg_color="gray30",
+            if riesgo == "bloqueado" and corriendo:
+                ctk.CTkButton(fila, text=t("apps_btn_protegido"), width=90, fg_color="gray30",
                               hover_color="gray30", state="disabled").pack(side="right", padx=12, pady=8)
-            elif s["estado"] == "Running":
-                ctk.CTkButton(fila, text="Detener", width=90, fg_color=COLOR_WARN, text_color="black",
+            elif corriendo:
+                ctk.CTkButton(fila, text=t("apps_btn_detener"), width=90, fg_color=COLOR_WARN,
+                              text_color="black",
                               command=lambda sv=s: self._confirmar_servicio(sv, "detener")).pack(
                     side="right", padx=12, pady=8)
             else:
-                ctk.CTkButton(fila, text="Iniciar", width=90,
+                ctk.CTkButton(fila, text=t("apps_btn_iniciar"), width=90,
                               command=lambda sv=s: self._confirmar_servicio(sv, "iniciar")).pack(
                     side="right", padx=12, pady=8)
 
@@ -3337,28 +3361,27 @@ class TechCleanApp(ctk.CTk):
             riesgo, motivo = opt.evaluar_riesgo_servicio(servicio["nombre"])
             if riesgo == "bloqueado":
                 self._mostrar_popup_info(
-                    "Servicio protegido",
-                    f'"{nombre_mostrar}" es un servicio crítico del sistema y TechClean Pro no permite '
-                    f'detenerlo desde aquí.\n\n{motivo}')
+                    t("apps_serv_protegido_titulo"),
+                    t("apps_serv_protegido_msg", nombre=nombre_mostrar, motivo=motivo))
                 return
         else:
             riesgo, motivo = "normal", None
 
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Confirmar cambio de servicio")
+        dialogo.title(t("apps_conf_serv_titulo"))
         dialogo.geometry("460x240")
         dialogo.grab_set()
         ctk.CTkLabel(dialogo,
-                     text=f'¿{"Detener" if accion == "detener" else "Iniciar"} el servicio\n"{nombre_mostrar}"?',
+                     text=(t("apps_conf_serv_detener", nombre=nombre_mostrar) if accion == "detener"
+                           else t("apps_conf_serv_iniciar", nombre=nombre_mostrar)),
                      font=ctk.CTkFont(size=14, weight="bold"), wraplength=400, justify="center").pack(
             pady=(20, 6))
         if riesgo == "advertencia":
-            ctk.CTkLabel(dialogo, text=f"⚠ {motivo}", font=ctk.CTkFont(size=11, weight="bold"),
+            ctk.CTkLabel(dialogo, text=t("apps_serv_advertencia", motivo=motivo),
+                         font=ctk.CTkFont(size=11, weight="bold"),
                          text_color=COLOR_WARN, wraplength=400, justify="center").pack(padx=20, pady=(0, 10))
         else:
-            ctk.CTkLabel(dialogo, text="Cambiar un servicio del sistema puede afectar el funcionamiento de "
-                                        "Windows — se pide confirmación antes de cualquier cambio, y solo tú "
-                                        "decides con el nombre delante.",
+            ctk.CTkLabel(dialogo, text=t("apps_serv_nota"),
                          font=ctk.CTkFont(size=11), text_color="gray60", wraplength=400, justify="center").pack(
                 padx=20, pady=(0, 10))
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
@@ -3369,40 +3392,49 @@ class TechCleanApp(ctk.CTk):
 
             def worker():
                 exito, comando = opt.set_servicio_windows(servicio["nombre"], accion)
-                msg = (f'Servicio "{nombre_mostrar}" {"detenido" if accion == "detener" else "iniciado"} correctamente.'
-                       if exito else f'No se pudo {accion} "{nombre_mostrar}" (¿permisos de administrador?).')
-                self._log_dev(f'{"Detener" if accion == "detener" else "Iniciar"} servicio "{nombre_mostrar}"',
+                # "accion" es la clave interna que entiende opt.set_servicio_windows;
+                # antes se interpolaba tal cual en el mensaje de error, asi que la
+                # build en ingles habria dicho: No se pudo detener -> "detener".
+                detener = accion == "detener"
+                if exito:
+                    msg = (t("apps_serv_detenido_ok", nombre=nombre_mostrar) if detener
+                           else t("apps_serv_iniciado_ok", nombre=nombre_mostrar))
+                else:
+                    msg = (t("apps_serv_detener_error", nombre=nombre_mostrar) if detener
+                           else t("apps_serv_iniciar_error", nombre=nombre_mostrar))
+                self._log_dev(t("apps_log_detener_serv", nombre=nombre_mostrar) if detener
+                              else t("apps_log_iniciar_serv", nombre=nombre_mostrar),
                               comando, msg, seccion=t("seccion_aplicaciones"), exito=exito)
                 self._servicios_cache = None
                 self.after(0, self._mostrar_servicios)
             threading.Thread(target=worker, daemon=True).start()
 
         ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
-        ctk.CTkButton(fila, text="Confirmar", fg_color=COLOR_WARN, text_color="black",
+        ctk.CTkButton(fila, text=t("apps_btn_confirmar"), fg_color=COLOR_WARN, text_color="black",
                       command=confirmar).pack(side="left", padx=8)
 
     # ---- Actualizar apps (winget — catálogo oficial de Microsoft) ----
     def _mostrar_actualizar_apps(self):
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Usa winget, el gestor de paquetes oficial de Windows — cada app se actualiza desde "
-                          "su propio publicador verificado, el mismo catálogo que usa la Microsoft Store.",
+                     text=t("apps_winget_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         fila = ctk.CTkFrame(self.contenedor_apps, fg_color="transparent")
         fila.pack(fill="x", pady=(0, 8))
-        ctk.CTkButton(fila, text="🔄 Buscar actualizaciones", command=self._accion_buscar_winget).pack(side="left")
+        ctk.CTkButton(fila, text=t("apps_btn_buscar_act"),
+                      command=self._accion_buscar_winget).pack(side="left")
 
         self.lista_winget = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_winget.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.lista_winget, text="Presiona \"Buscar actualizaciones\" para empezar.",
+        ctk.CTkLabel(self.lista_winget, text=t("apps_winget_presiona"),
                      text_color="gray60").pack(padx=16, pady=16)
 
     def _accion_buscar_winget(self):
         for w in self.lista_winget.winfo_children():
             w.destroy()
-        ctk.CTkLabel(self.lista_winget, text="Buscando (puede tardar 30-60 segundos)...",
+        ctk.CTkLabel(self.lista_winget, text=t("apps_winget_buscando"),
                      text_color="gray60").pack(padx=16, pady=16)
 
         def worker():
@@ -3410,8 +3442,9 @@ class TechCleanApp(ctk.CTk):
                 self.after(0, lambda: self._pintar_winget(None, disponible=False))
                 return
             exito, apps, comando = opt.listar_actualizaciones_winget()
-            self._log_dev("Buscar actualizaciones (winget)", comando,
-                          f"{len(apps)} con actualización disponible" if exito else "No se pudo consultar winget",
+            self._log_dev(t("apps_log_winget"), comando,
+                          t("apps_winget_encontradas", cantidad=len(apps)) if exito
+                          else t("apps_winget_fallo"),
                           seccion=t("seccion_aplicaciones"), exito=exito)
             self.after(0, lambda: self._pintar_winget(apps if exito else None, disponible=True))
         threading.Thread(target=worker, daemon=True).start()
@@ -3423,22 +3456,19 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not disponible:
             ctk.CTkLabel(self.lista_winget,
-                         text="winget no está disponible en este equipo (viene con Windows 10/11 actualizado, "
-                              "o se instala desde la Microsoft Store como \"Instalador de aplicaciones\").",
+                         text=t("apps_winget_no_disponible"),
                          text_color="gray60", wraplength=850, justify="left").pack(padx=16, pady=16)
             return
         if apps is None:
-            ctk.CTkLabel(self.lista_winget, text="No se pudo consultar winget en este momento.",
+            ctk.CTkLabel(self.lista_winget, text=t("apps_winget_error"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         if not apps:
-            ctk.CTkLabel(self.lista_winget, text="Todo actualizado — no hay nada pendiente.",
+            ctk.CTkLabel(self.lista_winget, text=t("apps_winget_al_dia"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         ctk.CTkLabel(self.lista_winget,
-                     text="Lectura aproximada de la tabla de winget (el formato puede variar un poco según la "
-                          "versión). Para actualizar, copia el Id y usa el botón, o hazlo desde una terminal con "
-                          "'winget upgrade --id <Id>'.",
+                     text=t("apps_winget_nota"),
                      font=ctk.CTkFont(size=11), text_color="gray50", wraplength=850, justify="left").pack(
             padx=12, pady=(8, 8), anchor="w")
         for linea in apps:
@@ -3451,14 +3481,13 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_tareas_programadas(self):
         self._limpiar_contenedor_apps()
         ctk.CTkLabel(self.contenedor_apps,
-                     text="Todo lo que Windows ejecuta solo, programado por otros programas que instalaste — "
-                          "informativo, TechClean Pro no las modifica.",
+                     text=t("apps_tareas_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         lista = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         lista.pack(fill="both", expand=True)
-        ctk.CTkLabel(lista, text="Leyendo tareas programadas...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(lista, text=t("apps_leyendo_tareas"), text_color="gray60").pack(padx=16, pady=16)
         self.lista_tareas_frame = lista
 
         def worker():
@@ -3472,13 +3501,17 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_tareas_frame.winfo_children():
             w.destroy()
         if not tareas:
-            ctk.CTkLabel(self.lista_tareas_frame, text="No se encontraron tareas programadas de terceros.",
+            ctk.CTkLabel(self.lista_tareas_frame, text=t("apps_sin_tareas"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
-        for t in tareas[:200]:
+        # La variable del bucle se llamaba "t" y pisaba la funcion t() de
+        # traduccion dentro de esta funcion: cualquier llamada a t() aqui
+        # habria reventado con "dict object is not callable".
+        for tarea in tareas[:200]:
             fila = ctk.CTkFrame(self.lista_tareas_frame, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            ctk.CTkLabel(fila, text=f'{t["nombre"]}  ({t["ruta"]})', font=ctk.CTkFont(size=11), anchor="w",
+            ctk.CTkLabel(fila, text=t("apps_tarea_detalle", nombre=tarea["nombre"], ruta=tarea["ruta"]),
+                         font=ctk.CTkFont(size=11), anchor="w",
                          wraplength=850, justify="left").pack(padx=12, pady=6, fill="x", expand=True, anchor="w")
 
     # ---------------- Segundo plano: widget + Modo Juego ----------------
@@ -5048,7 +5081,7 @@ class TechCleanApp(ctk.CTk):
                     duracion = time.time() - inicio
                     lineas.append(f"❌ {etiqueta} — ERROR: {type(e).__name__}: {e} ({duracion:.2f}s)")
                     fallos += 1
-                self.after(0, lambda t="\n".join(lineas): _actualizar_caja(t))
+                self.after(0, lambda texto="\n".join(lineas): _actualizar_caja(texto))
 
             lineas += ["", f"Resumen: {exitos} de {exitos + fallos} funciones OK, {fallos} con error."]
             texto_final = "\n".join(lineas)
