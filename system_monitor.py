@@ -20,6 +20,8 @@ import subprocess
 import time
 import psutil
 
+from idiomas import t
+
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -192,24 +194,19 @@ def estimar_canal_ram(modulos):
         return None
     if len(modulos) == 1:
         return {
-            "modo": "Canal simple",
-            "explicacion": "Solo hay un módulo instalado — con uno solo, el canal dual no es posible sin "
-                            "importar la placa madre. Agregar un segundo módulo idéntico puede mejorar el "
-                            "rendimiento notablemente, sobre todo con gráficos integrados.",
+            "modo": t("sys_canal_simple"),
+            "explicacion": t("sys_canal_simple_exp"),
         }
     capacidades = [m["capacidad_gb"] for m in modulos if m["capacidad_gb"] is not None]
     if len(modulos) % 2 == 0 and len(set(capacidades)) == 1:
         return {
-            "modo": "Probablemente canal dual",
-            "explicacion": f"{len(modulos)} módulos instalados, todos de {capacidades[0]} GB — es el patrón "
-                            "típico de canal dual. No se puede confirmar con 100% de certeza desde software "
-                            "(la ranura exacta de cada módulo también importa), pero es una buena señal.",
+            "modo": t("sys_canal_dual"),
+            "explicacion": t("sys_canal_dual_exp", cantidad=len(modulos), capacidad=capacidades[0]),
         }
     return {
-        "modo": "Probablemente canal simple o asimétrico",
-        "explicacion": f"{len(modulos)} módulos de capacidades distintas ({', '.join(str(c) + ' GB' for c in capacidades)}) "
-                        "— es probable que no se esté aprovechando el canal dual completo. Revisa el manual de "
-                        "tu equipo para la combinación correcta de ranuras si quieres confirmarlo o mejorarlo.",
+        "modo": t("sys_canal_asimetrico"),
+        "explicacion": t("sys_canal_asimetrico_exp", cantidad=len(modulos),
+                         capacidades=", ".join(str(c) + " GB" for c in capacidades)),
     }
 
 
@@ -417,7 +414,7 @@ def get_gpu_info():
                 "temperatura_c": None, "ventilador_pct": None, "fuente": "cim",
             }
 
-    return {"nombre": "No detectada", "porcentaje": None, "vram_usada_gb": None,
+    return {"nombre": t("sys_gpu_no_detectada"), "porcentaje": None, "vram_usada_gb": None,
             "vram_total_gb": None, "temperatura_c": None, "ventilador_pct": None, "fuente": None}
 
 
@@ -553,20 +550,24 @@ def get_memoria_virtual():
         return None
 
 
+# Los codigos son los de Windows; el texto se resuelve con t() en el momento
+# de usarlo, NO aqui: este diccionario se construye al importar el modulo,
+# antes de que establecer_idioma() haya corrido, asi que guardar aqui el
+# texto ya traducido lo dejaria congelado en el idioma por defecto.
 CODIGOS_ERROR_DISPOSITIVO = {
-    1: "Windows no reconoce este dispositivo correctamente.",
-    3: "El driver instalado podría estar dañado.",
-    10: "El dispositivo no puede iniciar.",
-    18: "Windows sugiere reinstalar los drivers de este dispositivo.",
-    22: "El dispositivo está deshabilitado.",
-    24: "El dispositivo no está presente, no funciona, o le faltan los drivers.",
-    28: "No tiene los drivers instalados — este es el caso más común después de una instalación limpia.",
-    29: "El dispositivo está deshabilitado por firmware (BIOS/UEFI).",
-    31: "Windows no puede hacerlo funcionar bien — driver faltante o incompatible.",
-    32: "El driver de este dispositivo está deshabilitado.",
-    37: "El driver devolvió un error al iniciar.",
-    39: "El driver está dañado o falta.",
-    43: "Windows detuvo el dispositivo porque reportó un problema.",
+    1: "sys_err_1",
+    3: "sys_err_3",
+    10: "sys_err_10",
+    18: "sys_err_18",
+    22: "sys_err_22",
+    24: "sys_err_24",
+    28: "sys_err_28",
+    29: "sys_err_29",
+    31: "sys_err_31",
+    32: "sys_err_32",
+    37: "sys_err_37",
+    39: "sys_err_39",
+    43: "sys_err_43",
 }
 
 
@@ -589,11 +590,12 @@ def listar_dispositivos_con_problemas():
         if not codigo:  # None o 0 = sin problema
             continue
         problemas.append({
-            "nombre": f.get("Name") or "Dispositivo desconocido",
+            "nombre": f.get("Name") or t("sys_dispositivo_desconocido"),
             "device_id": f.get("DeviceID") or "",
             "codigo_error": codigo,
-            "explicacion": CODIGOS_ERROR_DISPOSITIVO.get(
-                codigo, f"Windows reporta un problema con este dispositivo (código {codigo})."),
+            "explicacion": (t(CODIGOS_ERROR_DISPOSITIVO[codigo])
+                            if codigo in CODIGOS_ERROR_DISPOSITIVO
+                            else t("sys_err_generico", codigo=codigo)),
         })
     return problemas
 

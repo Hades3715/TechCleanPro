@@ -1368,16 +1368,14 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Drivers (informativo + canales oficiales) ----------------
     def mostrar_drivers(self):
         self._limpiar_contenido()
-        ctk.CTkButton(self.contenido, text="← Volver a Componentes", fg_color="transparent",
+        ctk.CTkButton(self.contenido, text=t("drv_volver"), fg_color="transparent",
                       hover_color="#2a2d36", width=160, command=self.mostrar_componentes).grid(
             row=0, column=0, sticky="w", pady=(0, 8))
-        ctk.CTkLabel(self.contenido, text="Drivers",
+        ctk.CTkLabel(self.contenido, text=t("drv_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         ctk.CTkLabel(self.contenido,
-                     text="Solo canales oficiales: Windows Update para detectar actualizaciones, y la página de "
-                          "soporte del propio fabricante para descargarlas. TechClean Pro no reemplaza drivers "
-                          "por su cuenta — instalar el equivocado puede dejar hardware sin funcionar.",
+                     text=t("drv_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").grid(
             row=2, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
@@ -1385,10 +1383,10 @@ class TechCleanApp(ctk.CTk):
         panel_top.grid(row=3, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
         self.fila_fab = ctk.CTkFrame(panel_top, fg_color="transparent")
         self.fila_fab.pack(fill="x", padx=16, pady=14)
-        self.lbl_fabricante = ctk.CTkLabel(self.fila_fab, text="Leyendo fabricante del equipo...",
+        self.lbl_fabricante = ctk.CTkLabel(self.fila_fab, text=t("drv_leyendo_fabricante"),
                                             font=ctk.CTkFont(size=13, weight="bold"))
         self.lbl_fabricante.pack(side="left")
-        ctk.CTkButton(self.fila_fab, text="🛠 Administrador de dispositivos", width=200, fg_color="#2a2d36",
+        ctk.CTkButton(self.fila_fab, text=t("drv_btn_admin_disp"), width=200, fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_admin_dispositivos).pack(
             side="right", padx=(0, 8))
 
@@ -1403,20 +1401,15 @@ class TechCleanApp(ctk.CTk):
         # de abajo), sino "qué le falta a Windows por reconocer todavía".
         panel_problemas = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_problemas.grid(row=4, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
-        ctk.CTkLabel(panel_problemas, text="⚠ Dispositivos sin driver o con problemas",
+        ctk.CTkLabel(panel_problemas, text=t("drv_problemas_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(14, 4))
         ctk.CTkLabel(panel_problemas,
-                     text="Lo que Windows detecta pero no sabe cómo hacer funcionar todavía — el touchpad o el "
-                          "audio que no aparecen suelen estar aquí. Si ves alguno, primero prueba 'Buscar "
-                          "hardware nuevo': a veces basta para que Windows lo reconozca e instale el driver "
-                          "solo. Si no aparece nada aquí, busca el ID del dispositivo (abajo de cada uno) en la "
-                          "página de soporte de tu equipo, o en un buscador — con ese código encuentras el "
-                          "driver exacto sin adivinar.",
+                     text=t("drv_problemas_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=900, justify="left").pack(
             anchor="w", padx=16, pady=(0, 10))
         fila_escanear = ctk.CTkFrame(panel_problemas, fg_color="transparent")
         fila_escanear.pack(fill="x", padx=16, pady=(0, 8))
-        ctk.CTkButton(fila_escanear, text="🔄 Buscar hardware nuevo", width=200,
+        ctk.CTkButton(fila_escanear, text=t("drv_btn_escanear"), width=200,
                       command=self._accion_escanear_hardware).pack(side="left")
         self.lbl_escanear_hardware = ctk.CTkLabel(fila_escanear, text="", font=ctk.CTkFont(size=11),
                                                     text_color="gray60")
@@ -1424,7 +1417,8 @@ class TechCleanApp(ctk.CTk):
         self.lista_dispositivos_problema = ctk.CTkScrollableFrame(panel_problemas, fg_color="#141720",
                                                                      corner_radius=10, height=160)
         self.lista_dispositivos_problema.pack(fill="x", padx=16, pady=(0, 16))
-        ctk.CTkLabel(self.lista_dispositivos_problema, text="Revisando...", text_color="gray60").pack(
+        ctk.CTkLabel(self.lista_dispositivos_problema, text=t("drv_revisando"),
+                     text_color="gray60").pack(
             padx=8, pady=8)
 
         def worker_problemas():
@@ -1434,25 +1428,24 @@ class TechCleanApp(ctk.CTk):
 
         fila_buscar = ctk.CTkFrame(self.contenido, fg_color="transparent")
         fila_buscar.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        ctk.CTkButton(fila_buscar, text="🔄 Buscar actualizaciones de drivers (Windows Update)",
+        ctk.CTkButton(fila_buscar, text=t("drv_btn_buscar_update"),
                       command=self._accion_buscar_drivers_update).pack(side="left")
         self.lbl_drivers_update = ctk.CTkLabel(fila_buscar, text="", font=ctk.CTkFont(size=12), text_color="gray60")
         self.lbl_drivers_update.pack(side="left", padx=12)
 
         fila_inicio_rapido = ctk.CTkFrame(self.contenido, fg_color="transparent")
         fila_inicio_rapido.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 10))
-        ctk.CTkLabel(fila_inicio_rapido, text="Inicio rápido de Windows:", font=ctk.CTkFont(size=12)).pack(
+        ctk.CTkLabel(fila_inicio_rapido, text=t("drv_inicio_rapido_label"),
+                     font=ctk.CTkFont(size=12)).pack(
             side="left", padx=(0, 8))
-        self.lbl_estado_inicio_rapido = ctk.CTkLabel(fila_inicio_rapido, text="leyendo...",
+        self.lbl_estado_inicio_rapido = ctk.CTkLabel(fila_inicio_rapido, text=t("drv_leyendo_minus"),
                                                        font=ctk.CTkFont(size=12), text_color="gray60")
         self.lbl_estado_inicio_rapido.pack(side="left", padx=(0, 10))
         self.switch_inicio_rapido = ctk.CTkSwitch(fila_inicio_rapido, text="",
                                                     command=self._toggle_inicio_rapido)
         self.switch_inicio_rapido.pack(side="left")
         ctk.CTkLabel(self.contenido,
-                     text="Puede interferir con que algunas actualizaciones de drivers terminen de instalarse "
-                          "bien (documentado por Microsoft) — no tiene relación con F12/F9 al reiniciar, eso "
-                          "vive en el firmware (BIOS), fuera del alcance de Windows.",
+                     text=t("drv_inicio_rapido_nota"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=900, justify="left").grid(
             row=7, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 10))
 
@@ -1461,7 +1454,8 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._pintar_estado_inicio_rapido(estado))
         threading.Thread(target=worker_inicio_rapido, daemon=True).start()
 
-        self.entry_buscar_driver = ctk.CTkEntry(self.contenido, placeholder_text="🔎 Buscar por nombre de dispositivo...")
+        self.entry_buscar_driver = ctk.CTkEntry(self.contenido,
+                                                placeholder_text=t("drv_buscar_placeholder"))
         self.entry_buscar_driver.grid(row=8, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 6))
         self.entry_buscar_driver.bind("<KeyRelease>", lambda e: self._filtrar_drivers())
 
@@ -1469,8 +1463,7 @@ class TechCleanApp(ctk.CTk):
         self.lista_drivers = ctk.CTkScrollableFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_drivers.grid(row=9, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
         ctk.CTkLabel(self.lista_drivers,
-                     text="Leyendo drivers instalados... puede tardar hasta medio minuto en equipos más lentos "
-                          "(es una consulta pesada al sistema).",
+                     text=t("drv_leyendo_drivers_largo"),
                      text_color="gray60", wraplength=850, justify="left").pack(padx=16, pady=16)
         self._drivers_cache = None
 
@@ -1487,14 +1480,14 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not problemas:
             ctk.CTkLabel(self.lista_dispositivos_problema,
-                         text="✅ No se encontró ningún dispositivo con problemas — Windows reconoce todo el "
-                              "hardware que detecta.",
+                         text=t("drv_sin_problemas"),
                          text_color=COLOR_OK).pack(padx=8, pady=8, anchor="w")
             return
         for d in problemas:
             fila = ctk.CTkFrame(self.lista_dispositivos_problema, fg_color=COLOR_BG_PANEL, corner_radius=8)
             fila.pack(fill="x", padx=4, pady=3)
-            ctk.CTkLabel(fila, text=f'⚠ {d["nombre"]}', font=ctk.CTkFont(size=12, weight="bold"),
+            ctk.CTkLabel(fila, text=t("drv_dispositivo_problema", nombre=d["nombre"]),
+                         font=ctk.CTkFont(size=12, weight="bold"),
                          anchor="w").pack(fill="x", padx=10, pady=(8, 0), anchor="w")
             ctk.CTkLabel(fila, text=d["explicacion"], font=ctk.CTkFont(size=11), text_color="gray60",
                          anchor="w", wraplength=820, justify="left").pack(fill="x", padx=10, pady=(0, 4), anchor="w")
@@ -1505,17 +1498,17 @@ class TechCleanApp(ctk.CTk):
                 entry_id.insert(0, d["device_id"])
                 entry_id.configure(state="readonly")
                 entry_id.pack(side="left", fill="x", expand=True, padx=(0, 8))
-                ctk.CTkButton(fila_id, text="Copiar ID", width=90,
+                ctk.CTkButton(fila_id, text=t("drv_btn_copiar_id"), width=90,
                               command=lambda v=d["device_id"]: self._copiar_al_portapapeles(v)).pack(side="left")
 
     def _accion_escanear_hardware(self):
-        self.lbl_escanear_hardware.configure(text="Buscando hardware nuevo...")
+        self.lbl_escanear_hardware.configure(text=t("drv_buscando_hardware"))
 
         def worker():
             exito, comando = opt.escanear_hardware_nuevo()
-            msg = "Listo — si Windows encontró algo nuevo, ya debería aparecer instalado." if exito \
-                else "No se pudo completar el escaneo."
-            self._log_dev("Buscar hardware nuevo", comando, msg, seccion=t("seccion_drivers"), exito=exito)
+            msg = t("drv_escaneo_ok") if exito else t("drv_escaneo_error")
+            self._log_dev(t("drv_log_escanear"), comando, msg,
+                          seccion=t("seccion_drivers"), exito=exito)
             if hasattr(self, "lbl_escanear_hardware") and self.lbl_escanear_hardware.winfo_exists():
                 self.after(0, lambda: self.lbl_escanear_hardware.configure(text=msg))
             # Refrescar la lista de problemas después del escaneo, ya que
@@ -1530,10 +1523,11 @@ class TechCleanApp(ctk.CTk):
         if not (hasattr(self, "lbl_estado_inicio_rapido") and self.lbl_estado_inicio_rapido.winfo_exists()):
             return
         if estado is None:
-            self.lbl_estado_inicio_rapido.configure(text="no disponible en este equipo")
+            self.lbl_estado_inicio_rapido.configure(text=t("drv_ir_no_disponible"))
             self.switch_inicio_rapido.configure(state="disabled")
             return
-        self.lbl_estado_inicio_rapido.configure(text="activado" if estado else "desactivado")
+        self.lbl_estado_inicio_rapido.configure(
+            text=t("drv_ir_activado") if estado else t("drv_ir_desactivado"))
         if estado:
             self.switch_inicio_rapido.select()
         else:
@@ -1541,13 +1535,15 @@ class TechCleanApp(ctk.CTk):
 
     def _toggle_inicio_rapido(self):
         activar = bool(self.switch_inicio_rapido.get())
-        self.lbl_estado_inicio_rapido.configure(text="aplicando...")
+        self.lbl_estado_inicio_rapido.configure(text=t("drv_ir_aplicando"))
 
         def worker():
             exito, comando = opt.set_inicio_rapido(activar)
-            texto = ("activado" if activar else "desactivado") if exito else "no se pudo cambiar (¿admin?)"
-            self._log_dev("Inicio rápido de Windows", comando,
-                          f"Inicio rápido {texto}.", seccion=t("seccion_drivers"), exito=exito)
+            texto = ((t("drv_ir_activado") if activar else t("drv_ir_desactivado")) if exito
+                     else t("drv_ir_error"))
+            self._log_dev(t("drv_log_inicio_rapido"), comando,
+                          t("drv_ir_resultado", estado=texto),
+                          seccion=t("seccion_drivers"), exito=exito)
             if hasattr(self, "lbl_estado_inicio_rapido") and self.lbl_estado_inicio_rapido.winfo_exists():
                 self.after(0, lambda: self.lbl_estado_inicio_rapido.configure(text=texto))
         threading.Thread(target=worker, daemon=True).start()
@@ -1560,11 +1556,11 @@ class TechCleanApp(ctk.CTk):
 
         drivers = self._drivers_cache
         if drivers is None:
-            ctk.CTkLabel(self.lista_drivers, text="Leyendo drivers instalados...", text_color="gray60").pack(
-                padx=16, pady=16)
+            ctk.CTkLabel(self.lista_drivers, text=t("drv_leyendo_drivers"),
+                         text_color="gray60").pack(padx=16, pady=16)
             return
         if not drivers:
-            ctk.CTkLabel(self.lista_drivers, text="No se pudo leer la lista de drivers.",
+            ctk.CTkLabel(self.lista_drivers, text=t("drv_sin_drivers"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
 
@@ -1575,38 +1571,48 @@ class TechCleanApp(ctk.CTk):
         for d in drivers[:300]:
             fila = ctk.CTkFrame(self.lista_drivers, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            texto = f'{d["nombre"]}  ·  {d["fabricante"]}  ·  v{d["version"]}  ·  {d["fecha"]}'
+            texto = t("drv_detalle", nombre=d["nombre"], fabricante=d["fabricante"],
+                      version=d["version"], fecha=d["fecha"])
             ctk.CTkLabel(fila, text=texto, font=ctk.CTkFont(size=12), anchor="w",
                          wraplength=900, justify="left").pack(padx=12, pady=8, fill="x", expand=True, anchor="w")
 
     def _accion_buscar_drivers_update(self):
-        self.lbl_drivers_update.configure(text="Buscando (puede tardar 30-90 seg)...")
+        self.lbl_drivers_update.configure(text=t("drv_buscando_update"))
 
         def worker():
             exito, titulos, comando = opt.buscar_actualizaciones_drivers()
             if not exito:
-                texto = "No se pudo consultar Windows Update."
+                texto = t("drv_update_error")
             elif not titulos:
-                texto = "No hay actualizaciones de drivers pendientes."
+                texto = t("drv_update_ninguna")
             else:
-                texto = f"{len(titulos)} actualización(es) disponible(s): " + "; ".join(titulos[:5])
+                texto = t("drv_update_disponibles", cantidad=len(titulos),
+                          lista="; ".join(titulos[:5]))
             if hasattr(self, "lbl_drivers_update") and self.lbl_drivers_update.winfo_exists():
                 self.after(0, lambda: self.lbl_drivers_update.configure(text=texto))
-            self._log_dev("Buscar actualizaciones de drivers", comando, texto, seccion=t("seccion_componentes"), exito=exito)
+            self._log_dev(t("drv_log_buscar_update"), comando, texto,
+                          seccion=t("seccion_componentes"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_fabricante(self, info_fab):
         if not (hasattr(self, "lbl_fabricante") and self.lbl_fabricante.winfo_exists()):
             return
-        self.lbl_fabricante.configure(text=f'{info_fab["fabricante"]} — {info_fab["modelo"]}')
+        self.lbl_fabricante.configure(text=t("drv_fabricante_modelo",
+                                             fabricante=info_fab["fabricante"],
+                                             modelo=info_fab["modelo"]))
         if info_fab["url_soporte"] and hasattr(self, "fila_fab") and self.fila_fab.winfo_exists():
-            ctk.CTkButton(self.fila_fab, text="🌐 Página de soporte oficial", width=200,
-                          command=lambda: webbrowser.open(info_fab["url_soporte"])).pack(side="right")
+            # webbrowser.open lanza un proceso del sistema: va en un hilo, igual
+            # que el boton de donacion, para no congelar la ventana si el
+            # navegador esta frio.
+            ctk.CTkButton(self.fila_fab, text=t("drv_btn_soporte"), width=200,
+                          command=lambda u=info_fab["url_soporte"]: threading.Thread(
+                              target=lambda: webbrowser.open(u), daemon=True).start()).pack(side="right")
 
     def _accion_abrir_admin_dispositivos(self):
         exito, comando = opt.abrir_administrador_dispositivos()
-        self._log_dev("Abrir Administrador de dispositivos", comando,
-                      "Abierto." if exito else "No se pudo abrir.", seccion=t("seccion_componentes"), exito=exito)
+        self._log_dev(t("drv_log_admin_disp"), comando,
+                      t("drv_admin_disp_ok") if exito else t("comp_no_abrir"),
+                      seccion=t("seccion_componentes"), exito=exito)
 
     # ---------------- Optimizador ----------------
     def mostrar_optimizador(self):
