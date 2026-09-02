@@ -1616,9 +1616,13 @@ def listar_permisos_privacidad(tipo="webcam"):
         try:
             with winreg.OpenKey(key, subclave) as appkey:
                 valor, _ = winreg.QueryValueEx(appkey, "Value")
-                return "Permitido" if valor == "Allow" else "Bloqueado"
+                # Codigo interno, NO texto para mostrar: main.py lo traduce y
+                # ademas elige el color a partir de el. Si aqui se devolviera
+                # texto traducido, la comparacion que pinta el color en
+                # main.py fallaria en cuanto cambiara el idioma.
+                return "permitido" if valor == "Allow" else "bloqueado"
         except Exception:
-            return "Desconocido"
+            return "desconocido"
 
     resultados = []
     try:

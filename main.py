@@ -2390,14 +2390,16 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Seguridad ----------------
     def mostrar_seguridad(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Seguridad",
+        ctk.CTkLabel(self.contenido, text=t("seg_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         self.pestana_seguridad = ctk.CTkSegmentedButton(
-            self.contenido, values=["Antivirus", "Permisos de apps", "Firewall", "Usuarios"],
+            self.contenido,
+            values=[t("seg_tab_antivirus"), t("seg_tab_permisos"),
+                    t("seg_tab_firewall"), t("seg_tab_usuarios")],
             command=self._cambiar_pestana_seguridad)
-        self.pestana_seguridad.set("Antivirus")
+        self.pestana_seguridad.set(t("seg_tab_antivirus"))
         self.pestana_seguridad.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         self.contenido.grid_rowconfigure(2, weight=1)
@@ -2409,14 +2411,17 @@ class TechCleanApp(ctk.CTk):
         self._mostrar_antivirus()
 
     def _cambiar_pestana_seguridad(self, valor):
-        if valor == "Antivirus":
-            self._mostrar_antivirus()
-        elif valor == "Permisos de apps":
+        """El texto de la pestaña está traducido: se resuelve contra las
+        mismas claves con las que se construyó, y el `else` cae en Antivirus,
+        que es la pestaña por defecto — nunca en una rama arbitraria."""
+        if valor == t("seg_tab_permisos"):
             self._mostrar_permisos_privacidad()
-        elif valor == "Firewall":
+        elif valor == t("seg_tab_firewall"):
             self._mostrar_firewall()
-        else:
+        elif valor == t("seg_tab_usuarios"):
             self._mostrar_usuarios_sistema()
+        else:
+            self._mostrar_antivirus()
 
     def _limpiar_contenedor_seguridad(self):
         for w in self.contenedor_seguridad.winfo_children():
@@ -2427,21 +2432,21 @@ class TechCleanApp(ctk.CTk):
         self._limpiar_contenedor_seguridad()
         panel = ctk.CTkFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(panel, text="🛡️ Windows Defender",
+        ctk.CTkLabel(panel, text=t("seg_defender_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
-        self.lbl_estado_defender = ctk.CTkLabel(panel, text="Leyendo estado...", font=ctk.CTkFont(size=12),
+        self.lbl_estado_defender = ctk.CTkLabel(panel, text=t("seg_leyendo_estado"), font=ctk.CTkFont(size=12),
                                                  text_color="gray70", justify="left", anchor="w")
         self.lbl_estado_defender.pack(anchor="w", padx=16, pady=(0, 12))
 
         fila = ctk.CTkFrame(panel, fg_color="transparent")
         fila.pack(padx=16, pady=(0, 16), fill="x")
-        ctk.CTkButton(fila, text="🔍 Escaneo rápido", command=lambda: self._accion_escanear_defender("rapido")).pack(
+        ctk.CTkButton(fila, text=t("seg_btn_escaneo_rapido"),
+                      command=lambda: self._accion_escanear_defender("rapido")).pack(
             side="left", padx=(0, 8))
-        ctk.CTkButton(fila, text="🔎 Escaneo completo", fg_color="#2a2d36", hover_color="#3a3e4a",
+        ctk.CTkButton(fila, text=t("seg_btn_escaneo_completo"), fg_color="#2a2d36", hover_color="#3a3e4a",
                       command=lambda: self._accion_escanear_defender("completo")).pack(side="left")
         ctk.CTkLabel(panel,
-                     text="El escaneo completo puede tardar horas y sigue corriendo aunque cierres la app — "
-                          "Windows lo hace en segundo plano.",
+                     text=t("seg_escaneo_nota"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             padx=16, pady=(0, 16), anchor="w")
 
@@ -2453,9 +2458,10 @@ class TechCleanApp(ctk.CTk):
         # ---- BitLocker y Windows Hello (informativo) ----
         panel2 = ctk.CTkFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel2.pack(fill="x", pady=(0, 8))
-        ctk.CTkLabel(panel2, text="🔐 Cifrado e inicio de sesión",
+        ctk.CTkLabel(panel2, text=t("seg_cifrado_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
-        self.lbl_estado_bitlocker_hello = ctk.CTkLabel(panel2, text="Leyendo estado...", font=ctk.CTkFont(size=12),
+        self.lbl_estado_bitlocker_hello = ctk.CTkLabel(panel2, text=t("seg_leyendo_estado"),
+                                                        font=ctk.CTkFont(size=12),
                                                         text_color="gray70", justify="left", anchor="w")
         self.lbl_estado_bitlocker_hello.pack(anchor="w", padx=16, pady=(0, 16))
 
@@ -2469,44 +2475,54 @@ class TechCleanApp(ctk.CTk):
         if not (hasattr(self, "lbl_estado_bitlocker_hello") and self.lbl_estado_bitlocker_hello.winfo_exists()):
             return
         if bitlocker is None:
-            texto_bl = "BitLocker: no se pudo leer (puede que no esté disponible en esta edición de Windows)."
+            texto_bl = t("seg_bitlocker_error")
         else:
-            estado_txt = "activado y protegiendo" if bitlocker["proteccion_activa"] else "NO está protegiendo"
-            texto_bl = f'BitLocker (cifrado del disco C:): {estado_txt} ({bitlocker["estado_volumen"]}).'
-        texto_hello = ("Windows Hello (PIN/biometría): configurado." if hello and hello["configurado"]
-                       else "Windows Hello (PIN/biometría): no se detectó configuración.")
+            estado_txt = (t("seg_bitlocker_activo") if bitlocker["proteccion_activa"]
+                          else t("seg_bitlocker_inactivo"))
+            texto_bl = t("seg_bitlocker_texto", estado=estado_txt,
+                         volumen=bitlocker["estado_volumen"])
+        texto_hello = (t("seg_hello_si") if hello and hello["configurado"]
+                       else t("seg_hello_no"))
         self.lbl_estado_bitlocker_hello.configure(text=f"{texto_bl}\n{texto_hello}")
 
     def _pintar_estado_defender(self, estado):
         if not (hasattr(self, "lbl_estado_defender") and self.lbl_estado_defender.winfo_exists()):
             return
         if estado is None:
-            self.lbl_estado_defender.configure(text="No se pudo leer el estado de Defender en este equipo.")
+            self.lbl_estado_defender.configure(text=t("seg_defender_error"))
             return
-        texto = (f'Protección activa: {"Sí" if estado["activo"] else "No"}   ·   '
-                 f'Protección en tiempo real: {"Sí" if estado["tiempo_real"] else "No"}\n'
-                 f'Último escaneo rápido: {self._fmt_dias(estado["dias_desde_ultimo_rapido"])}   ·   '
-                 f'Último escaneo completo: {self._fmt_dias(estado["dias_desde_ultimo_completo"])}')
+        texto = t("seg_defender_estado",
+                  activo=t("seg_si") if estado["activo"] else t("seg_no"),
+                  tiempo_real=t("seg_si") if estado["tiempo_real"] else t("seg_no"),
+                  ultimo_rapido=self._fmt_dias(estado["dias_desde_ultimo_rapido"]),
+                  ultimo_completo=self._fmt_dias(estado["dias_desde_ultimo_completo"]))
         self.lbl_estado_defender.configure(text=texto)
 
     def _fmt_dias(self, valor):
         if valor is None:
-            return "nunca (o no disponible)"
-        return f"hace {valor} día(s)"
+            return t("seg_dias_nunca")
+        return t("seg_dias_hace", dias=valor)
 
     def _accion_escanear_defender(self, tipo):
+        # "tipo" es la clave interna que entiende opt.iniciar_escaneo_defender.
+        # BUG corregido: se interpolaba tal cual en el mensaje, así que la
+        # build en inglés habría dicho "rapido scan started". Ahora se traduce
+        # aparte para mostrar y la clave viaja sola hacia el optimizador.
         exito, comando = opt.iniciar_escaneo_defender(tipo)
-        msg = f"Escaneo {tipo} iniciado — corre en segundo plano." if exito else "No se pudo iniciar el escaneo."
+        tipo_txt = t("seg_tipo_completo") if tipo == "completo" else t("seg_tipo_rapido")
+        msg = t("seg_escaneo_iniciado", tipo=tipo_txt) if exito else t("seg_escaneo_error")
         self._mostrar_popup_info("Windows Defender", msg)
-        self._log_dev(f"Iniciar escaneo Defender ({tipo})", comando, msg, seccion=t("seccion_seguridad"), exito=exito)
+        self._log_dev(t("seg_log_escaneo", tipo=tipo_txt), comando, msg,
+                      seccion=t("seccion_seguridad"), exito=exito)
 
     # ---- Permisos de privacidad (cámara/micrófono/ubicación) ----
     def _mostrar_permisos_privacidad(self):
         self._limpiar_contenedor_seguridad()
         self.pestana_permiso = ctk.CTkSegmentedButton(
-            self.contenedor_seguridad, values=["Cámara", "Micrófono", "Ubicación"],
+            self.contenedor_seguridad,
+            values=[t("seg_perm_camara"), t("seg_perm_microfono"), t("seg_perm_ubicacion")],
             command=lambda v: self._cargar_permisos_privacidad())
-        self.pestana_permiso.set("Cámara")
+        self.pestana_permiso.set(t("seg_perm_camara"))
         self.pestana_permiso.pack(anchor="w", pady=(0, 8))
 
         self.lista_permisos = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL, corner_radius=16)
@@ -2516,9 +2532,19 @@ class TechCleanApp(ctk.CTk):
     def _cargar_permisos_privacidad(self):
         for w in self.lista_permisos.winfo_children():
             w.destroy()
-        ctk.CTkLabel(self.lista_permisos, text="Leyendo permisos...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(self.lista_permisos, text=t("seg_leyendo_permisos"),
+                     text_color="gray60").pack(padx=16, pady=16)
 
-        mapa = {"Cámara": "webcam", "Micrófono": "microphone", "Ubicación": "location"}
+        # BUG corregido: el mapa tenía las etiquetas en español como claves y
+        # caía en "webcam" por defecto. Traducidas las pestañas, en inglés
+        # ninguna coincidía y Micrófono y Ubicación mostraban los permisos de
+        # la CÁMARA — datos incorrectos sin ningún error visible. Ahora se
+        # arma con las mismas claves con las que se construyó la pestaña.
+        mapa = {
+            t("seg_perm_camara"): "webcam",
+            t("seg_perm_microfono"): "microphone",
+            t("seg_perm_ubicacion"): "location",
+        }
         tipo = mapa.get(self.pestana_permiso.get(), "webcam")
 
         def worker():
@@ -2532,20 +2558,26 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_permisos.winfo_children():
             w.destroy()
         if not permisos:
-            ctk.CTkLabel(self.lista_permisos, text="No se encontraron apps con este permiso configurado.",
+            ctk.CTkLabel(self.lista_permisos, text=t("seg_sin_permisos"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for p in permisos:
             fila = ctk.CTkFrame(self.lista_permisos, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            color = COLOR_OK if p["estado"] == "Permitido" else (COLOR_CRIT if p["estado"] == "Bloqueado" else "gray60")
+            # opt devuelve un codigo estable ("permitido"/"bloqueado"/otro);
+            # el color y el texto visible se derivan aqui.
+            estado_txt = {
+                "permitido": t("seg_permiso_permitido"),
+                "bloqueado": t("seg_permiso_bloqueado"),
+            }.get(p["estado"], t("seg_permiso_desconocido"))
+            color = COLOR_OK if p["estado"] == "permitido" else (
+                COLOR_CRIT if p["estado"] == "bloqueado" else "gray60")
             ctk.CTkLabel(fila, text=p["app"], font=ctk.CTkFont(size=12), anchor="w", wraplength=650,
                          justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
-            ctk.CTkLabel(fila, text=p["estado"], font=ctk.CTkFont(size=12, weight="bold"), text_color=color).pack(
+            ctk.CTkLabel(fila, text=estado_txt, font=ctk.CTkFont(size=12, weight="bold"), text_color=color).pack(
                 side="right", padx=12, pady=8)
         ctk.CTkLabel(self.lista_permisos,
-                     text="Para cambiar un permiso, hazlo desde Configuración > Privacidad y seguridad de "
-                          "Windows — aquí solo se muestra, TechClean Pro no lo modifica directamente.",
+                     text=t("seg_permisos_nota"),
                      font=ctk.CTkFont(size=11), text_color="gray50", wraplength=850, justify="left").pack(
             padx=12, pady=12, anchor="w")
 
@@ -2553,19 +2585,18 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_firewall(self):
         self._limpiar_contenedor_seguridad()
         ctk.CTkLabel(self.contenedor_seguridad,
-                     text="Bloquea la conexión a internet de un programa puntual, o revisa qué reglas de "
-                          "bloqueo ya tienes activas.",
+                     text=t("seg_firewall_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         fila = ctk.CTkFrame(self.contenedor_seguridad, fg_color="transparent")
         fila.pack(fill="x", pady=(0, 10))
-        ctk.CTkButton(fila, text="🚫 Bloquear un programa...", command=self._accion_elegir_bloquear_app).pack(
+        ctk.CTkButton(fila, text=t("seg_btn_bloquear"), command=self._accion_elegir_bloquear_app).pack(
             side="left")
 
         self.lista_firewall = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_firewall.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.lista_firewall, text="Leyendo reglas de bloqueo...", text_color="gray60").pack(
+        ctk.CTkLabel(self.lista_firewall, text=t("seg_leyendo_reglas"), text_color="gray60").pack(
             padx=16, pady=16)
 
         def worker():
@@ -2579,31 +2610,33 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_firewall.winfo_children():
             w.destroy()
         if not reglas:
-            ctk.CTkLabel(self.lista_firewall, text="No hay reglas de bloqueo activas.",
+            ctk.CTkLabel(self.lista_firewall, text=t("seg_sin_reglas"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for r in reglas:
             fila = ctk.CTkFrame(self.lista_firewall, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            ctk.CTkLabel(fila, text=f'{r["nombre"]}  ·  {r["direccion"]}', font=ctk.CTkFont(size=12), anchor="w",
+            ctk.CTkLabel(fila, text=t("seg_regla_detalle", nombre=r["nombre"], direccion=r["direccion"]),
+                         font=ctk.CTkFont(size=12), anchor="w",
                          wraplength=650, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
             if str(r["nombre"]).startswith("TechCleanPro-Bloqueo-"):
-                ctk.CTkButton(fila, text="Desbloquear", width=100, fg_color="#2a2d36", hover_color="#3a3e4a",
+                ctk.CTkButton(fila, text=t("seg_btn_desbloquear"), width=100, fg_color="#2a2d36",
+                              hover_color="#3a3e4a",
                               command=lambda n=r["nombre"]: self._accion_desbloquear_app(n)).pack(
                     side="right", padx=12, pady=8)
 
     def _accion_elegir_bloquear_app(self):
         from tkinter import filedialog
-        ruta = filedialog.askopenfilename(title="Elige el programa a bloquear",
-                                           filetypes=[("Programas", "*.exe")])
+        ruta = filedialog.askopenfilename(title=t("seg_dialogo_elegir"),
+                                           filetypes=[(t("seg_filtro_programas"), "*.exe")])
         if not ruta:
             return
 
         def worker():
             exito, nombre_regla, comando = opt.bloquear_app_firewall(ruta)
-            msg = (f'"{os.path.basename(ruta)}" bloqueado — ya no tendrá acceso a internet.'
-                   if exito else "No se pudo crear la regla (¿permisos de administrador?).")
-            self._log_dev(f"Bloquear en firewall: {os.path.basename(ruta)}", comando, msg,
+            msg = (t("seg_bloqueado_ok", nombre=os.path.basename(ruta))
+                   if exito else t("seg_bloqueado_error"))
+            self._log_dev(t("seg_log_bloquear", nombre=os.path.basename(ruta)), comando, msg,
                           seccion=t("seccion_seguridad"), exito=exito)
             self.after(0, lambda: self._mostrar_popup_info("Firewall", msg))
             self.after(0, self._mostrar_firewall)
@@ -2612,24 +2645,23 @@ class TechCleanApp(ctk.CTk):
     def _accion_desbloquear_app(self, nombre_regla):
         def worker():
             exito, comando = opt.desbloquear_app_firewall(nombre_regla)
-            msg = "Regla eliminada — el programa vuelve a tener acceso a internet." if exito else "No se pudo eliminar la regla."
-            self._log_dev(f"Desbloquear en firewall: {nombre_regla}", comando, msg, seccion=t("seccion_seguridad"), exito=exito)
+            msg = t("seg_desbloqueo_ok") if exito else t("seg_desbloqueo_error")
+            self._log_dev(t("seg_log_desbloquear", regla=nombre_regla), comando, msg,
+                          seccion=t("seccion_seguridad"), exito=exito)
             self.after(0, self._mostrar_firewall)
         threading.Thread(target=worker, daemon=True).start()
 
     def _mostrar_usuarios_sistema(self):
         self._limpiar_contenedor_seguridad()
         ctk.CTkLabel(self.contenedor_seguridad,
-                     text="Las cuentas de usuario de este equipo — no solo la que tienes iniciada ahora, "
-                          "todas las que existen. Útil en equipos compartidos para saber quién más tiene "
-                          "acceso. Solo informativo, no se puede modificar nada desde aquí.",
+                     text=t("seg_usuarios_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         self.lista_usuarios = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL,
                                                        corner_radius=16)
         self.lista_usuarios.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.lista_usuarios, text="Leyendo cuentas de usuario...", text_color="gray60").pack(
+        ctk.CTkLabel(self.lista_usuarios, text=t("seg_leyendo_usuarios"), text_color="gray60").pack(
             padx=16, pady=16)
 
         def worker():
@@ -2643,18 +2675,18 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_usuarios.winfo_children():
             w.destroy()
         if not usuarios:
-            ctk.CTkLabel(self.lista_usuarios, text="No se pudo leer la lista de usuarios.",
+            ctk.CTkLabel(self.lista_usuarios, text=t("seg_sin_usuarios"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for u in usuarios:
             fila = ctk.CTkFrame(self.lista_usuarios, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            nombre_mostrado = u["nombre"] + ("  (tú)" if u["es_actual"] else "")
+            nombre_mostrado = u["nombre"] + (t("seg_usuario_tu") if u["es_actual"] else "")
             ctk.CTkLabel(fila, text=nombre_mostrado, font=ctk.CTkFont(size=13, weight="bold"), anchor="w").pack(
                 side="left", padx=12, pady=10, fill="x", expand=True)
             etiquetas = []
-            etiquetas.append("Administrador" if u["es_admin"] else "Estándar")
-            etiquetas.append("Habilitada" if u["habilitada"] else "Deshabilitada")
+            etiquetas.append(t("seg_admin") if u["es_admin"] else t("seg_estandar"))
+            etiquetas.append(t("seg_habilitada") if u["habilitada"] else t("seg_deshabilitada"))
             color_estado = COLOR_OK if u["habilitada"] else "gray50"
             ctk.CTkLabel(fila, text="  ·  ".join(etiquetas), font=ctk.CTkFont(size=11),
                          text_color=color_estado).pack(side="right", padx=12, pady=10)
