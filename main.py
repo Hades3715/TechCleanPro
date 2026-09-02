@@ -845,12 +845,11 @@ class TechCleanApp(ctk.CTk):
     # ---------------- Componentes (monitoreo extendido de hardware) ----------------
     def mostrar_componentes(self):
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Componentes del equipo",
+        ctk.CTkLabel(self.contenido, text=t("comp_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
         ctk.CTkLabel(self.contenido,
-                     text="Lectura en vivo de cada componente: uso, velocidad y temperatura "
-                          "cuando el equipo la expone.",
+                     text=t("comp_subtitulo"),
                      font=ctk.CTkFont(size=12), text_color="gray60").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(0, 12))
 
@@ -866,31 +865,31 @@ class TechCleanApp(ctk.CTk):
         scroll.grid(row=2, column=0, columnspan=3, sticky="nswe")
         scroll.grid_columnconfigure((0, 1), weight=1)
 
-        self.panel_cpu = self._crear_tarjeta_componente(scroll, "🧠 Procesador (CPU)", 0, 0)
-        self.panel_gpu = self._crear_tarjeta_componente(scroll, "🎮 Tarjeta gráfica (GPU)", 0, 1)
-        self.panel_ram = self._crear_tarjeta_componente(scroll, "🧩 Memoria RAM", 1, 0)
+        self.panel_cpu = self._crear_tarjeta_componente(scroll, t("comp_card_cpu"), 0, 0)
+        self.panel_gpu = self._crear_tarjeta_componente(scroll, t("comp_card_gpu"), 0, 1)
+        self.panel_ram = self._crear_tarjeta_componente(scroll, t("comp_card_ram"), 1, 0)
         self.lbl_canal_ram = ctk.CTkLabel(self.panel_ram.master, text="", font=ctk.CTkFont(size=10),
                                             text_color="gray50", wraplength=420, justify="left", anchor="w")
         self.lbl_canal_ram.pack(fill="x", padx=14, pady=(0, 14))
-        self.panel_disco = self._crear_tarjeta_componente(scroll, "💾 Almacenamiento", 1, 1)
+        self.panel_disco = self._crear_tarjeta_componente(scroll, t("comp_card_disco"), 1, 1)
         fila_disco = ctk.CTkFrame(self.panel_disco.master, fg_color="transparent")
         fila_disco.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkButton(fila_disco, text="⏱ Probar velocidad real", width=170, height=28,
+        ctk.CTkButton(fila_disco, text=t("comp_btn_probar_disco"), width=170, height=28,
                       font=ctk.CTkFont(size=11), command=self._accion_probar_disco).pack(side="left")
         self.lbl_resultado_disco = ctk.CTkLabel(fila_disco, text="", font=ctk.CTkFont(size=11),
                                                   text_color="gray60")
         self.lbl_resultado_disco.pack(side="left", padx=10)
-        self.panel_red = self._crear_tarjeta_componente(scroll, "🌐 Red", 2, 0)
-        self.panel_bateria = self._crear_tarjeta_componente(scroll, "🔋 Batería", 2, 1)
-        self.panel_sistema = self._crear_tarjeta_componente(scroll, "🖥 Equipo", 3, 0)
-        self.panel_audio = self._crear_tarjeta_componente(scroll, "🔊 Audio", 3, 1)
+        self.panel_red = self._crear_tarjeta_componente(scroll, t("comp_card_red"), 2, 0)
+        self.panel_bateria = self._crear_tarjeta_componente(scroll, t("comp_card_bateria"), 2, 1)
+        self.panel_sistema = self._crear_tarjeta_componente(scroll, t("comp_card_equipo"), 3, 0)
+        self.panel_audio = self._crear_tarjeta_componente(scroll, t("comp_card_audio"), 3, 1)
         fila_audio = ctk.CTkFrame(self.panel_audio.master, fg_color="transparent")
         fila_audio.pack(padx=14, pady=(0, 14), anchor="w")
-        ctk.CTkButton(fila_audio, text="🔔 Probar sonido", width=110,
+        ctk.CTkButton(fila_audio, text=t("comp_btn_probar_sonido"), width=110,
                       command=self._accion_probar_sonido).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(fila_audio, text="🎙 Probar micrófono", width=130, fg_color="#2a2d36",
+        ctk.CTkButton(fila_audio, text=t("comp_btn_probar_micro"), width=130, fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_prueba_microfono).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(fila_audio, text="🎚 Mezclador", width=100, fg_color="#2a2d36",
+        ctk.CTkButton(fila_audio, text=t("comp_btn_mezclador"), width=100, fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_mezclador).pack(side="left")
 
         def worker_audio():
@@ -898,37 +897,36 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._pintar_dispositivos_audio(dispositivos))
         threading.Thread(target=worker_audio, daemon=True).start()
 
-        self.spark_temp_cpu = Sparkline(scroll, "Temperatura CPU (últimos minutos)", unidad="°C")
+        self.spark_temp_cpu = Sparkline(scroll, t("comp_spark_temp"), unidad="°C")
         self.spark_temp_cpu.configurar(maximo=100, tono=COLOR_CRIT)
         self.spark_temp_cpu.grid(row=4, column=0, columnspan=2, padx=8, pady=8, sticky="we")
 
         # ---- Historial de arranques (tendencia en el tiempo) ----
         panel_arranques = ctk.CTkFrame(scroll, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_arranques.grid(row=5, column=0, columnspan=2, padx=8, pady=8, sticky="we")
-        ctk.CTkLabel(panel_arranques, text="⏱ Historial de arranques",
+        ctk.CTkLabel(panel_arranques, text=t("comp_arranques_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=14, pady=(14, 4))
         ctk.CTkLabel(panel_arranques,
-                     text="Cuánto tardó cada arranque reciente — Windows lo registra por su cuenta, esta app "
-                          "solo lo lee. Si tu equipo va tardando cada vez más en encender, sesión tras sesión, "
-                          "aquí se nota.",
+                     text=t("comp_arranques_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             anchor="w", padx=14, pady=(0, 10))
         self.lista_arranques = ctk.CTkScrollableFrame(panel_arranques, fg_color="#141720",
                                                         corner_radius=10, height=140)
         self.lista_arranques.pack(fill="x", padx=14, pady=(0, 14))
-        ctk.CTkLabel(self.lista_arranques, text="Leyendo...", text_color="gray60").pack(padx=8, pady=8)
+        ctk.CTkLabel(self.lista_arranques, text=t("comp_leyendo"),
+                     text_color="gray60").pack(padx=8, pady=8)
 
         def worker_arranques():
             historial = sysmon.listar_historial_arranques(limite=15)
             self.after(0, lambda: self._pintar_historial_arranques(historial))
         threading.Thread(target=worker_arranques, daemon=True).start()
 
-        ctk.CTkButton(self.panel_red.master, text="🌐 Probar velocidad de internet", height=28,
+        ctk.CTkButton(self.panel_red.master, text=t("comp_btn_speedtest"), height=28,
                       command=self._abrir_ventana_speedtest).pack(padx=14, pady=(0, 14), anchor="w")
 
-        ctk.CTkButton(self.contenido, text="📄 Exportar reporte de hardware",
+        ctk.CTkButton(self.contenido, text=t("comp_btn_export_hw"),
                       command=self._exportar_reporte_hardware).grid(row=3, column=0, sticky="w", padx=8, pady=(8, 0))
-        ctk.CTkButton(self.contenido, text="🔌 Ver drivers instalados",
+        ctk.CTkButton(self.contenido, text=t("comp_btn_drivers"),
                       command=self.mostrar_drivers).grid(row=3, column=1, sticky="w", padx=8, pady=(8, 0))
 
         self._refrescar_componentes()
@@ -944,8 +942,7 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not historial:
             ctk.CTkLabel(self.lista_arranques,
-                         text="Windows no tiene este historial registrado en este equipo (pasa en algunas "
-                              "configuraciones) — no significa que haya un problema.",
+                         text=t("comp_sin_arranques"),
                          text_color="gray60", wraplength=800, justify="left").pack(padx=8, pady=8, anchor="w")
             return
         for entrada in historial:
@@ -959,25 +956,27 @@ class TechCleanApp(ctk.CTk):
             color = COLOR_CRIT if entrada["segundos"] > 60 else (COLOR_WARN if entrada["segundos"] > 30 else COLOR_OK)
             ctk.CTkLabel(fila, text=fecha_legible, font=ctk.CTkFont(size=11), text_color="gray60").pack(
                 side="left")
-            ctk.CTkLabel(fila, text=f'{entrada["segundos"]:.0f} s', font=ctk.CTkFont(size=12, weight="bold"),
+            ctk.CTkLabel(fila, text=t("comp_segundos", segundos=f'{entrada["segundos"]:.0f}'),
+                         font=ctk.CTkFont(size=12, weight="bold"),
                          text_color=color).pack(side="right")
 
     def _pintar_dispositivos_audio(self, dispositivos):
         if not (hasattr(self, "panel_audio") and self.panel_audio.winfo_exists()):
             return
         if not dispositivos:
-            self.panel_audio.configure(text="No se detectaron dispositivos de audio, o no se pudo leer.")
+            self.panel_audio.configure(text=t("comp_sin_audio"))
             return
-        texto = "\n".join(f'{d["nombre"]} ({d["estado"]})' for d in dispositivos)
+        texto = "\n".join(t("comp_audio_detalle", nombre=d["nombre"], estado=d["estado"])
+                          for d in dispositivos)
         self.panel_audio.configure(text=texto)
 
     def _accion_probar_sonido(self):
         threading.Thread(target=opt.reproducir_sonido_prueba, daemon=True).start()
-        self._log_dev("Probar sonido", "winsound.Beep(880, 300)",
-                      "Tono de prueba reproducido.", seccion=t("seccion_componentes"), exito=True)
+        self._log_dev(t("comp_log_sonido"), "winsound.Beep(880, 300)",
+                      t("comp_sonido_ok"), seccion=t("seccion_componentes"), exito=True)
 
     def _accion_probar_disco(self):
-        self.lbl_resultado_disco.configure(text="Preparando...")
+        self.lbl_resultado_disco.configure(text=t("comp_preparando"))
 
         def progreso(texto):
             if hasattr(self, "lbl_resultado_disco") and self.lbl_resultado_disco.winfo_exists():
@@ -986,13 +985,15 @@ class TechCleanApp(ctk.CTk):
         def worker():
             resultado = opt.prueba_velocidad_disco(tamano_mb=256, callback_progreso=progreso)
             if not resultado or "error" in resultado:
-                msg = f'No se pudo probar: {resultado.get("error", "error desconocido")}' if resultado \
-                    else "No se pudo probar."
+                msg = (t("comp_disco_error",
+                         error=resultado.get("error", t("comp_error_desconocido"))) if resultado
+                       else t("comp_disco_error_simple"))
                 exito = False
             else:
-                msg = f'Escritura: {resultado["escritura_mbs"]} MB/s  ·  Lectura: {resultado["lectura_mbs"]} MB/s'
+                msg = t("comp_disco_resultado", escritura=resultado["escritura_mbs"],
+                        lectura=resultado["lectura_mbs"])
                 exito = True
-            self._log_dev("Prueba de velocidad de disco", "Escritura/lectura de 256 MB de prueba", msg,
+            self._log_dev(t("comp_log_disco"), t("comp_log_disco_cmd"), msg,
                           seccion=t("seccion_componentes"), exito=exito)
             if hasattr(self, "lbl_resultado_disco") and self.lbl_resultado_disco.winfo_exists():
                 self.after(0, lambda: self.lbl_resultado_disco.configure(text=msg))
@@ -1000,14 +1001,14 @@ class TechCleanApp(ctk.CTk):
 
     def _accion_abrir_prueba_microfono(self):
         exito, comando = opt.abrir_prueba_microfono()
-        self._log_dev("Abrir prueba de micrófono", comando,
-                      "Abriendo Configuración > Sonido (panel de Entrada, con medidor de nivel)." if exito
-                      else "No se pudo abrir.", seccion=t("seccion_componentes"), exito=exito)
+        self._log_dev(t("comp_log_micro"), comando,
+                      t("comp_micro_ok") if exito else t("comp_no_abrir"),
+                      seccion=t("seccion_componentes"), exito=exito)
 
     def _accion_abrir_mezclador(self):
         exito, comando = opt.abrir_mezclador_volumen()
-        self._log_dev("Abrir mezclador de volumen", comando,
-                      "Abriendo el mezclador de volumen de Windows." if exito else "No se pudo abrir.",
+        self._log_dev(t("comp_log_mezclador"), comando,
+                      t("comp_mezclador_ok") if exito else t("comp_no_abrir"),
                       seccion=t("seccion_componentes"), exito=exito)
 
     def _crear_tarjeta_componente(self, parent, titulo, row, col):
@@ -1015,7 +1016,8 @@ class TechCleanApp(ctk.CTk):
         tarjeta.grid(row=row, column=col, padx=8, pady=8, sticky="nswe")
         ctk.CTkLabel(tarjeta, text=titulo, font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(
             fill="x", padx=14, pady=(12, 4))
-        etiqueta = ctk.CTkLabel(tarjeta, text="Leyendo...", font=ctk.CTkFont(size=12, family="Consolas"),
+        etiqueta = ctk.CTkLabel(tarjeta, text=t("comp_leyendo"),
+                                font=ctk.CTkFont(size=12, family="Consolas"),
                                  justify="left", anchor="w", wraplength=420)
         etiqueta.pack(fill="x", padx=14, pady=(0, 14))
         return etiqueta
@@ -1088,7 +1090,8 @@ class TechCleanApp(ctk.CTk):
 
         cpu = datos["cpu"]
         nucleos_txt = "  ".join(f'N{i}:{v:.0f}%' for i, v in enumerate(cpu["porcentaje_por_nucleo"]))
-        temp_cpu = f'{cpu["temperatura_c"]:.0f}°C' if cpu["temperatura_c"] is not None else "No disponible en este equipo"
+        temp_cpu = (f'{cpu["temperatura_c"]:.0f}°C' if cpu["temperatura_c"] is not None
+                    else t("comp_no_disponible_equipo"))
 
         # Heurística de throttling térmico: CPU bajo carga significativa pero
         # corriendo muy por debajo de su frecuencia máxima — indicio (no
@@ -1100,47 +1103,48 @@ class TechCleanApp(ctk.CTk):
                 and cpu["frecuencia_actual_mhz"] < cpu["frecuencia_max_mhz"] * 0.7):
             throttling = True
 
-        texto_cpu = (
-            f'Uso total: {cpu["porcentaje_total"]:.0f}%\n'
-            f'Núcleos: {cpu["nucleos_fisicos"]} físicos / {cpu["nucleos_logicos"]} lógicos\n'
-            f'Frecuencia: {cpu["frecuencia_actual_mhz"] or "N/D"} MHz '
-            f'(máx. {cpu["frecuencia_max_mhz"] or "N/D"} MHz)\n'
-            f'Temperatura: {temp_cpu}\n'
-            f'Por núcleo: {nucleos_txt}')
+        texto_cpu = t("comp_cpu_texto",
+                      uso=f'{cpu["porcentaje_total"]:.0f}',
+                      fisicos=cpu["nucleos_fisicos"], logicos=cpu["nucleos_logicos"],
+                      frec=cpu["frecuencia_actual_mhz"] or t("comp_nd"),
+                      frec_max=cpu["frecuencia_max_mhz"] or t("comp_nd"),
+                      temp=temp_cpu, nucleos=nucleos_txt)
         if throttling:
-            texto_cpu += ('\n⚠️ Posible throttling: uso alto pero frecuencia muy por debajo del máximo '
-                           '(revisa si el plan de energía es Silencioso, o si hay poco flujo de aire).')
+            texto_cpu += t("comp_throttling")
         self.panel_cpu.configure(text=texto_cpu)
         if hasattr(self, "spark_temp_cpu") and self.spark_temp_cpu.winfo_exists():
             self.spark_temp_cpu.agregar_valor(cpu.get("temperatura_c"))
 
         gpu = datos["gpu"]
         if gpu.get("porcentaje") is not None:
-            temp_gpu = f'{gpu["temperatura_c"]:.0f}°C' if gpu.get("temperatura_c") is not None else "No disponible"
-            fan_gpu = f'{gpu["ventilador_pct"]:.0f}%' if gpu.get("ventilador_pct") is not None else "No disponible"
-            texto_gpu = (f'{gpu["nombre"]}\n'
-                         f'Uso: {gpu["porcentaje"]:.0f}%\n'
-                         f'VRAM: {gpu["vram_usada_gb"]} / {gpu["vram_total_gb"]} GB\n'
-                         f'Temperatura: {temp_gpu}   Ventilador: {fan_gpu}')
+            temp_gpu = (f'{gpu["temperatura_c"]:.0f}°C' if gpu.get("temperatura_c") is not None
+                        else t("comp_no_disponible"))
+            fan_gpu = (f'{gpu["ventilador_pct"]:.0f}%' if gpu.get("ventilador_pct") is not None
+                       else t("comp_no_disponible"))
+            texto_gpu = t("comp_gpu_texto", nombre=gpu["nombre"],
+                          uso=f'{gpu["porcentaje"]:.0f}',
+                          vram_usada=gpu["vram_usada_gb"], vram_total=gpu["vram_total_gb"],
+                          temp=temp_gpu, ventilador=fan_gpu)
         else:
-            texto_gpu = (f'{gpu["nombre"]}\n'
-                         f'Uso/temperatura en vivo no disponibles para esta GPU\n(solo NVIDIA vía nvidia-smi).')
+            texto_gpu = t("comp_gpu_sin_datos", nombre=gpu["nombre"])
         self.panel_gpu.configure(text=texto_gpu)
 
         ram_sticks = datos["ram_sticks"]
         if ram_sticks:
             texto_ram = "\n".join(
-                f'{m["ranura"]}: {m["capacidad_gb"]} GB @ {m["velocidad_mhz"] or "N/D"} MHz ({m["fabricante"]})'
+                t("comp_ram_modulo", ranura=m["ranura"], capacidad=m["capacidad_gb"],
+                  velocidad=m["velocidad_mhz"] or t("comp_nd"), fabricante=m["fabricante"])
                 for m in ram_sticks)
             canal = sysmon.estimar_canal_ram(ram_sticks)
             if canal:
-                texto_ram += f'\n{canal["modo"]} (estimado)'
+                texto_ram += t("comp_ram_canal", modo=canal["modo"])
         else:
-            texto_ram = "No se pudo leer el detalle físico de los módulos en este equipo."
+            texto_ram = t("comp_ram_sin_detalle")
             canal = None
         mv = datos.get("memoria_virtual")
         if mv:
-            texto_ram += f'\nMemoria virtual (paginación): {mv["usado_gb"]} / {mv["total_gb"]} GB ({mv["porcentaje"]:.0f}%)'
+            texto_ram += t("comp_ram_virtual", usado=mv["usado_gb"], total=mv["total_gb"],
+                           pct=f'{mv["porcentaje"]:.0f}')
         self.panel_ram.configure(text=texto_ram)
         if hasattr(self, "lbl_canal_ram") and self.lbl_canal_ram.winfo_exists():
             self.lbl_canal_ram.configure(text=canal["explicacion"] if canal else "")
@@ -1149,34 +1153,39 @@ class TechCleanApp(ctk.CTk):
         io_disco = datos["io_disco"]
         if particiones:
             texto_disco = "\n".join(
-                f'{p["unidad"]}  {p["usado_gb"]}/{p["total_gb"]} GB  ({p["porcentaje"]:.0f}%)'
+                t("comp_disco_particion", unidad=p["unidad"], usado=p["usado_gb"],
+                  total=p["total_gb"], pct=f'{p["porcentaje"]:.0f}')
                 for p in particiones)
-            texto_disco += f'\n\nVelocidad: lectura {io_disco["lectura_mbps"]} MB/s · escritura {io_disco["escritura_mbps"]} MB/s'
+            texto_disco += t("comp_disco_velocidad", lectura=io_disco["lectura_mbps"],
+                             escritura=io_disco["escritura_mbps"])
         else:
-            texto_disco = "No se detectaron unidades."
+            texto_disco = t("comp_sin_unidades")
         self.panel_disco.configure(text=texto_disco)
 
         red = datos["red"]
-        self.panel_red.configure(text=f'Bajada: {red["bajada_mbps"]} MB/s\nSubida: {red["subida_mbps"]} MB/s')
+        self.panel_red.configure(text=t("comp_red_texto", bajada=red["bajada_mbps"],
+                                        subida=red["subida_mbps"]))
 
         bateria = datos["bateria"]
         if bateria:
-            estado = "cargando" if bateria["cargando"] else "con batería"
-            restante = f' · {bateria["minutos_restantes"]} min restantes' if bateria["minutos_restantes"] else ""
-            texto_bateria = f'{bateria["porcentaje"]:.0f}% — {estado}{restante}'
+            estado = (t("comp_bateria_cargando") if bateria["cargando"]
+                      else t("comp_bateria_descargando"))
+            restante = (t("comp_bateria_restante", minutos=bateria["minutos_restantes"])
+                        if bateria["minutos_restantes"] else "")
+            texto_bateria = t("comp_bateria_texto", pct=f'{bateria["porcentaje"]:.0f}',
+                              estado=estado, restante=restante)
         else:
-            texto_bateria = "Equipo de escritorio (sin batería) o no se pudo leer el sensor."
+            texto_bateria = t("comp_sin_bateria")
         self.panel_bateria.configure(text=texto_bateria)
 
         uptime = datos["uptime"]
         horas = int(uptime // 3600)
         minutos = int((uptime % 3600) // 60)
         info = self._system_info_cache
-        self.panel_sistema.configure(text=(
-            f'Placa madre: {info.get("placa_madre", "No disponible")}\n'
-            f'BIOS: {info.get("bios", "No disponible")}\n'
-            f'Encendido hace: {horas}h {minutos}m\n'
-            f'Procesos activos: {datos["procesos"]}'))
+        self.panel_sistema.configure(text=t("comp_sistema_texto",
+            placa=info.get("placa_madre", t("comp_no_disponible")),
+            bios=info.get("bios", t("comp_no_disponible")),
+            horas=horas, minutos=minutos, procesos=datos["procesos"]))
 
     def _abrir_ventana_speedtest(self):
         """Ventana dedicada para el test de velocidad — antes era solo una
@@ -1186,14 +1195,14 @@ class TechCleanApp(ctk.CTk):
         abierta (evita que un resultado tardío intente pintar sobre un
         widget de una visita anterior ya destruido)."""
         dialogo = ctk.CTkToplevel(self)
-        dialogo.title("Velocidad de internet")
+        dialogo.title(t("comp_st_ventana"))
         dialogo.geometry("380x300")
         dialogo.resizable(False, False)
         dialogo.grab_set()
 
-        ctk.CTkLabel(dialogo, text="🌐 Prueba de velocidad",
+        ctk.CTkLabel(dialogo, text=t("comp_st_titulo"),
                      font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 4))
-        lbl_estado = ctk.CTkLabel(dialogo, text="Preparando...", font=ctk.CTkFont(size=12),
+        lbl_estado = ctk.CTkLabel(dialogo, text=t("comp_preparando"), font=ctk.CTkFont(size=12),
                                    text_color="gray60", wraplength=320, justify="center")
         lbl_estado.pack(pady=(0, 10))
 
@@ -1208,9 +1217,11 @@ class TechCleanApp(ctk.CTk):
 
         fila_botones = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila_botones.pack(side="bottom", pady=16)
-        ctk.CTkButton(fila_botones, text="Cerrar", fg_color="gray40", command=dialogo.destroy).pack(
+        ctk.CTkButton(fila_botones, text=t("comun_cerrar"), fg_color="gray40",
+                      command=dialogo.destroy).pack(
             side="left", padx=6)
-        btn_reintentar = ctk.CTkButton(fila_botones, text="🔄 Reintentar", width=110, state="disabled")
+        btn_reintentar = ctk.CTkButton(fila_botones, text=t("comp_btn_reintentar"), width=110,
+                                       state="disabled")
         btn_reintentar.pack(side="left", padx=6)
         btn_reintentar.configure(
             command=lambda: self._ejecutar_speedtest(dialogo, lbl_estado, barra, lbl_bajada, lbl_subida, btn_reintentar))
@@ -1220,16 +1231,21 @@ class TechCleanApp(ctk.CTk):
     def _ejecutar_speedtest(self, dialogo, lbl_estado, barra, lbl_bajada, lbl_subida, btn_reintentar):
         if not dialogo.winfo_exists():
             return
+        # opt.test_velocidad_internet avisa la fase con un CODIGO estable, no
+        # con texto: antes este mapa estaba indexado por las frases en espanol
+        # que producia el optimizador, asi que en cuanto ese texto cambiara de
+        # idioma el .get() habria caido siempre en el 0.5 por defecto y la
+        # barra de progreso habria dejado de avanzar.
         FASES = {
-            "Verificando conexión...": 0.15,
-            "Midiendo velocidad de bajada...": 0.45,
-            "Midiendo velocidad de subida...": 0.80,
-            "Listo.": 1.0,
+            "conexion": (t("comp_st_fase_conexion"), 0.15),
+            "bajada": (t("comp_st_fase_bajada"), 0.45),
+            "subida": (t("comp_st_fase_subida"), 0.80),
+            "listo": (t("comp_st_fase_listo"), 1.0),
         }
         btn_reintentar.configure(state="disabled")
         lbl_bajada.configure(text="")
         lbl_subida.configure(text="")
-        lbl_estado.configure(text="Preparando...", text_color="gray60")
+        lbl_estado.configure(text=t("comp_preparando"), text_color="gray60")
         barra.set(0)
 
         # BUG corregido: si la conexión se quedaba a medias (por ejemplo,
@@ -1242,10 +1258,11 @@ class TechCleanApp(ctk.CTk):
         # atascado el intento anterior (que sigue en su hilo, abandonado).
         estado_interno = {"completado": False}
 
-        def progreso(texto):
+        def progreso(codigo):
             if dialogo.winfo_exists():
+                texto, avance = FASES.get(codigo, (codigo, 0.5))
                 self.after(0, lambda: (lbl_estado.configure(text=texto),
-                                        barra.set(FASES.get(texto, 0.5))))
+                                        barra.set(avance)))
 
         def worker():
             resultado = opt.test_velocidad_internet(callback_progreso=progreso)
@@ -1259,27 +1276,27 @@ class TechCleanApp(ctk.CTk):
                 if resultado["bajada_mbps"] is None:
                     lbl_estado.configure(text=resultado["error"], text_color=COLOR_CRIT)
                     return
-                lbl_bajada.configure(text=f'↓ {resultado["bajada_mbps"]} Mbps', text_color=COLOR_OK)
+                lbl_bajada.configure(text=t("comp_st_bajada", mbps=resultado["bajada_mbps"]),
+                                     text_color=COLOR_OK)
                 if resultado["subida_mbps"] is not None:
-                    lbl_subida.configure(text=f'↑ {resultado["subida_mbps"]} Mbps', text_color=COLOR_OK)
-                    lbl_estado.configure(text="Resultado aproximado", text_color="gray60")
+                    lbl_subida.configure(text=t("comp_st_subida", mbps=resultado["subida_mbps"]),
+                                         text_color=COLOR_OK)
+                    lbl_estado.configure(text=t("comp_st_aproximado"), text_color="gray60")
                 else:
                     lbl_estado.configure(text=resultado["error"], text_color=COLOR_WARN)
             self.after(0, pintar)
 
-            resumen = (f'Bajada: {resultado["bajada_mbps"]} Mbps, Subida: {resultado["subida_mbps"]} Mbps'
+            resumen = (t("comp_st_resumen", bajada=resultado["bajada_mbps"],
+                         subida=resultado["subida_mbps"])
                        if resultado["bajada_mbps"] is not None else resultado["error"])
-            self._log_dev("Probar velocidad de internet", "Descarga/subida de prueba a speed.cloudflare.com",
+            self._log_dev(t("comp_log_speedtest"), "Descarga/subida de prueba a speed.cloudflare.com",
                           resumen, seccion=t("seccion_componentes"), exito=resultado["bajada_mbps"] is not None)
         threading.Thread(target=worker, daemon=True).start()
 
         def watchdog():
             if not dialogo.winfo_exists() or estado_interno["completado"]:
                 return
-            lbl_estado.configure(
-                text="Tardó demasiado (más de 35 seg). Puede ser tu conexión, o tu firewall/antivirus "
-                     "bloqueando el sitio de prueba. Puedes reintentar.",
-                text_color=COLOR_CRIT)
+            lbl_estado.configure(text=t("comp_st_timeout"), text_color=COLOR_CRIT)
             btn_reintentar.configure(state="normal")
         self.after(35000, watchdog)
 
@@ -1294,34 +1311,38 @@ class TechCleanApp(ctk.CTk):
             bateria = sysmon.get_battery_info()
 
             lineas = [
-                "REPORTE DE HARDWARE — TechClean Pro",
+                t("comp_hw_titulo"),
                 "=" * 60,
-                f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                t("comp_hw_generado", fecha=datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
                 "",
-                "-- Sistema --",
-                f'Equipo: {info["hostname"]}',
-                f'SO: {info["sistema_operativo"]}',
-                f'Placa madre: {info.get("placa_madre", "No disponible")}',
-                f'BIOS: {info.get("bios", "No disponible")}',
+                t("comp_hw_sec_sistema"),
+                t("comp_hw_equipo", valor=info["hostname"]),
+                t("comp_hw_so", valor=info["sistema_operativo"]),
+                t("comp_hw_placa", valor=info.get("placa_madre", t("comp_no_disponible"))),
+                t("comp_hw_bios", valor=info.get("bios", t("comp_no_disponible"))),
                 "",
-                "-- Procesador --",
-                f'Modelo: {info["procesador"]}',
-                f'Núcleos: {cpu["nucleos_fisicos"]} físicos / {cpu["nucleos_logicos"]} lógicos',
-                f'Frecuencia máxima: {cpu["frecuencia_max_mhz"] or "N/D"} MHz',
+                t("comp_hw_sec_cpu"),
+                t("comp_hw_modelo", valor=info["procesador"]),
+                t("comp_hw_nucleos", fisicos=cpu["nucleos_fisicos"], logicos=cpu["nucleos_logicos"]),
+                t("comp_hw_frec_max", valor=cpu["frecuencia_max_mhz"] or t("comp_nd")),
                 "",
-                "-- Memoria RAM --",
-                f'Total: {ram["total_gb"]} GB',
+                t("comp_hw_sec_ram"),
+                t("comp_hw_total", valor=ram["total_gb"]),
             ]
             for m in ram_sticks:
-                lineas.append(f'  {m["ranura"]}: {m["capacidad_gb"]} GB @ {m["velocidad_mhz"] or "N/D"} MHz ({m["fabricante"]})')
-            lineas += ["", "-- GPU --", f'Modelo: {gpu["nombre"]}']
+                lineas.append("  " + t("comp_ram_modulo", ranura=m["ranura"],
+                                       capacidad=m["capacidad_gb"],
+                                       velocidad=m["velocidad_mhz"] or t("comp_nd"),
+                                       fabricante=m["fabricante"]))
+            lineas += ["", t("comp_hw_sec_gpu"), t("comp_hw_modelo", valor=gpu["nombre"])]
             if gpu.get("vram_total_gb"):
-                lineas.append(f'VRAM: {gpu["vram_total_gb"]} GB')
-            lineas += ["", "-- Almacenamiento --"]
+                lineas.append(t("comp_hw_vram", valor=gpu["vram_total_gb"]))
+            lineas += ["", t("comp_hw_sec_disco")]
             for p in particiones:
-                lineas.append(f'  {p["unidad"]}: {p["total_gb"]} GB total, {p["libre_gb"]} GB libres')
+                lineas.append(t("comp_hw_particion", unidad=p["unidad"], total=p["total_gb"],
+                                libre=p["libre_gb"]))
             if bateria:
-                lineas += ["", "-- Batería --", f'{bateria["porcentaje"]:.0f}%']
+                lineas += ["", t("comp_hw_sec_bateria"), f'{bateria["porcentaje"]:.0f}%']
 
             # El respaldo ya no es BASE_DIR: en la build --onefile de
             # PyInstaller esa es la carpeta temporal donde se descomprime

@@ -18,6 +18,8 @@ import subprocess
 import ctypes
 import psutil
 import webbrowser
+
+from idiomas import t
 if platform.system() == "Windows":
     import ctypes.wintypes
 
@@ -1003,20 +1005,23 @@ def test_velocidad_internet(callback_progreso=None):
 
     def _error_legible(e):
         if isinstance(e, ssl.SSLError):
-            return f"problema de certificado SSL ({e})"
+            return t("optmod_err_ssl", detalle=e)
         if isinstance(e, socket.timeout):
-            return "se agotó el tiempo de espera (conexión muy lenta o bloqueada)"
+            return t("optmod_err_timeout")
         if isinstance(e, urllib.error.HTTPError):
-            return f"el servidor respondió con error {e.code}"
+            return t("optmod_err_http", codigo=e.code)
         if isinstance(e, urllib.error.URLError):
             razon = getattr(e, "reason", e)
             if isinstance(razon, ssl.SSLError):
-                return f"problema de certificado SSL ({razon})"
+                return t("optmod_err_ssl", detalle=razon)
             return f"{razon}"
         return str(e)
 
     try:
-        _avisar("Verificando conexión...")
+        # Las fases se avisan como CODIGO, no como texto: la interfaz las
+        # traduce y ademas las usa como clave para la barra de progreso. Si
+        # aqui viajara texto traducido, ese mapa fallaria al cambiar de idioma.
+        _avisar("conexion")
         try:
             req_conexion = urllib.request.Request("https://www.gstatic.com/generate_204",
                                                     headers=HEADERS_NAVEGADOR)
@@ -1025,7 +1030,7 @@ def test_velocidad_internet(callback_progreso=None):
         except Exception:
             hay_internet = False
 
-        _avisar("Midiendo velocidad de bajada...")
+        _avisar("bajada")
         try:
             url_descarga = "https://speed.cloudflare.com/__down?bytes=10000000"
             req_descarga = urllib.request.Request(url_descarga, headers=HEADERS_NAVEGADOR)
@@ -1036,14 +1041,12 @@ def test_velocidad_internet(callback_progreso=None):
             resultado["bajada_mbps"] = round((len(datos) * 8 / 1_000_000) / duracion, 2)
         except Exception as e:
             if not hay_internet:
-                resultado["error"] = "No se detectó conexión a internet en este equipo."
+                resultado["error"] = t("optmod_sin_internet")
             else:
-                resultado["error"] = ("Hay internet, pero no se pudo contactar al servidor de prueba "
-                                       f"(Cloudflare) — puede que tu firewall/antivirus lo esté bloqueando: "
-                                       f"{_error_legible(e)}")
+                resultado["error"] = t("optmod_servidor_bloqueado", detalle=_error_legible(e))
             return resultado
 
-        _avisar("Midiendo velocidad de subida...")
+        _avisar("subida")
         try:
             url_subida = "https://speed.cloudflare.com/__up"
             payload = os.urandom(3_000_000)
@@ -1055,9 +1058,9 @@ def test_velocidad_internet(callback_progreso=None):
             duracion = max(time.time() - inicio, 0.001)
             resultado["subida_mbps"] = round((len(payload) * 8 / 1_000_000) / duracion, 2)
         except Exception as e:
-            resultado["error"] = f"Bajada medida, pero no se pudo medir la subida: {_error_legible(e)}"
+            resultado["error"] = t("optmod_subida_error", detalle=_error_legible(e))
 
-        _avisar("Listo.")
+        _avisar("listo")
         return resultado
     finally:
         # Pase lo que pase (éxito, error o timeout), nunca dejar el
@@ -1096,7 +1099,7 @@ def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
     ruta_prueba = os.path.join(tempfile.gettempdir(), "techcleanpro_prueba_disco.tmp")
     bloque = os.urandom(1024 * 1024)  # 1 MB de datos aleatorios — no comprimibles, prueba más honesta
     try:
-        _avisar("Escribiendo archivo de prueba...")
+        _avisar(t("comp_disco_fase_escribiendo"))
         inicio = time.time()
         with open(ruta_prueba, "wb") as f:
             for _ in range(tamano_mb):
@@ -1106,7 +1109,7 @@ def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
         duracion_escritura = time.time() - inicio
         velocidad_escritura = tamano_mb / duracion_escritura if duracion_escritura > 0 else 0
 
-        _avisar("Leyendo de vuelta...")
+        _avisar(t("comp_disco_fase_leyendo"))
         inicio = time.time()
         with open(ruta_prueba, "rb") as f:
             while f.read(1024 * 1024):
@@ -1114,7 +1117,7 @@ def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
         duracion_lectura = time.time() - inicio
         velocidad_lectura = tamano_mb / duracion_lectura if duracion_lectura > 0 else 0
 
-        _avisar("Listo.")
+        _avisar(t("comp_disco_fase_listo"))
         return {
             "escritura_mbs": round(velocidad_escritura, 1),
             "lectura_mbs": round(velocidad_lectura, 1),
