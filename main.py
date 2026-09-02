@@ -154,12 +154,28 @@ def oscurecer_color(hex_color, factor=0.75):
         return hex_color
 
 
+# Con Modo Ligero activo las animaciones se apagan: en un equipo justo de
+# recursos, redibujar el arco 16 veces por cada cambio de numero es
+# exactamente el tipo de gasto que ese modo existe para evitar.
+ANIMAR_BARRAS = True
+
+
 class Gauge(ctk.CTkFrame):
+    """Medidor circular. El valor NO salta de golpe: se interpola desde el
+    valor que ya se estaba mostrando hasta el nuevo, con una curva que
+    arranca rapido y frena al final (ease-out), asi que el arco y el numero
+    se mueven juntos en vez de dar un tiron."""
+
+    DURACION_MS = 320   # lo que tarda el recorrido completo
+    PASO_MS = 20        # ~16 cuadros; mas fino no se nota y cuesta mas
+
     def __init__(self, master, titulo, unidad="%", size=150, **kwargs):
         super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=16, **kwargs)
         self.titulo = titulo
         self.unidad = unidad
         self.size = size
+        self._valor_mostrado = 0.0
+        self._anim_id = None
 
         self.canvas = tk.Canvas(self, width=size, height=size, bg=COLOR_BG_PANEL, highlightthickness=0)
         self.canvas.pack(pady=(14, 4))
@@ -170,9 +186,62 @@ class Gauge(ctk.CTkFrame):
         self.lbl_detalle = ctk.CTkLabel(self, text="", font=ctk.CTkFont(size=11), text_color="gray70")
         self.lbl_detalle.pack(pady=(0, 12))
 
-        self.set_value(0, "Cargando...")
+        self.set_value(0, t("comun_cargando"))
+
+    def _cancelar_animacion(self):
+        """Una animacion en curso se descarta en cuanto llega un valor nuevo:
+        si no, dos recorridos se pisarian y el arco temblaria."""
+        if self._anim_id is not None:
+            try:
+                self.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
 
     def set_value(self, porcentaje, detalle=""):
+        self.lbl_detalle.configure(text=detalle)
+
+        if porcentaje is None:
+            self._cancelar_animacion()
+            self._valor_mostrado = None
+            self._dibujar(None)
+            return
+
+        destino = max(0.0, min(100.0, float(porcentaje)))
+        # Sin animacion cuando esta apagada, o cuando se viene de "N/D" (no
+        # hay desde donde interpolar).
+        if not ANIMAR_BARRAS or self._valor_mostrado is None:
+            self._cancelar_animacion()
+            self._valor_mostrado = destino
+            self._dibujar(destino)
+            return
+
+        self._cancelar_animacion()
+        inicio = self._valor_mostrado
+        if abs(destino - inicio) < 0.5:      # cambio imperceptible: no vale animar
+            self._valor_mostrado = destino
+            self._dibujar(destino)
+            return
+
+        pasos = max(1, self.DURACION_MS // self.PASO_MS)
+
+        def paso(i):
+            self._anim_id = None
+            # El usuario pudo cambiar de pantalla a media animacion: el gauge
+            # ya no existe y tocarlo reventaria.
+            if not self.winfo_exists():
+                return
+            avance = i / pasos
+            suave = 1 - (1 - avance) ** 3    # ease-out cubico
+            valor = inicio + (destino - inicio) * suave
+            self._valor_mostrado = valor
+            self._dibujar(valor)
+            if i < pasos:
+                self._anim_id = self.after(self.PASO_MS, paso, i + 1)
+
+        paso(1)
+
+    def _dibujar(self, porcentaje):
         self.canvas.delete("all")
         pad = 12
         color = color_por_porcentaje(porcentaje)
@@ -181,13 +250,13 @@ class Gauge(ctk.CTkFrame):
                                 start=90, extent=359.999, style="arc",
                                 outline="#33363f", width=12)
         extent = -3.6 * (porcentaje or 0)
-        self.canvas.create_arc(pad, pad, self.size - pad, self.size - pad,
-                                start=90, extent=extent, style="arc",
-                                outline=color, width=12)
+        if abs(extent) > 0.01:
+            self.canvas.create_arc(pad, pad, self.size - pad, self.size - pad,
+                                    start=90, extent=extent, style="arc",
+                                    outline=color, width=12)
         texto = f"{porcentaje:.0f}{self.unidad}" if porcentaje is not None else "N/D"
         self.canvas.create_text(self.size / 2, self.size / 2, text=texto,
                                  fill="white", font=("Segoe UI", 20, "bold"))
-        self.lbl_detalle.configure(text=detalle)
 
 
 class Sparkline(ctk.CTkFrame):
@@ -403,6 +472,8 @@ class TechCleanApp(ctk.CTk):
         # de temperatura, punto de restauración) — persisten entre sesiones.
         self.prefs = prefs.cargar()
         idiomas.establecer_idioma(self.prefs.get("idioma", "es"))
+        # Modo Ligero apaga las animaciones de las barras (aqui y en el widget).
+        self._aplicar_preferencia_animaciones()
         if not self.prefs.get("idioma_preguntado", False):
             self._preguntar_idioma_primera_vez()
         self._ultima_alerta_temp = 0.0
@@ -3875,6 +3946,7 @@ class TechCleanApp(ctk.CTk):
             dialogo.destroy()
             self.prefs["modo_ligero"] = True
             prefs.guardar({"modo_ligero": True})
+            self._aplicar_preferencia_animaciones()
 
         ctk.CTkButton(fila, text=t("ligero_no"), fg_color="gray40", command=dialogo.destroy).pack(
             side="left", padx=8)
@@ -4930,10 +5002,18 @@ class TechCleanApp(ctk.CTk):
         ctk.CTkButton(fila, text=t("ajustes_cerrar_ahora"), fg_color=COLOR_CRIT, hover_color="#c0392b",
                       command=self._salir_definitivo).pack(side="left", padx=8)
 
+    def _aplicar_preferencia_animaciones(self):
+        """Modo Ligero apaga la animacion de las barras, en la ventana
+        principal y en el widget flotante, sin reiniciar la app."""
+        global ANIMAR_BARRAS
+        ANIMAR_BARRAS = not self.prefs.get("modo_ligero")
+        widget_mod.ANIMAR_BARRAS = ANIMAR_BARRAS
+
     def _toggle_modo_ligero(self):
         activo = bool(self.switch_modo_ligero.get())
         self.prefs["modo_ligero"] = activo
         prefs.guardar({"modo_ligero": activo})
+        self._aplicar_preferencia_animaciones()
         self._log_dev(t("ajustes_log_modo_ligero_on") if activo else t("ajustes_log_modo_ligero_off"),
                       "N/A", t("ajustes_modo_ligero_aplica"),
                       seccion=t("seccion_ajustes"), exito=True)

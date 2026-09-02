@@ -1126,6 +1126,7 @@ TEXTOS = {
         "seccion_sistema": "Sistema",
         # ---- Textos comunes reutilizados ----
         "comun_cancelar": "Cancelar",
+        "comun_cargando": "Cargando...",
         "comun_confirmar_titulo": "Confirmar",
         # ---- Segundo Plano ----
         "segplano_titulo": "Trabajo en segundo plano",
@@ -2237,6 +2238,7 @@ TEXTOS = {
         "seccion_sistema": "System",
         # ---- Shared reusable text ----
         "comun_cancelar": "Cancel",
+        "comun_cargando": "Loading...",
         "comun_confirmar_titulo": "Confirm",
         # ---- Background ----
         "segplano_titulo": "Background work",

@@ -44,19 +44,66 @@ def _color(valor):
     return COLOR_CRIT
 
 
+# main.py lo pone en False cuando Modo Ligero esta activo.
+ANIMAR_BARRAS = True
+
+
 class _MiniBarra(tk.Canvas):
     """Barrita de progreso horizontal simple, sin dependencias — para que
-    cada métrica de la tarjeta de Rendimiento se vea "viva", no solo texto."""
+    cada métrica de la tarjeta de Rendimiento se vea "viva", no solo texto.
+
+    El relleno se desliza hasta el valor nuevo en vez de saltar: misma
+    interpolacion con ease-out que el medidor de Inicio, pero mas corta
+    porque la barra es chica y un recorrido largo se sentiria lento."""
+
+    DURACION_MS = 260
+    PASO_MS = 20
+
     def __init__(self, master, ancho=70, alto=6, **kwargs):
         super().__init__(master, width=ancho, height=alto, bg=COLOR_CARD,
                           highlightthickness=0, **kwargs)
         self.ancho = ancho
         self.alto = alto
+        self._valor_mostrado = 0.0
+        self._anim_id = None
         self.set_valor(0)
 
+    def _cancelar_animacion(self):
+        if self._anim_id is not None:
+            try:
+                self.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
+
     def set_valor(self, porcentaje, color=None):
+        destino = max(0.0, min(100.0, float(porcentaje or 0)))
+        self._cancelar_animacion()
+
+        if not ANIMAR_BARRAS or abs(destino - self._valor_mostrado) < 0.5:
+            self._valor_mostrado = destino
+            self._dibujar(destino, color)
+            return
+
+        inicio = self._valor_mostrado
+        pasos = max(1, self.DURACION_MS // self.PASO_MS)
+
+        def paso(i):
+            self._anim_id = None
+            if not self.winfo_exists():
+                return
+            avance = i / pasos
+            suave = 1 - (1 - avance) ** 3
+            valor = inicio + (destino - inicio) * suave
+            self._valor_mostrado = valor
+            self._dibujar(valor, color)
+            if i < pasos:
+                self._anim_id = self.after(self.PASO_MS, paso, i + 1)
+
+        paso(1)
+
+    def _dibujar(self, porcentaje, color=None):
         self.delete("all")
-        porcentaje = max(0, min(100, porcentaje or 0))
         color = color or _color(porcentaje)
         self.create_rectangle(0, 0, self.ancho, self.alto, fill="#2a2d38", outline="")
         ancho_lleno = self.ancho * (porcentaje / 100)

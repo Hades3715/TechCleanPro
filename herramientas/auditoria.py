@@ -21,7 +21,8 @@ TK = {"after","destroy","geometry","title","protocol","withdraw","deiconify","li
       "minsize","focus_force","wait_window","grid_columnconfigure","grid_rowconfigure","attributes",
       "configure","overrideredirect","update_idletasks","clipboard_append","clipboard_clear",
       "winfo_pointerx","winfo_pointery","winfo_screenwidth","winfo_screenheight","winfo_x","winfo_y",
-      "create_rectangle","delete","state"}
+      "create_rectangle","delete","state","after_cancel","winfo_exists",
+      "winfo_reqwidth","winfo_reqheight","winfo_children","pack","grid","bind","cget"}
 r = []
 for f, a in arb.items():
     for n in ast.walk(a):
