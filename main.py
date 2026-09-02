@@ -1775,15 +1775,16 @@ class TechCleanApp(ctk.CTk):
         ctk.CTkButton(self.contenido, text=t("opt_volver"), fg_color="transparent",
                       hover_color="#2a2d36", width=140, command=self.mostrar_optimizador).grid(
             row=0, column=0, sticky="w", pady=(0, 8))
-        ctk.CTkLabel(self.contenido, text="Espacio en disco",
+        ctk.CTkLabel(self.contenido, text=t("disco_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         self.pestana_disco = ctk.CTkSegmentedButton(
             self.contenido,
-            values=["Carpetas pesadas", "Archivos grandes", "Instaladores viejos", "Caché de apps"],
+            values=[t("disco_tab_carpetas"), t("disco_tab_archivos"),
+                    t("disco_tab_instaladores"), t("disco_tab_cache")],
             command=self._cambiar_pestana_disco)
-        self.pestana_disco.set("Carpetas pesadas")
+        self.pestana_disco.set(t("disco_tab_carpetas"))
         self.pestana_disco.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         self.contenido.grid_rowconfigure(3, weight=1)
@@ -1795,14 +1796,20 @@ class TechCleanApp(ctk.CTk):
         self._mostrar_carpetas_pesadas()
 
     def _cambiar_pestana_disco(self, valor):
-        if valor == "Carpetas pesadas":
-            self._mostrar_carpetas_pesadas()
-        elif valor == "Archivos grandes":
+        """Cambia de pestaña a partir del TEXTO VISIBLE del botón segmentado.
+
+        El texto está traducido, así que no se compara contra literales en
+        español: se resuelve contra las mismas claves con las que se
+        construyó el botón. Si no coincide ninguna, cae en Carpetas pesadas,
+        que es la pestaña por defecto — nunca en una rama equivocada."""
+        if valor == t("disco_tab_archivos"):
             self._mostrar_archivos_grandes()
-        elif valor == "Instaladores viejos":
+        elif valor == t("disco_tab_instaladores"):
             self._mostrar_instaladores_viejos()
-        else:
+        elif valor == t("disco_tab_cache"):
             self._mostrar_cache_apps()
+        else:
+            self._mostrar_carpetas_pesadas()
 
     def _limpiar_contenedor_disco(self):
         for w in self.contenedor_disco.winfo_children():
@@ -1816,27 +1823,29 @@ class TechCleanApp(ctk.CTk):
         unidades = [p["unidad"] for p in sysmon.get_disk_partitions()] or ["C:\\"]
         self.combo_unidad_disco = ctk.CTkOptionMenu(fila, values=unidades, width=100)
         self.combo_unidad_disco.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fila, text="Analizar", command=self._accion_analizar_disco).pack(side="left")
+        ctk.CTkButton(fila, text=t("disco_btn_analizar"),
+                      command=self._accion_analizar_disco).pack(side="left")
 
         self.lista_espacio_disco = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_espacio_disco.pack(fill="both", expand=True)
         ctk.CTkLabel(self.lista_espacio_disco,
-                     text="Elige una unidad y presiona \"Analizar\". Tamaño aproximado (2 niveles de profundidad).",
+                     text=t("disco_elige_unidad"),
                      text_color="gray60").pack(padx=16, pady=16)
 
     def _accion_analizar_disco(self):
         unidad = self.combo_unidad_disco.get()
         for w in self.lista_espacio_disco.winfo_children():
             w.destroy()
-        ctk.CTkLabel(self.lista_espacio_disco, text=f"Analizando {unidad} ... esto puede tardar un momento.",
+        ctk.CTkLabel(self.lista_espacio_disco, text=t("disco_analizando", unidad=unidad),
                      text_color="gray60").pack(padx=16, pady=16)
 
         def worker():
             carpetas = opt.listar_carpetas_pesadas(unidad, top_n=15, max_profundidad=2)
             self.after(0, lambda: self._pintar_espacio_disco(unidad, carpetas))
-            self._log_dev(f"Analizar espacio en disco ({unidad})",
-                          f"Escaneo recursivo de {unidad} (2 niveles, solo lectura)",
-                          f"{len(carpetas)} carpetas encontradas", seccion=t("seccion_optimizador"), exito=True)
+            self._log_dev(t("disco_log_analizar", unidad=unidad),
+                          t("disco_log_analizar_cmd", unidad=unidad),
+                          t("disco_carpetas_encontradas", cantidad=len(carpetas)),
+                          seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_espacio_disco(self, unidad, carpetas):
@@ -1847,7 +1856,7 @@ class TechCleanApp(ctk.CTk):
 
         if not carpetas:
             ctk.CTkLabel(self.lista_espacio_disco,
-                         text="No se pudo leer esa unidad, o está vacía.", text_color="gray60").pack(
+                         text=t("disco_unidad_vacia"), text_color="gray60").pack(
                 padx=16, pady=16)
             return
 
@@ -1871,27 +1880,29 @@ class TechCleanApp(ctk.CTk):
         unidades = [p["unidad"] for p in sysmon.get_disk_partitions()] or ["C:\\"]
         self.combo_unidad_archivos = ctk.CTkOptionMenu(fila, values=unidades, width=100)
         self.combo_unidad_archivos.pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fila, text="Buscar archivos de +100 MB",
+        ctk.CTkButton(fila, text=t("disco_btn_buscar_grandes"),
                       command=self._accion_buscar_archivos_grandes).pack(side="left")
 
         self.lista_archivos_grandes = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_archivos_grandes.pack(fill="both", expand=True)
         ctk.CTkLabel(self.lista_archivos_grandes,
-                     text="Busca los 30 archivos individuales más grandes (máx. 20 segundos de búsqueda).",
+                     text=t("disco_archivos_intro"),
                      text_color="gray60").pack(padx=16, pady=16)
 
     def _accion_buscar_archivos_grandes(self):
         unidad = self.combo_unidad_archivos.get()
         for w in self.lista_archivos_grandes.winfo_children():
             w.destroy()
-        ctk.CTkLabel(self.lista_archivos_grandes, text=f"Buscando en {unidad}...", text_color="gray60").pack(
+        ctk.CTkLabel(self.lista_archivos_grandes, text=t("disco_buscando_en", unidad=unidad),
+                     text_color="gray60").pack(
             padx=16, pady=16)
 
         def worker():
             archivos = opt.listar_archivos_grandes(unidad, min_mb=100, limite=30)
             self.after(0, lambda: self._pintar_archivos_grandes(archivos))
-            self._log_dev(f"Buscar archivos grandes ({unidad})", "Búsqueda por tamaño (solo lectura)",
-                          f"{len(archivos)} archivos encontrados", seccion=t("seccion_optimizador"), exito=True)
+            self._log_dev(t("disco_log_buscar_grandes", unidad=unidad), t("disco_log_buscar_cmd"),
+                          t("disco_archivos_encontrados", cantidad=len(archivos)),
+                          seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_archivos_grandes(self, archivos):
@@ -1901,7 +1912,7 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not archivos:
             ctk.CTkLabel(self.lista_archivos_grandes,
-                         text="No se encontraron archivos de más de 100 MB (o no hubo tiempo suficiente).",
+                         text=t("disco_sin_archivos_grandes"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for a in archivos:
@@ -1919,15 +1930,14 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_instaladores_viejos(self):
         self._limpiar_contenedor_disco()
         ctk.CTkLabel(self.contenedor_disco,
-                     text="Instaladores (.exe/.msi) y comprimidos (.zip/.rar/.7z) en tu carpeta Descargas de más "
-                          "de 30 días — útil, por ejemplo, para ir borrando ZIPs de versiones viejas de esta "
-                          "misma app que ya no necesites, además de instaladores ya usados.",
+                     text=t("disco_instaladores_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         self.lista_instaladores = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_instaladores.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.lista_instaladores, text="Buscando...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(self.lista_instaladores, text=t("disco_buscando"),
+                     text_color="gray60").pack(padx=16, pady=16)
 
         def worker():
             instaladores = opt.listar_instaladores_viejos(dias=30)
@@ -1940,16 +1950,17 @@ class TechCleanApp(ctk.CTk):
         for w in self.lista_instaladores.winfo_children():
             w.destroy()
         if not instaladores:
-            ctk.CTkLabel(self.lista_instaladores, text="No se encontraron instaladores viejos en Descargas.",
+            ctk.CTkLabel(self.lista_instaladores, text=t("disco_sin_instaladores"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
 
         fila_top = ctk.CTkFrame(self.lista_instaladores, fg_color="transparent")
         fila_top.pack(fill="x", padx=8, pady=8)
         total = sum(i["bytes"] for i in instaladores)
-        ctk.CTkLabel(fila_top, text=f"{len(instaladores)} instaladores — {opt.format_bytes(total)} en total",
+        ctk.CTkLabel(fila_top, text=t("disco_instaladores_total", cantidad=len(instaladores),
+                                      tamano=opt.format_bytes(total)),
                      font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        ctk.CTkButton(fila_top, text="🗑 Enviar todos a la papelera", fg_color=COLOR_WARN, text_color="black",
+        ctk.CTkButton(fila_top, text=t("disco_btn_papelera_todos"), fg_color=COLOR_WARN, text_color="black",
                       command=lambda: self._confirmar_borrar_archivos([i["ruta"] for i in instaladores])).pack(
             side="right")
 
@@ -1958,7 +1969,8 @@ class TechCleanApp(ctk.CTk):
             fila.pack(fill="x", padx=8, pady=4)
             nombre = os.path.basename(i["ruta"])
             dias = int((time.time() - i["mtime"]) / 86400)
-            ctk.CTkLabel(fila, text=f'{nombre}  ·  hace {dias} días', font=ctk.CTkFont(size=12), anchor="w",
+            ctk.CTkLabel(fila, text=t("disco_archivo_dias", nombre=nombre, dias=dias),
+                         font=ctk.CTkFont(size=12), anchor="w",
                          wraplength=520, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
             ctk.CTkLabel(fila, text=opt.format_bytes(i["bytes"]), font=ctk.CTkFont(size=12, weight="bold"),
                          width=80).pack(side="left", padx=4)
@@ -1970,14 +1982,14 @@ class TechCleanApp(ctk.CTk):
     def _mostrar_cache_apps(self):
         self._limpiar_contenedor_disco()
         ctk.CTkLabel(self.contenedor_disco,
-                     text="Caché de apps conocidas (Steam, Discord, OneDrive, pip, npm, Spotify) — se regenera "
-                          "sola la próxima vez que abras cada app, así que borrarla es seguro.",
+                     text=t("disco_cache_intro"),
                      font=ctk.CTkFont(size=12), text_color="gray60", wraplength=900, justify="left").pack(
             fill="x", pady=(0, 10), anchor="w")
 
         self.lista_cache_apps = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_cache_apps.pack(fill="both", expand=True)
-        ctk.CTkLabel(self.lista_cache_apps, text="Buscando...", text_color="gray60").pack(padx=16, pady=16)
+        ctk.CTkLabel(self.lista_cache_apps, text=t("disco_buscando"),
+                     text_color="gray60").pack(padx=16, pady=16)
 
         def worker():
             items = opt.listar_cache_apps_comunes()
@@ -1991,7 +2003,7 @@ class TechCleanApp(ctk.CTk):
             w.destroy()
         if not items:
             ctk.CTkLabel(self.lista_cache_apps,
-                         text="No se encontró caché de estas apps en este equipo (o no están instaladas).",
+                         text=t("disco_sin_cache"),
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for it in items:
@@ -2001,15 +2013,16 @@ class TechCleanApp(ctk.CTk):
                 side="left", padx=12, pady=10, fill="x", expand=True)
             ctk.CTkLabel(fila, text=opt.format_bytes(it["bytes"]), font=ctk.CTkFont(size=12), width=90).pack(
                 side="left", padx=4)
-            ctk.CTkButton(fila, text="Limpiar", width=90,
+            ctk.CTkButton(fila, text=t("disco_btn_limpiar"), width=90,
                           command=lambda r=it["ruta"], n=it["nombre"]: self._accion_limpiar_cache_app(r, n)).pack(
                 side="left", padx=(4, 12), pady=8)
 
     def _accion_limpiar_cache_app(self, ruta, nombre):
         def worker():
             liberado, comando = opt.limpiar_cache_app(ruta)
-            msg = f"Se liberaron {opt.format_bytes(liberado)} de {nombre}."
-            self._log_dev(f"Limpiar caché de {nombre}", comando, msg, seccion=t("seccion_optimizador"),
+            msg = t("disco_cache_liberado", tamano=opt.format_bytes(liberado), nombre=nombre)
+            self._log_dev(t("disco_log_limpiar_cache", nombre=nombre), comando, msg,
+                          seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado)
             self.after(0, lambda: self._mostrar_cache_apps())
         threading.Thread(target=worker, daemon=True).start()
@@ -2020,8 +2033,8 @@ class TechCleanApp(ctk.CTk):
         dialogo.title("Confirmar")
         dialogo.geometry("420x180")
         dialogo.grab_set()
-        texto = (f'¿Enviar {len(rutas)} archivo(s) a la papelera de reciclaje?' if len(rutas) > 1
-                 else f'¿Enviar "{os.path.basename(rutas[0])}" a la papelera de reciclaje?')
+        texto = (t("disco_conf_papelera_varios", cantidad=len(rutas)) if len(rutas) > 1
+                 else t("disco_conf_papelera_uno", nombre=os.path.basename(rutas[0])))
         ctk.CTkLabel(dialogo, text=texto, font=ctk.CTkFont(size=13), wraplength=380, justify="center").pack(pady=20)
         fila = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila.pack(pady=10)
@@ -2031,16 +2044,18 @@ class TechCleanApp(ctk.CTk):
 
             def worker():
                 eliminados, liberado, errores = opt.enviar_a_papelera(rutas)
-                msg = (f"{eliminados} archivo(s) enviados a la papelera ({opt.format_bytes(liberado)})."
-                       if eliminados else f"No se pudo completar: {'; '.join(errores) if errores else 'error desconocido'}.")
-                self._log_dev("Enviar archivos a la papelera", "SHFileOperationW (FO_DELETE, FOF_ALLOWUNDO)",
+                msg = (t("disco_papelera_ok", cantidad=eliminados, tamano=opt.format_bytes(liberado))
+                       if eliminados else
+                       t("disco_papelera_error",
+                         errores="; ".join(errores) if errores else t("disco_error_desconocido")))
+                self._log_dev(t("disco_log_papelera"), "SHFileOperationW (FO_DELETE, FOF_ALLOWUNDO)",
                               msg, seccion=t("seccion_optimizador"), exito=eliminados > 0, bytes_liberados=liberado)
                 if hasattr(self, "pestana_disco") and self.pestana_disco.winfo_exists():
                     self.after(0, lambda: self._cambiar_pestana_disco(self.pestana_disco.get()))
             threading.Thread(target=worker, daemon=True).start()
 
         ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
-        ctk.CTkButton(fila, text="Enviar a la papelera", fg_color=COLOR_WARN, text_color="black",
+        ctk.CTkButton(fila, text=t("disco_btn_enviar_papelera"), fg_color=COLOR_WARN, text_color="black",
                       command=confirmar).pack(side="left", padx=8)
 
     def _accion_liberar_ram(self):
