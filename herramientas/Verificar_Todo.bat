@@ -35,11 +35,16 @@ echo ---------- 3. Animacion de las barras ----------
 python herramientas\prueba_animacion.py
 echo.
 
-echo ---------- 4. Arranque real en espanol ----------
+echo ---------- 4. Ediciones (que opciones ve cada una) ----------
+python herramientas\prueba_ediciones.py cliente
+python herramientas\prueba_ediciones.py admin
+echo.
+
+echo ---------- 5. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 5. Arranque real en ingles ----------
+echo ---------- 6. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 

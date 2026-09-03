@@ -4686,11 +4686,20 @@ class TechCleanApp(ctk.CTk):
                       command=self._accion_diagnostico_completo, width=200).pack(side="left")
         fila_errores = ctk.CTkFrame(panel, fg_color="transparent")
         fila_errores.pack(fill="x", padx=20, pady=(0, 20))
-        ctk.CTkButton(fila_errores, text=t("ajustes_probar_error_directo"), fg_color="#2a2d36",
-                      hover_color="#3a3e4a", command=self._accion_probar_error).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(fila_errores, text=t("ajustes_probar_error_segundo_plano"), fg_color="#2a2d36",
-                      hover_color="#3a3e4a", command=self._accion_probar_error_segundo_plano).pack(
-            side="left", padx=(0, 8))
+        # Los dos botones de "Probar error" provocan un fallo A PROPOSITO para
+        # comprobar que el aviso de errores funciona. Al usuario final no le
+        # sirven de nada: su unico efecto visible es una ventana de error
+        # alarmante sin que haya pasado nada malo. Solo en la edicion admin.
+        # El resto de esta seccion (Diagnostico completo, Abrir carpeta de
+        # registros) SI se queda en cliente: son justo las herramientas que se
+        # le piden a alguien cuando reporta un problema.
+        if EDICION == "admin":
+            ctk.CTkButton(fila_errores, text=t("ajustes_probar_error_directo"), fg_color="#2a2d36",
+                          hover_color="#3a3e4a", command=self._accion_probar_error).pack(
+                side="left", padx=(0, 8))
+            ctk.CTkButton(fila_errores, text=t("ajustes_probar_error_segundo_plano"), fg_color="#2a2d36",
+                          hover_color="#3a3e4a", command=self._accion_probar_error_segundo_plano).pack(
+                side="left", padx=(0, 8))
         ctk.CTkButton(fila_errores, text=t("ajustes_abrir_carpeta_registros"), fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_abrir_carpeta_datos).pack(side="left")
 
