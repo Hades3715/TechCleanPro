@@ -721,6 +721,7 @@ TEXTOS = {
         # ---- Prueba de velocidad de internet ----
         "comp_st_ventana": "Velocidad de internet",
         "comp_st_titulo": "🌐 Prueba de velocidad",
+        "comp_st_datos": "Usa hasta ~60 MB de datos. Si estás con datos móviles, tenlo en cuenta.",
         "comp_btn_reintentar": "🔄 Reintentar",
         "comp_st_fase_conexion": "Verificando conexión...",
         "comp_st_fase_bajada": "Midiendo velocidad de bajada...",
@@ -1833,6 +1834,7 @@ TEXTOS = {
         # ---- Internet speed test ----
         "comp_st_ventana": "Internet speed",
         "comp_st_titulo": "🌐 Speed test",
+        "comp_st_datos": "Uses up to ~60 MB of data. Keep that in mind if you're on mobile data.",
         "comp_btn_reintentar": "🔄 Retry",
         "comp_st_fase_conexion": "Checking connection...",
         "comp_st_fase_bajada": "Measuring download speed...",

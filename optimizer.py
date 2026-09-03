@@ -1032,13 +1032,54 @@ def test_velocidad_internet(callback_progreso=None):
 
         _avisar("bajada")
         try:
-            url_descarga = "https://speed.cloudflare.com/__down?bytes=10000000"
+            # BUG corregido: antes se descargaban 10 MB de una sola vez y se
+            # dividia el total entre el tiempo total. El problema es que los
+            # primeros segundos de una conexion TCP van ACELERANDO (slow
+            # start): en esos 10 MB, la mayor parte del tiempo se pasa
+            # subiendo la rampa, no a velocidad de crucero. Medido en la
+            # linea del desarrollador, esta prueba reportaba ~18 Mbps sobre
+            # una conexion real de ~135 Mbps: siete veces menos.
+            #
+            # Ahora se lee en trozos y se DESCARTAN los primeros segundos: el
+            # cronometro arranca cuando la conexion ya va a su ritmo, y se
+            # mide una ventana corta de ese tramo estable. Se pide un archivo
+            # grande pero no se descarga entero — se corta en cuanto la
+            # ventana de medicion se cumple, asi que una conexion lenta gasta
+            # pocos datos y una rapida termina igual de rapido.
+            CALENTAMIENTO_S = 2.0
+            MEDICION_S = 5.0
+            TROZO = 65536
+
+            url_descarga = "https://speed.cloudflare.com/__down?bytes=50000000"
             req_descarga = urllib.request.Request(url_descarga, headers=HEADERS_NAVEGADOR)
             inicio = time.time()
+            t_medicion = None
+            bytes_medidos = 0
+            bytes_totales = 0
             with urllib.request.urlopen(req_descarga, timeout=15) as resp:
-                datos = resp.read()
-            duracion = max(time.time() - inicio, 0.001)
-            resultado["bajada_mbps"] = round((len(datos) * 8 / 1_000_000) / duracion, 2)
+                while True:
+                    trozo = resp.read(TROZO)
+                    if not trozo:
+                        break
+                    bytes_totales += len(trozo)
+                    ahora = time.time()
+                    if t_medicion is None:
+                        if ahora - inicio >= CALENTAMIENTO_S:
+                            t_medicion = ahora
+                        continue
+                    bytes_medidos += len(trozo)
+                    if ahora - t_medicion >= MEDICION_S:
+                        break
+
+            if t_medicion is not None and bytes_medidos > 0:
+                duracion = max(time.time() - t_medicion, 0.001)
+                resultado["bajada_mbps"] = round((bytes_medidos * 8 / 1_000_000) / duracion, 2)
+            else:
+                # La descarga entera termino antes de salir del calentamiento
+                # (conexion muy rapida): no hay tramo estable que aislar, asi
+                # que se mide la transferencia completa, que es lo que hay.
+                duracion = max(time.time() - inicio, 0.001)
+                resultado["bajada_mbps"] = round((bytes_totales * 8 / 1_000_000) / duracion, 2)
         except Exception as e:
             if not hay_internet:
                 resultado["error"] = t("optmod_sin_internet")
@@ -1049,7 +1090,10 @@ def test_velocidad_internet(callback_progreso=None):
         _avisar("subida")
         try:
             url_subida = "https://speed.cloudflare.com/__up"
-            payload = os.urandom(3_000_000)
+            # 3 MB se transferian en poco mas de un segundo: demasiado corto
+            # para que la medicion signifique algo. Con 10 MB la subida da un
+            # numero estable y sigue tardando menos de tres segundos.
+            payload = os.urandom(10_000_000)
             inicio = time.time()
             headers_subida = dict(HEADERS_NAVEGADOR, **{"Content-Type": "application/octet-stream"})
             req = urllib.request.Request(url_subida, data=payload, method="POST", headers=headers_subida)

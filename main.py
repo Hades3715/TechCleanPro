@@ -1280,7 +1280,9 @@ class TechCleanApp(ctk.CTk):
                      font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 4))
         lbl_estado = ctk.CTkLabel(dialogo, text=t("comp_preparando"), font=ctk.CTkFont(size=12),
                                    text_color="gray60", wraplength=320, justify="center")
-        lbl_estado.pack(pady=(0, 10))
+        lbl_estado.pack(pady=(0, 2))
+        ctk.CTkLabel(dialogo, text=t("comp_st_datos"), font=ctk.CTkFont(size=10),
+                     text_color="gray50", wraplength=320, justify="center").pack(pady=(0, 10))
 
         barra = ctk.CTkProgressBar(dialogo, width=280)
         barra.set(0)
