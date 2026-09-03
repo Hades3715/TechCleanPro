@@ -40,11 +40,15 @@ python herramientas\prueba_ediciones.py cliente
 python herramientas\prueba_ediciones.py admin
 echo.
 
-echo ---------- 5. Arranque real en espanol ----------
+echo ---------- 5. Limpieza de temporales (no borrar la propia app) ----------
+python herramientas\prueba_limpieza_temp.py
+echo.
+
+echo ---------- 6. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 6. Arranque real en ingles ----------
+echo ---------- 7. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 

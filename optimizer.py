@@ -136,9 +136,57 @@ def trim_process_memory(exclude_pids=None):
     return liberado, afectados, comando
 
 
-def _dir_size(path):
+def _carpetas_intocables():
+    """Carpetas de %TEMP% que NUNCA hay que borrar.
+
+    BUG REAL, encontrado con la app ya publicada: en la build --onefile,
+    PyInstaller descomprime la aplicacion ENTERA (el interprete, las DLL,
+    los .pyd y los assets) en una carpeta temporal llamada _MEIxxxxx. Como
+    esa carpeta vive dentro de %TEMP%, "Limpiar archivos temporales" la
+    borraba: la app se destruia a si misma mientras corria.
+
+    No se notaba enseguida, y eso lo hacia peor. Lo que ya estaba cargado en
+    memoria seguia funcionando; lo que se importa tarde, no. La prueba de
+    velocidad de internet reventaba con "ModuleNotFoundError: No module
+    named '_ssl'" porque importa ssl recien cuando la usas, y para entonces
+    el archivo ya no existia.
+
+    Se protege la carpeta de ESTA instancia (sys._MEIPASS) y ademas
+    cualquier _MEI* que haya: puede ser de otra app congelada con
+    PyInstaller que este corriendo ahora mismo, y romperla seria igual de
+    grave que rompernos a nosotros.
+    """
+    intocables = set()
+    propia = getattr(sys, "_MEIPASS", None)
+    if propia:
+        intocables.add(os.path.normcase(os.path.abspath(propia)))
+    for base in (tempfile.gettempdir(),):
+        try:
+            for nombre in os.listdir(base):
+                if nombre.upper().startswith("_MEI"):
+                    intocables.add(os.path.normcase(os.path.abspath(os.path.join(base, nombre))))
+        except OSError:
+            pass
+    return intocables
+
+
+def _es_intocable(ruta, intocables):
+    """True si la ruta esta dentro de alguna carpeta protegida."""
+    if not intocables:
+        return False
+    normal = os.path.normcase(os.path.abspath(ruta))
+    return any(normal == p or normal.startswith(p + os.sep) for p in intocables)
+
+
+def _dir_size(path, intocables=None):
+    """Tamano de una carpeta. Si se pasan carpetas intocables, no las cuenta:
+    asi lo que se ESTIMA como recuperable coincide con lo que la limpieza va
+    a borrar de verdad, en vez de prometer 22 MB de mas (los de la propia app
+    descomprimida en %TEMP%)."""
     total = 0
     for root, _, files in os.walk(path, topdown=True, onerror=lambda e: None):
+        if intocables and _es_intocable(root, intocables):
+            continue
         for f in files:
             try:
                 total += os.path.getsize(os.path.join(root, f))
@@ -158,10 +206,11 @@ def estimate_reclaimable_space():
         if os.path.isdir(win_temp):
             candidatos.append(("Temporales de Windows", win_temp))
 
+    intocables = _carpetas_intocables()
     resultados = []
     total = 0
     for nombre, ruta in candidatos:
-        size = _dir_size(ruta) if os.path.isdir(ruta) else 0
+        size = _dir_size(ruta, intocables) if os.path.isdir(ruta) else 0
         total += size
         resultados.append({"categoria": nombre, "ruta": ruta, "bytes": size})
 
@@ -178,10 +227,13 @@ def clear_temp_files():
     if IS_WINDOWS and os.path.isdir(r"C:\Windows\Temp"):
         rutas.append(r"C:\Windows\Temp")
 
+    intocables = _carpetas_intocables()
     liberado = 0
     borrados = 0
     for ruta in rutas:
         for root, dirs, files in os.walk(ruta, topdown=False):
+            if _es_intocable(root, intocables):
+                continue
             for f in files:
                 fp = os.path.join(root, f)
                 try:
@@ -193,6 +245,8 @@ def clear_temp_files():
                     continue
             for d in dirs:
                 dp = os.path.join(root, d)
+                if _es_intocable(dp, intocables):
+                    continue
                 try:
                     os.rmdir(dp)
                 except OSError:
