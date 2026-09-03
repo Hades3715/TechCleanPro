@@ -14,6 +14,10 @@ uno por idioma. Descarga el que te sirva por el nombre del archivo.
 
 Desarrollado por **Edwin Javier Cortez Cardoza (Hades)**.
 
+**Gratis, pero no de dominio público.** Podés usarla libremente, leer el
+código y compilar tu propia copia. Lo que no podés es redistribuirla,
+publicarla como tuya ni venderla — ver [LICENSE.md](LICENSE.md).
+
 ---
 
 ## 0. La forma más fácil de empezar (recomendada)
@@ -434,3 +438,34 @@ Los `.py` sueltos también se pueden correr desde una terminal
 (`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se
 cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 `.bat`.
+
+---
+
+## 11. Licencia y autoría
+
+TechClean Pro es **gratis** pero **no** es de dominio público ni de código
+abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los
+derechos reservados.
+
+El código está publicado a propósito: esta app toca partes sensibles del
+sistema (procesos, registro, servicios), y poder revisar exactamente qué
+hace es parte de la idea. Que se pueda **leer** no significa que se pueda
+**redistribuir**.
+
+| | |
+|---|---|
+| Usar la app gratis, donde quieras | Sí |
+| Leer y estudiar el código | Sí |
+| Compilar tu propia copia para uso personal | Sí |
+| Compartir el enlace a este repositorio | Sí |
+| Redistribuirla como archivo propio | No, sin permiso |
+| Publicarla como tuya, con o sin cambios | No |
+| Venderla o cobrar por ella | No |
+| Reutilizar el código en otro proyecto | No, sin permiso |
+
+El detalle completo está en [LICENSE.md](LICENSE.md), en español e inglés.
+Si querés hacer algo de la lista de "no", escribí y hablamos — la respuesta
+puede perfectamente ser que sí.
+
+**Sin garantía.** El software se entrega tal cual. El autor no se hace
+responsable de daños ni pérdida de datos derivados de su uso.
