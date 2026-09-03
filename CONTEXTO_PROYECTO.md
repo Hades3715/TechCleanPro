@@ -13,7 +13,7 @@ sistema. Desarrollada por **Edwin Javier Cortez Cardoza**, alias **Hades**
 la instaló en su propia laptop y en la de otra persona con equipo de bajo
 rendimiento, y varios bugs se encontraron así, con uso real.
 
-- **Versión actual**: 1.0.0 (`APP_VERSION` en `main.py`)
+- **Versión actual**: 1.4.0 (`APP_VERSION` en `main.py`)
 - **Stack**: Python + customtkinter (tema oscuro), psutil, pystray+Pillow,
   winreg, ctypes, sqlite3, PowerShell (para WMI vía `Get-CimInstance`)
 - **~12,600 líneas** repartidas en `main.py`, `optimizer.py`,
@@ -90,11 +90,16 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 - **Plan de distribución**: dos builds separadas por idioma (ES/EN), que se
   eligen por el nombre del archivo en Releases. **Ya implementado**: el
   selector salió de la edición cliente (ver arriba).
-- **Versión**: `APP_VERSION = "1.0.0"` en `main.py`. OJO: el changelog del
-  README habla de 1.4.0. Hay que unificarlo ANTES de publicar, porque el
-  buscador de actualizaciones compara esa constante contra la etiqueta de
-  la release de GitHub: si no coinciden, o avisa de una actualización que no
-  existe, o no avisa de una que sí.
+- **Versión**: `APP_VERSION = "1.4.0"` en `main.py`, unificada con el
+  changelog del README (antes decía 1.0.0, un descuido). La etiqueta de la
+  release de GitHub debe coincidir: el buscador de actualizaciones compara
+  esa constante contra `tag_name`, quitandole la "v" inicial, así que la
+  etiqueta `v1.4.0` es la correcta. Si no coinciden, o avisa de una
+  actualización que no existe, o no avisa de una que sí.
+- **Al subir una versión nueva**: cambiar `APP_VERSION`, recompilar las dos
+  builds, y recién entonces crear la release con la etiqueta que coincida.
+  Los `.exe` llevan la versión adentro: publicar los viejos con una etiqueta
+  nueva deja la app avisando de una actualización que ya tiene instalada.
 
 ## Patrones de seguridad ya establecidos — MUY IMPORTANTE seguir igual
 
