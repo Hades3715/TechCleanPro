@@ -66,6 +66,15 @@ APP_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
 EDICION = "cliente"
 
+# Idioma de ESTA build (ver build_config.py). La edicion cliente no lleva
+# selector: se publican dos ejecutables, uno por idioma. El try/except es a
+# proposito — si por lo que sea el archivo no esta, la app arranca en espanol
+# en vez de negarse a abrir.
+try:
+    from build_config import IDIOMA as IDIOMA_BUILD
+except Exception:
+    IDIOMA_BUILD = "es"
+
 # Referencia a la instancia de la app en ejecución — la usa el manejador
 # global de errores de hilos de fondo (threading.excepthook, más abajo),
 # que no puede simplemente recibir "self" porque Python lo llama fuera de
@@ -471,10 +480,16 @@ class TechCleanApp(ctk.CTk):
         # Preferencias del usuario (widget visible, perfil de energía, alerta
         # de temperatura, punto de restauración) — persisten entre sesiones.
         self.prefs = prefs.cargar()
-        idiomas.establecer_idioma(self.prefs.get("idioma", "es"))
+        # En la edicion cliente el idioma NO se elige ni se guarda: es el de la
+        # build. En admin se respeta lo que haya en preferencias y, si es la
+        # primera vez, se pregunta.
+        if EDICION == "cliente":
+            idiomas.establecer_idioma(IDIOMA_BUILD)
+        else:
+            idiomas.establecer_idioma(self.prefs.get("idioma", IDIOMA_BUILD))
         # Modo Ligero apaga las animaciones de las barras (aqui y en el widget).
         self._aplicar_preferencia_animaciones()
-        if not self.prefs.get("idioma_preguntado", False):
+        if EDICION != "cliente" and not self.prefs.get("idioma_preguntado", False):
             self._preguntar_idioma_primera_vez()
         self._ultima_alerta_temp = 0.0
         self._cpu_temp_cache = None
@@ -4566,20 +4581,26 @@ class TechCleanApp(ctk.CTk):
         self.lbl_resultado_actualizacion.pack(side="left", padx=10)
         ctk.CTkLabel(panel, text="", font=ctk.CTkFont(size=1)).pack(pady=(0, 12))
 
-        sep_idioma = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
-        sep_idioma.pack(fill="x", padx=20, pady=10)
+        # El selector de idioma es exclusivo de la edicion admin: el cliente se
+        # reparte como dos ejecutables separados, uno por idioma, asi que ahi
+        # no hay nada que elegir. Ver IDIOMA_BUILD arriba.
+        if EDICION == "admin":
+            sep_idioma = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
+            sep_idioma.pack(fill="x", padx=20, pady=10)
 
-        ctk.CTkLabel(panel, text=t("ajustes_idioma_titulo"),
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=20, pady=(10, 4))
-        ctk.CTkLabel(panel, text=t("ajustes_idioma_descripcion"),
-                     font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
-            padx=20, pady=(0, 8), anchor="w")
-        fila_idioma = ctk.CTkFrame(panel, fg_color="transparent")
-        fila_idioma.pack(fill="x", padx=20, pady=(0, 20))
-        self.combo_idioma = ctk.CTkOptionMenu(fila_idioma, values=list(idiomas.IDIOMAS_DISPONIBLES.values()),
-                                               command=self._cambiar_idioma, width=140)
-        self.combo_idioma.set(idiomas.IDIOMAS_DISPONIBLES.get(self.prefs.get("idioma", "es"), "Español"))
-        self.combo_idioma.pack(side="left")
+            ctk.CTkLabel(panel, text=t("ajustes_idioma_titulo"),
+                         font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=20, pady=(10, 4))
+            ctk.CTkLabel(panel, text=t("ajustes_idioma_descripcion"),
+                         font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800,
+                         justify="left").pack(padx=20, pady=(0, 8), anchor="w")
+            fila_idioma = ctk.CTkFrame(panel, fg_color="transparent")
+            fila_idioma.pack(fill="x", padx=20, pady=(0, 20))
+            self.combo_idioma = ctk.CTkOptionMenu(
+                fila_idioma, values=list(idiomas.IDIOMAS_DISPONIBLES.values()),
+                command=self._cambiar_idioma, width=140)
+            self.combo_idioma.set(idiomas.IDIOMAS_DISPONIBLES.get(
+                self.prefs.get("idioma", IDIOMA_BUILD), "Español"))
+            self.combo_idioma.pack(side="left")
 
         sep = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
         sep.pack(fill="x", padx=20, pady=10)

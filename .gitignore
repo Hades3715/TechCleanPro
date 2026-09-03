@@ -7,6 +7,8 @@ build/
 dist/
 *.spec
 TechCleanPro.exe
+TechCleanPro_ES.exe
+TechCleanPro_EN.exe
 TechCleanPro_Admin.exe
 
 # Entornos virtuales

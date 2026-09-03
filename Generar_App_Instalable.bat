@@ -1,15 +1,23 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro - Generador de la app instalable
+title TechClean Pro - Generador de la app instalable (ES + EN)
+cd /d "%~dp0"
 echo ============================================================
-echo   TechClean Pro - Generando tu aplicacion (.exe)
+echo   TechClean Pro - Generando tus aplicaciones (.exe)
 echo ============================================================
 echo.
-echo Este proceso se hace UNA sola vez. Al terminar vas a tener un
-echo archivo TechCleanPro.exe que podras usar con doble clic,
-echo sin Python, sin comandos, sin nada mas instalado.
+echo Genera los DOS ejecutables de la edicion cliente:
 echo.
-echo (Puede tardar 1-3 minutos la primera vez. No cierres esta ventana.)
+echo     TechCleanPro_ES.exe   (espanol)
+echo     TechCleanPro_EN.exe   (ingles)
+echo.
+echo La edicion cliente ya no lleva selector de idioma dentro: se
+echo publican los dos archivos y cada quien descarga el que le
+echo sirve, por el nombre. Este script reescribe build_config.py
+echo antes de cada compilacion y lo deja de vuelta en espanol al
+echo terminar, tambien si algo falla a mitad de camino.
+echo.
+echo (Puede tardar 3-6 minutos. No cierres esta ventana.)
 echo.
 
 REM ============================================================
@@ -42,7 +50,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [1/5] Instalando lo necesario para compilar...
+echo [1/4] Instalando lo necesario para compilar...
 python -m pip install --upgrade pip >nul
 python -m pip install -r requirements.txt
 python -m pip install pyinstaller
@@ -52,56 +60,107 @@ echo Limpiando restos de compilaciones anteriores (para evitar usar codigo viejo
 rmdir /s /q build >nul 2>nul
 rmdir /s /q dist >nul 2>nul
 del /q "TechCleanPro.spec" >nul 2>nul
+del /q "TechCleanPro_ES.spec" >nul 2>nul
+del /q "TechCleanPro_EN.spec" >nul 2>nul
 if exist "__pycache__" rmdir /s /q "__pycache__" >nul 2>nul
 
 echo.
-echo [2/5] Compilando TechClean Pro en un solo archivo .exe...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro" --add-data "assets;assets" main.py
-
-if not exist "dist\TechCleanPro.exe" (
+echo [2/4] Comprobando que los dos idiomas esten completos...
+set PYTHONIOENCODING=utf-8
+python herramientas\verificar_idiomas.py
+if errorlevel 1 (
     echo.
-    echo [ERROR] Algo fallo durante la compilacion. Revisa los mensajes de arriba.
+    echo [ERROR] La verificacion de idiomas fallo. No se compila nada.
+    echo Un desbalance entre espanol e ingles saldria a la luz recien
+    echo con el .exe ya repartido, y ahi ya es tarde.
     pause
     exit /b 1
 )
 
 echo.
-echo [3/5] Copiando el resultado a esta misma carpeta...
-copy /Y "dist\TechCleanPro.exe" "TechCleanPro.exe" >nul
+echo [3/4] Compilando las dos builds...
+call :compilar es ES
+if errorlevel 1 goto :error
+call :compilar en EN
+if errorlevel 1 goto :error
+
+REM Dejar build_config.py como estaba
+call :fijar_idioma es
 
 echo.
-echo [4/5] Firma digital...
-if "%CERT_THUMBPRINT%"=="" (
-    echo Sin firmar - no se configuro CERT_THUMBPRINT al inicio de este archivo.
-    echo Windows va a mostrar "Editor desconocido" al abrirlo. Esto es normal
-    echo mientras no tengas un certificado de firma de codigo.
-) else (
-    where signtool >nul 2>nul
-    if errorlevel 1 (
-        echo [AVISO] No se encontro signtool.exe. Se instala con el "Windows SDK"
-        echo ^(componente "Windows SDK Signing Tools"^) - https://developer.microsoft.com/windows/downloads/windows-sdk/
-        echo El .exe quedo SIN firmar por esta vez.
-    ) else (
-        signtool sign /sha1 %CERT_THUMBPRINT% /fd SHA256 /tr %TIMESTAMP_URL% /td SHA256 "TechCleanPro.exe"
-        if errorlevel 1 (
-            echo [AVISO] La firma fallo - revisa que el token este conectado y CERT_THUMBPRINT sea correcto.
-        ) else (
-            echo Firmado correctamente.
-        )
-    )
-)
-
-echo.
-echo [5/5] Limpiando archivos temporales de la compilacion...
+echo [4/4] Limpiando archivos temporales de la compilacion...
 rmdir /s /q build >nul 2>nul
-del /q "TechCleanPro.spec" >nul 2>nul
+del /q "TechCleanPro_ES.spec" >nul 2>nul
+del /q "TechCleanPro_EN.spec" >nul 2>nul
 
 echo.
 echo ============================================================
-echo   Listo. TechCleanPro.exe ya esta en esta carpeta.
+echo   Listo. En esta carpeta quedaron:
 echo.
-echo   Muevelo a tu Escritorio (o donde quieras) y usalo con
-echo   doble clic. No necesitas Python ni este instalador nunca mas.
+echo     TechCleanPro_ES.exe   - version en espanol
+echo     TechCleanPro_EN.exe   - version en ingles
+echo.
+echo   Subilos con esos nombres a Releases de GitHub: el nombre del
+echo   archivo es lo unico que le dice a la gente cual descargar,
+echo   porque la app ya no pregunta el idioma.
 echo ============================================================
 echo.
 pause
+exit /b 0
+
+REM ------------------------------------------------------------
+REM  Compila una build.  %1 = idioma (es/en)   %2 = sufijo (ES/EN)
+REM ------------------------------------------------------------
+:compilar
+echo.
+echo   --- Compilando version %2 ---
+call :fijar_idioma %1
+python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_%2" --add-data "assets;assets" main.py
+
+if not exist "dist\TechCleanPro_%2.exe" (
+    echo.
+    echo   [ERROR] Fallo la compilacion de la version %2. Revisa los mensajes de arriba.
+    exit /b 1
+)
+copy /Y "dist\TechCleanPro_%2.exe" "TechCleanPro_%2.exe" >nul
+call :firmar "TechCleanPro_%2.exe"
+exit /b 0
+
+REM ------------------------------------------------------------
+REM  Reescribe SOLO build_config.py con el idioma %1
+REM ------------------------------------------------------------
+:fijar_idioma
+python -c "import io,re,sys; c=io.open('build_config.py',encoding='utf-8').read(); c=re.sub(r'^IDIOMA = \".*\"$', 'IDIOMA = \"'+sys.argv[1]+'\"', c, flags=re.M); io.open('build_config.py','w',encoding='utf-8',newline='\n').write(c)" %1
+exit /b 0
+
+REM ------------------------------------------------------------
+:firmar
+if "%CERT_THUMBPRINT%"=="" (
+    echo   Sin firmar - no se configuro CERT_THUMBPRINT al inicio de este archivo.
+    echo   Windows va a mostrar "Editor desconocido" al abrirlo. Es normal
+    echo   mientras no tengas un certificado de firma de codigo.
+    exit /b 0
+)
+where signtool >nul 2>nul
+if errorlevel 1 (
+    echo   [AVISO] No se encontro signtool.exe. Se instala con el "Windows SDK"
+    echo   ^(componente "Windows SDK Signing Tools"^).
+    echo   %~1 quedo SIN firmar por esta vez.
+    exit /b 0
+)
+signtool sign /sha1 %CERT_THUMBPRINT% /fd SHA256 /tr %TIMESTAMP_URL% /td SHA256 %1
+if errorlevel 1 (
+    echo   [AVISO] La firma de %~1 fallo - revisa que el token este conectado
+    echo   y que CERT_THUMBPRINT sea correcto.
+) else (
+    echo   %~1 firmado correctamente.
+)
+exit /b 0
+
+REM ------------------------------------------------------------
+:error
+echo.
+echo Se restaura build_config.py a espanol antes de salir.
+call :fijar_idioma es
+pause
+exit /b 1
