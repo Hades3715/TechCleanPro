@@ -1,0 +1,8 @@
+# Los .bat DEBEN llevar CRLF: con finales de linea LF, cmd.exe se come el
+# primer caracter de cada linea y el script falla entero ("chcp" -> "hcp").
+# Esto lo fuerza sin importar como tenga cada quien configurado autocrlf.
+*.bat text eol=crlf
+
+# El resto se deja tal cual esta en el repositorio.
+*.py text eol=lf
+*.md text eol=lf
