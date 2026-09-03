@@ -1861,7 +1861,7 @@ class TechCleanApp(ctk.CTk):
             exito, comando = opt.set_power_plan(clave)
             msg = (t("opt_perfil_cambiado", perfil=nombre) if exito
                    else t("opt_perfil_error"))
-            self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_perfil", perfil=nombre), comando, msg,
                           seccion=t("seccion_optimizador"), exito=exito)
             if exito:
@@ -2382,7 +2382,7 @@ class TechCleanApp(ctk.CTk):
             borrados, liberado, comando = opt.limpiar_cache_miniaturas()
             msg = (t("opt_miniaturas_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
                    if borrados else t("opt_miniaturas_vacio"))
-            self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_miniaturas"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
@@ -2395,7 +2395,7 @@ class TechCleanApp(ctk.CTk):
             exito, comando = opt.crear_limpieza_unica(minutos_desde_ahora=minutos)
             msg = (t("opt_limpieza_unica_ok", minutos=minutos) if exito
                    else t("opt_limpieza_unica_error"))
-            self.after(0, lambda: self.lbl_resultado_opt.configure(text=msg))
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_limpieza_unica"), comando, msg,
                           seccion=t("seccion_optimizador"), exito=exito)
         threading.Thread(target=worker, daemon=True).start()
@@ -2459,17 +2459,21 @@ class TechCleanApp(ctk.CTk):
             borrados, comando = opt.limpiar_accesos_recientes()
             msg = (t("priv_recientes_ok", cantidad=borrados) if borrados
                    else t("priv_recientes_vacio"))
-            self.after(0, lambda: self.lbl_resultado_otros_priv.configure(text=msg))
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_otros_priv", msg))
             self._log_dev(t("priv_btn_recientes"), comando, msg, seccion=t("seccion_privacidad"),
                           exito=True, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_limpiar_portapapeles(self):
-        exito, comando = opt.limpiar_portapapeles()
-        msg = t("priv_portapapeles_ok") if exito else t("priv_portapapeles_error")
-        self.lbl_resultado_otros_priv.configure(text=msg)
-        self._log_dev(t("priv_btn_portapapeles"), comando, msg,
-                      seccion=t("seccion_privacidad"), exito=exito)
+        # opt.limpiar_portapapeles() lanza un subproceso con hasta 15s de
+        # timeout: en el hilo principal eso congela la ventana entera.
+        def worker():
+            exito, comando = opt.limpiar_portapapeles()
+            msg = t("priv_portapapeles_ok") if exito else t("priv_portapapeles_error")
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_otros_priv", msg))
+            self._log_dev(t("priv_btn_portapapeles"), comando, msg,
+                          seccion=t("seccion_privacidad"), exito=exito)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _accion_borrar_historial(self, nombre):
         exito, msg, comando = priv.clear_browser_history(nombre)
@@ -2626,12 +2630,16 @@ class TechCleanApp(ctk.CTk):
         # BUG corregido: se interpolaba tal cual en el mensaje, así que la
         # build en inglés habría dicho "rapido scan started". Ahora se traduce
         # aparte para mostrar y la clave viaja sola hacia el optimizador.
-        exito, comando = opt.iniciar_escaneo_defender(tipo)
+        # Lanzar el escaneo tarda: va en un hilo para no congelar la ventana.
         tipo_txt = t("seg_tipo_completo") if tipo == "completo" else t("seg_tipo_rapido")
-        msg = t("seg_escaneo_iniciado", tipo=tipo_txt) if exito else t("seg_escaneo_error")
-        self._mostrar_popup_info("Windows Defender", msg)
-        self._log_dev(t("seg_log_escaneo", tipo=tipo_txt), comando, msg,
-                      seccion=t("seccion_seguridad"), exito=exito)
+
+        def worker():
+            exito, comando = opt.iniciar_escaneo_defender(tipo)
+            msg = t("seg_escaneo_iniciado", tipo=tipo_txt) if exito else t("seg_escaneo_error")
+            self.after(0, lambda: self._mostrar_popup_info("Windows Defender", msg))
+            self._log_dev(t("seg_log_escaneo", tipo=tipo_txt), comando, msg,
+                          seccion=t("seccion_seguridad"), exito=exito)
+        threading.Thread(target=worker, daemon=True).start()
 
     # ---- Permisos de privacidad (cámara/micrófono/ubicación) ----
     def _mostrar_permisos_privacidad(self):
@@ -2921,6 +2929,24 @@ class TechCleanApp(ctk.CTk):
         self.prefs["crear_punto_restauracion"] = valor
         prefs.guardar({"crear_punto_restauracion": valor})
 
+    def _actualizar_label(self, nombre, texto):
+        """Escribe en una etiqueta SOLO si sigue viva.
+
+        Los trabajos de fondo pueden terminar DESPUES de que el usuario
+        cambio de pantalla, y para entonces el widget ya fue destruido:
+        tocarlo lanza TclError, y como la app atrapa todo error no
+        controlado, al usuario le salta una ventana de error alarmante por
+        algo que no hizo mal. hasattr() no alcanza — el atributo sigue
+        existiendo aunque el widget este destruido."""
+        widget = getattr(self, nombre, None)
+        if widget is None:
+            return
+        try:
+            if widget.winfo_exists():
+                widget.configure(text=texto)
+        except Exception:
+            pass
+
     def _actualizar_resultado_reparar(self, texto):
         """Callback seguro para hilos de reparación: si el usuario ya salió
         de la pantalla Reparar (estas acciones pueden tardar varios
@@ -3078,10 +3104,13 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _accion_reparar_store(self):
-        exito, comando = opt.reparar_windows_store()
-        msg = t("rep_store_ok") if exito else t("rep_store_error")
-        self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev(t("rep_log_store"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        def worker():
+            exito, comando = opt.reparar_windows_store()
+            msg = t("rep_store_ok") if exito else t("rep_store_error")
+            self.after(0, lambda: self._actualizar_resultado_reparar(msg))
+            self._log_dev(t("rep_log_store"), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _accion_reiniciar_explorador(self):
         self.lbl_resultado_reparar.configure(text=t("rep_explorador_reiniciando"))
@@ -3250,15 +3279,27 @@ class TechCleanApp(ctk.CTk):
             switch.pack(side="right", padx=12, pady=10)
 
     def _toggle_app_inicio(self, app):
+        # Escribir en el registro (winreg) va en un hilo, como manda la regla
+        # de threading: es rapido casi siempre, pero "casi siempre" no es
+        # garantia y el resto de la app hace lo mismo.
         activar = not app["activo"]
-        exito = opt.set_app_inicio_activa(app["nombre"], app["comando"], activar)
-        msg = (t("apps_inicio_cambiado", nombre=app["nombre"],
-                 estado=t("apps_activado") if activar else t("apps_desactivado"))
-               if exito else t("apps_inicio_error", nombre=app["nombre"]))
-        self._log_dev(t("apps_log_activar_inicio") if activar else t("apps_log_desactivar_inicio"),
-                      "N/A", msg,
-                      seccion=t("seccion_aplicaciones"), exito=exito)
-        self._mostrar_inicio_windows()
+
+        def worker():
+            exito = opt.set_app_inicio_activa(app["nombre"], app["comando"], activar)
+            msg = (t("apps_inicio_cambiado", nombre=app["nombre"],
+                     estado=t("apps_activado") if activar else t("apps_desactivado"))
+                   if exito else t("apps_inicio_error", nombre=app["nombre"]))
+            self._log_dev(t("apps_log_activar_inicio") if activar else t("apps_log_desactivar_inicio"),
+                          "N/A", msg,
+                          seccion=t("seccion_aplicaciones"), exito=exito)
+            # Repintar la lista SIEMPRE en el hilo principal, y solo si la
+            # pestana sigue abierta.
+            def refrescar():
+                if (hasattr(self, "pestana_apps") and self.pestana_apps.winfo_exists()
+                        and self.pestana_apps.get() == t("apps_tab_inicio")):
+                    self._mostrar_inicio_windows()
+            self.after(0, refrescar)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _mostrar_desinstalador(self):
         self._limpiar_contenedor_apps()
@@ -5381,17 +5422,30 @@ class TechCleanApp(ctk.CTk):
                                   t("ajustes_alerta_guardada_msg", valor=f"{valor:.0f}"))
 
     def _toggle_inicio_automatico(self):
+        # opt.set_startup() crea/borra una tarea programada con schtasks:
+        # subproceso con hasta 10s de timeout, fuera del hilo de la interfaz.
         habilitar = bool(self.switch_inicio.get())
-        exito, comando = opt.set_startup(habilitar)
-        resultado = (t("ajustes_inicio_agregado") if habilitar else t("ajustes_inicio_quitado")) \
-            if exito else t("ajustes_inicio_error")
-        self._log_dev(t("ajustes_log_inicio_auto"), comando, resultado,
-                      seccion=t("seccion_ajustes"), exito=exito)
-        if not exito:
-            if habilitar:
-                self.switch_inicio.deselect()
-            else:
-                self.switch_inicio.select()
+
+        def worker():
+            exito, comando = opt.set_startup(habilitar)
+            resultado = (t("ajustes_inicio_agregado") if habilitar else t("ajustes_inicio_quitado")) \
+                if exito else t("ajustes_inicio_error")
+            self._log_dev(t("ajustes_log_inicio_auto"), comando, resultado,
+                          seccion=t("seccion_ajustes"), exito=exito)
+
+            def revertir_si_fallo():
+                # Si no se pudo aplicar, el switch vuelve a su estado real —
+                # pero solo si Ajustes sigue en pantalla.
+                if exito:
+                    return
+                if not (hasattr(self, "switch_inicio") and self.switch_inicio.winfo_exists()):
+                    return
+                if habilitar:
+                    self.switch_inicio.deselect()
+                else:
+                    self.switch_inicio.select()
+            self.after(0, revertir_si_fallo)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _click_easter_egg(self, event=None):
         ahora = time.time()
