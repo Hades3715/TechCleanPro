@@ -2412,7 +2412,7 @@ def abrir_mezclador_volumen():
 # a paso). Mientras REPO_ACTUALIZACIONES no apunte a un repo real, esta
 # función simplemente no encuentra nada — no rompe nada, solo no hace nada.
 
-REPO_ACTUALIZACIONES = "TU_USUARIO/TU_REPO"  # <-- cambiar cuando exista el repositorio real
+REPO_ACTUALIZACIONES = "Hades3715/TechCleanPro"
 
 
 # ---------------- Carpetas conocidas de Windows ----------------

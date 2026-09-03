@@ -78,9 +78,12 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 
 ## Estado de publicación (a la fecha de este documento)
 
-- **Todavía NO subido a GitHub.** `REPO_ACTUALIZACIONES = "TU_USUARIO/TU_REPO"`
-  en `optimizer.py` sigue como placeholder — el buscador de actualizaciones
-  está construido pero inactivo hasta que exista el repo real.
+- **Repositorio**: `Hades3715/TechCleanPro` (público). El buscador de
+  actualizaciones está ACTIVO: `REPO_ACTUALIZACIONES` en `optimizer.py` ya
+  apunta ahí. Consulta la API de GitHub Releases y compara `tag_name` (sin
+  la "v" inicial) contra `APP_VERSION`. Si el repo no responde o no hay
+  releases, devuelve "sin novedad" en silencio — es un estado normal, no un
+  error que haya que mostrar.
 - **Certificado de firma digital**: no comprado todavía (~$220/año, OV/IV de
   Sectigo o Comodo — no EV, ya no vale la pena desde que Microsoft quitó la
   ventaja de SmartScreen instantáneo en 2024). Script listo para cuando exista.
