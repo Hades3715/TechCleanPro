@@ -9,6 +9,9 @@ temporales, borrado real de historial de navegadores, historial transparente
 de cada acción, widget flotante de rendimiento, bandeja del sistema, inicio
 automático con Windows, y acceso directo a BIOS/UEFI.
 
+Disponible en **español e inglés**: se publican dos ejecutables separados,
+uno por idioma. Descarga el que te sirva por el nombre del archivo.
+
 Desarrollado por **Edwin Javier Cortez Cardoza (Hades)**.
 
 ---
@@ -21,10 +24,15 @@ doble clic en:
 **`Generar_App_Instalable.bat`**
 
 Ese archivo hace todo el trabajo una sola vez (instala lo necesario y
-compila la app) y al final te deja un **`TechCleanPro.exe`** en la misma
-carpeta. Ese `.exe` sí lo puedes mover a tu Escritorio y abrir con doble
-clic para siempre — no necesitas Python instalado, ni volver a correr
-ningún script, ni escribir ningún comando.
+compila la app) y al final te deja **dos** archivos en la misma carpeta:
+
+- **`TechCleanPro_ES.exe`** — la app en español
+- **`TechCleanPro_EN.exe`** — la app en inglés
+
+Quédate con el que quieras usar (o reparte los dos). Ese `.exe` sí lo puedes
+mover a tu Escritorio y abrir con doble clic para siempre — no necesitas
+Python instalado, ni volver a correr ningún script, ni escribir ningún
+comando.
 
 Requisito: tener [Python](https://www.python.org/downloads/) instalado una
 vez (marca "Add Python to PATH" al instalarlo). Es solo para generar el
@@ -32,6 +40,25 @@ vez (marca "Add Python to PATH" al instalarlo). Es solo para generar el
 
 Si mientras seguimos ajustando la app prefieres probar cambios rápido sin
 recompilar el `.exe` cada vez, usa `Iniciar_Rapido.bat` en su lugar.
+
+### Windows va a mostrarte una advertencia la primera vez
+
+Al abrir el `.exe` verás una pantalla azul que dice **"Windows protegió tu
+PC"** y *Editor desconocido*. **Es normal y esperado.** No significa que el
+archivo tenga un virus.
+
+Pasa porque la app no está firmada con un certificado de firma de código:
+cuestan unos $220 al año y este es un proyecto de una sola persona, así que
+por ahora no lo tiene. Cualquier programa sin firmar recibe esa advertencia,
+sea bueno o malo.
+
+Para abrirla igualmente: haz clic en **"Más información"** y luego en
+**"Ejecutar de todas formas"**.
+
+Si prefieres no confiar en un ejecutable sin firmar — que es una postura
+perfectamente razonable — el código fuente completo está en este mismo
+repositorio y puedes generar tu propio `.exe` con `Generar_App_Instalable.bat`,
+o correr la app directamente con `Iniciar_Rapido.bat`.
 
 El resto de este documento explica el paso a paso manual y el detalle
 técnico de cada sección, por si lo necesitas.
@@ -47,9 +74,11 @@ mismo código:
 |---|---|---|
 | Archivo fuente | `main.py` | `main_admin.py` |
 | Script para generar el `.exe` | `Generar_App_Instalable.bat` | `Generar_App_Admin.bat` |
-| `.exe` resultante | `TechCleanPro.exe` | `TechCleanPro_Admin.exe` |
+| `.exe` resultante | `TechCleanPro_ES.exe` y `TechCleanPro_EN.exe` | `TechCleanPro_Admin.exe` |
+| Idioma | Fijo, según el `.exe` que descargues | Selector en Ajustes (ES/EN) |
 | Consola Dev en el menú | No existe | Siempre visible |
 | Comando técnico exacto en el Historial | Oculto | Siempre visible |
+| Botones de "Probar error" en Ajustes | Ocultos | Visibles |
 | Etiquetas de permisos | "Todas las funciones activas" / "Desbloquear funciones" | "🛡 Administrador" / "Reiniciar como Admin" |
 | Panel de comandos oculto | Sí (ver sección 3) | No hace falta — ya se ve todo |
 | Pensada para | Repartir al usuario final | Uso propio / soporte técnico |
@@ -57,6 +86,12 @@ mismo código:
 Ambas ediciones comparten el 100% de la lógica real: la única diferencia es
 qué tan visible es lo técnico. `main_admin.py` es un lanzador de una línea
 que activa la edición admin antes de arrancar `main.py`.
+
+**Sobre el idioma:** la edición cliente no lleva selector dentro. El idioma
+queda fijado al compilar (`build_config.py`) y se publican dos ejecutables,
+uno por idioma, para que cada quien descargue el suyo por el nombre del
+archivo. La edición admin sí conserva el selector, porque es una sola build
+y sirve para revisar cómo queda todo en ambos idiomas sin recompilar.
 
 ---
 
@@ -68,7 +103,7 @@ Descarga el archivo `TechCleanPro.zip` y **extráelo completo** (clic derecho �
 
 ```
 TechCleanPro/
-├── Generar_App_Instalable.bat   ← doble clic: genera TechCleanPro.exe (cliente)
+├── Generar_App_Instalable.bat   ← doble clic: genera TechCleanPro_ES.exe y _EN.exe
 ├── Generar_App_Admin.bat        ← doble clic: genera TechCleanPro_Admin.exe
 ├── Iniciar_Rapido.bat           ← doble clic: prueba la edición cliente sin compilar
 ├── Iniciar_Rapido_Admin.bat     ← doble clic: prueba la edición admin sin compilar
@@ -257,14 +292,18 @@ un equipo que ya corre Windows 11 (se verifica el build number real).
 
 ## 6. Convertirla en un .exe independiente (manual, opcional)
 
+`Generar_App_Instalable.bat` ya hace esto por ti (y genera los dos idiomas
+de una pasada). Si prefieres hacerlo a mano:
+
 ```
 pip install pyinstaller
 
-REM Edición cliente
-pyinstaller --noconfirm --onefile --windowed --uac-admin --name "TechCleanPro" --add-data "assets;assets" main.py
+REM Edición cliente — el idioma sale de build_config.py, así que hay que
+REM cambiarlo entre una compilación y la otra (IDIOMA = "es" / "en").
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_ES" --add-data "assets;assets" main.py
 
 REM Edición administrador
-pyinstaller --noconfirm --onefile --windowed --uac-admin --name "TechCleanPro_Admin" --add-data "assets;assets" main_admin.py
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_Admin" --add-data "assets;assets" main_admin.py
 ```
 
 ---
@@ -359,6 +398,8 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --name "TechCleanPro_Ad
 ```
 main.py              → interfaz gráfica + edición cliente
 main_admin.py           → lanzador de la edición administrador (reutiliza main.py)
+idiomas.py                 → todos los textos de la app en español e inglés
+build_config.py               → idioma de esta compilación (lo reescribe el .bat)
 system_monitor.py          → CPU/RAM/GPU/disco/red/batería/componentes/info del sistema
 optimizer.py                   → RAM, temporales, papelera, DNS, BIOS, inicio automático,
                                    perfiles de energía, reparación, limpieza programada,
@@ -372,4 +413,24 @@ tray.py                                        → icono en la bandeja del siste
 widget.py                                         → barra de rendimiento flotante
 assets/icono.ico                                     → ícono de la app (ventana, bandeja, .exe)
 assets/honk.wav                                         → sonido del easter egg
+herramientas/                                              → verificaciones (ver abajo)
 ```
+
+### Herramientas de verificación
+
+Antes de dar un cambio por terminado, doble clic en
+**`herramientas\Verificar_Todo.bat`**: corre las cinco comprobaciones
+seguidas y espera una tecla al final para que puedas leer los resultados.
+
+| Herramienta | Qué comprueba |
+|---|---|
+| `auditoria.py` | Métodos duplicados y referencias rotas entre módulos |
+| `verificar_idiomas.py` | Que español e inglés tengan las mismas claves y los mismos `{campos}` |
+| `prueba_arranque.py` | Que la app abra y que las 16 pantallas se pinten, en el idioma que le pases |
+| `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
+| `prueba_animacion.py` | Que las barras animen y no revienten al destruirlas a media animación |
+
+Los `.py` sueltos también se pueden correr desde una terminal
+(`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se
+cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
+`.bat`.

@@ -16,8 +16,12 @@ rendimiento, y varios bugs se encontraron así, con uso real.
 - **Versión actual**: 1.0.0 (`APP_VERSION` en `main.py`)
 - **Stack**: Python + customtkinter (tema oscuro), psutil, pystray+Pillow,
   winreg, ctypes, sqlite3, PowerShell (para WMI vía `Get-CimInstance`)
-- **~9,200 líneas** repartidas en `main.py` (5,160), `optimizer.py` (2,896),
-  `system_monitor.py` (645), `idiomas.py` (388), más módulos más pequeños.
+- **~12,600 líneas** repartidas en `main.py`, `optimizer.py`,
+  `system_monitor.py`, `idiomas.py` (que crecio mucho al traducir todo), más
+  módulos más pequeños.
+- **Bilingüe completo**: 1,037 claves con paridad exacta español/inglés.
+  Ocho módulos usan `t()`: main, optimizer, system_monitor, privacy,
+  autopilot, widget, tray e idiomas.
 
 ## Las dos ediciones
 
@@ -27,7 +31,28 @@ rendimiento, y varios bugs se encontraron así, con uso real.
   Dev siempre visible con el comando técnico exacto de cada acción — nunca se
   reparte al usuario final, es para el propio desarrollador o soporte técnico.
 
-**Solo se sube a GitHub la edición cliente.** La admin nunca se publica.
+**Solo se sube a GitHub la edición cliente.** La admin nunca se publica
+como `.exe`. Su CÓDIGO sí queda visible si el repositorio es público, y no
+pasa nada: `main_admin.py` son 29 líneas que ponen `EDICION = "admin"`, y
+toda la lógica admin vive en `main.py` detrás de comprobaciones
+`if EDICION == "admin"`. Quitar ese archivo del repositorio no esconde
+nada — cualquiera puede poner esa variable a mano. No hay secretos ahí:
+solo enseña los comandos técnicos que la app ya ejecuta.
+
+### El idioma va por build, no por selector
+La edición cliente **no lleva selector de idioma**. El idioma queda fijado
+al compilar, en `build_config.py` (un archivo de dos líneas), y se publican
+dos ejecutables — `TechCleanPro_ES.exe` y `TechCleanPro_EN.exe` — para que
+cada quien descargue el suyo por el nombre del archivo.
+
+`build_config.py` está aislado a propósito: `Generar_App_Instalable.bat` lo
+reescribe entre una build y la otra, y si algo falla a media compilación es
+mucho mejor que quede tocado un archivo de dos líneas y no `main.py`.
+`main.py` lo importa con try/except y cae a español si faltara.
+
+La edición admin SÍ conserva el selector y la pregunta de primer arranque:
+es una sola build, del propio desarrollador, y sirve para revisar cómo queda
+todo en ambos idiomas sin recompilar.
 
 ## Cómo compilar
 
@@ -37,6 +62,19 @@ sección de **firma digital opcional** al inicio (`CERT_THUMBPRINT` vacío por
 defecto) — se activa sola en cuanto se rellene, sin tocar nada más del script.
 `Iniciar_Rapido.bat`/`Iniciar_Rapido_Admin.bat` corren desde código fuente
 directo, sin compilar (para probar rápido).
+
+El script del cliente genera **las dos builds de una pasada** (ES y EN),
+firma cada una si hay certificado, y restaura `build_config.py` a español al
+terminar — también cuando algo falla, con una etiqueta `:error`. Antes de
+compilar corre `herramientas/verificar_idiomas.py` y aborta si hay
+desbalance entre idiomas: eso saldría a la luz recién con el `.exe` ya
+repartido, y ahí ya es tarde.
+
+**Los `.bat` DEBEN llevar finales de línea CRLF.** Con LF, `cmd.exe` se come
+el primer carácter de cada línea (`chcp`→`hcp`, `if`→`f`) y el script falla
+entero mostrando "no se encontró Python" antes de cerrarse. Los cuatro
+estaban así y no compilaban nada. Hay un `.gitattributes` con
+`*.bat text eol=crlf` para que no vuelva a pasar al clonar.
 
 ## Estado de publicación (a la fecha de este documento)
 
@@ -49,11 +87,14 @@ directo, sin compilar (para probar rápido).
 - **Donaciones**: SÍ está activo — Ko-fi conectado a PayPal (Buy Me a Coffee no
   sirve, no paga a El Salvador). `URL_DONACION = "https://ko-fi.com/hadesdev"`
   en `optimizer.py`, botón "☕ Apoyar el proyecto" en Ajustes ya funcionando.
-- **Plan de distribución**: cuando se publique, la idea es subir dos builds
-  separados por idioma (ES/EN) para que alguien elija el correcto por el
-  nombre del archivo en Releases de GitHub — el selector de idioma en la app
-  se queda de todas formas (no es redundante: el mismo .exe pregunta el
-  idioma la primera vez sin importar cuál build sea).
+- **Plan de distribución**: dos builds separadas por idioma (ES/EN), que se
+  eligen por el nombre del archivo en Releases. **Ya implementado**: el
+  selector salió de la edición cliente (ver arriba).
+- **Versión**: `APP_VERSION = "1.0.0"` en `main.py`. OJO: el changelog del
+  README habla de 1.4.0. Hay que unificarlo ANTES de publicar, porque el
+  buscador de actualizaciones compara esa constante contra la etiqueta de
+  la release de GitHub: si no coinciden, o avisa de una actualización que no
+  existe, o no avisa de una que sí.
 
 ## Patrones de seguridad ya establecidos — MUY IMPORTANTE seguir igual
 
@@ -118,23 +159,40 @@ de Aplicaciones) — no confundir los dos casos.
 interpolación tipo `.format()`. Primer arranque pregunta el idioma (bilingüe,
 antes de que exista `self.contenido`); cambiar en Ajustes pide reiniciar.
 
-**Progreso de traducción**: 127 claves. Migrado por completo: menú lateral,
-Inicio (Dashboard), Ajustes. **Sin migrar todavía**: Componentes, Optimizar,
-Reparar, Aplicaciones, Privacidad, Seguridad, Gaming, Segundo Plano, Historial,
-Energía, Consola Dev/Panel oculto — son la mayoría de las pantallas. Al
-migrar una pantalla nueva: catalogar TODOS los strings (incluidos los que
-solo aparecen en callbacks de botones, no solo en la construcción inicial),
-agregar a ambos idiomas con paridad exacta, y verificar con:
-```
-python3 -c "
-import re, idiomas
-codigo = open('main.py', encoding='utf-8').read()
-usadas = set(re.findall(r'(?<![a-zA-Z_.])t\(\"([a-z_0-9]+)\"', codigo))
-definidas = set(idiomas.TEXTOS['es'].keys())
-print('Sin definir:', usadas - definidas or 'ninguna')
-print('Sin usar:', definidas - usadas or 'ninguna')
-"
-```
+**Progreso de traducción: TERMINADO.** 1,037 claves, paridad exacta entre
+español e inglés, ninguna sin usar ni sin definir. Las 16 pantallas y los
+ocho módulos con texto visible están migrados.
+
+Quedan **7 textos en español a propósito**, y deben quedarse así:
+- 2 son el diálogo de idioma del primer arranque, que es BILINGÜE por
+  necesidad: en ese punto todavía no se sabe qué idioma habla quien abre la
+  app, así que no se puede usar `t()`.
+- 5 son texto técnico de comandos (`del /s /q %TEMP%`, el centinela
+  `URL_DONACION vacía`, la referencia de comandos de la Consola Dev). Solo
+  se ven en la edición admin.
+
+Al agregar texto nuevo: catalogar TODOS los strings (incluidos los que solo
+aparecen en callbacks, no solo en la construcción de la pantalla), agregarlo
+a ambos idiomas, y correr `herramientas/verificar_idiomas.py`.
+
+### Diccionarios que se construyen al importar el módulo
+Hay cuatro que guardan **el nombre de la clave**, no el texto, y resuelven
+con `t()` al usarse: `CODIGOS_ERROR_DISPOSITIVO` (system_monitor),
+`SERVICIOS_BLOQUEADOS`/`SERVICIOS_ADVERTENCIA`/`PROCESOS_BLOQUEADOS`/
+`PROCESOS_RECUPERABLES` (optimizer) y `COMANDOS_DISPONIBLES` (main). Se
+construyen ANTES de que `establecer_idioma()` corra, así que guardar ahí el
+texto traducido lo dejaría congelado en el idioma por defecto. Lo mismo vale
+para los valores por defecto en la firma de una función: `t()` en un
+`def f(x=t("clave"))` se evalúa al importar. Usar `None` como centinela.
+
+### Nunca comparar contra texto traducido
+El error más repetido de toda la migración, y el que más daño hacía. Si el
+valor visible de una pestaña, un combo o un estado alimenta lógica, ese
+valor **no** se compara contra un literal: se convierte una vez a un código
+interno estable, o se compara contra la misma clave con la que se construyó.
+Aparecio siete veces y provocaba desde una pestaña que abría la pantalla
+equivocada hasta datos falsos sin ningún error visible (los permisos de
+micrófono y ubicación mostrando los de la cámara).
 
 ## Investigaciones ya hechas — no repetirlas
 
@@ -190,20 +248,77 @@ print('Sin usar:', definidas - usadas or 'ninguna')
   terceros) todavía necesitaba — encontrado al revisar referencias cruzadas
   antes de dar por terminado el cambio, no en producción.
 
+## Bugs encontrados durante la migración de idiomas (33 en total)
+
+Los que enseñan algo, no la lista completa. El patrón dominante ya está
+arriba ("Nunca comparar contra texto traducido").
+
+- **La exportación de reportes guardaba donde nadie mira.** Se armaba la ruta
+  como `~/Desktop`, pero con OneDrive sincronizando el escritorio y Windows
+  en español, el escritorio real es `~/OneDrive/Escritorio`. `~/Desktop`
+  existe pero está VACÍO, así que la escritura no fallaba: el archivo se
+  guardaba, la app mostraba esa ruta, y en el escritorio no aparecía nada.
+  Ahora se le pregunta a Windows con `SHGetKnownFolderPath`, vía
+  `opt.carpeta_conocida("escritorio" | "descargas")`. **Nunca armar a mano
+  la ruta de una carpeta conocida.**
+
+- **El respaldo era peor que el problema.** Si fallaba escribir en el
+  escritorio, caía en `BASE_DIR`. En la build `--onefile` eso es la carpeta
+  temporal donde se descomprime el `.exe`, que Windows borra al cerrar: el
+  archivo se "guardaba" y desaparecía solo. Ahora cae en
+  `prefs.carpeta_datos()`.
+
+- **La prueba de velocidad medía 7 veces menos.** Descargaba 10 MB y dividía
+  el total entre el tiempo total, así que casi toda la medición caía dentro
+  del arranque lento de TCP (slow start). Reportaba 18 Mbps sobre una línea
+  de 135. Ahora descarta los primeros 2 segundos y cronometra 5 del tramo
+  estable. **Cuanto más rápida la conexión, peor salía el número.**
+
+- **Los `.bat` tenían finales de línea LF.** `cmd.exe` se comía el primer
+  carácter de cada línea y los cuatro scripts fallaban enteros — incluido el
+  de compilar. Ver la sección de compilación.
+
+- **Cinco llamadas bloqueantes en el hilo de Tkinter** (vaciar portapapeles,
+  escaneo de Defender, reparar Tienda, inicio automático, app de inicio):
+  `subprocess` con timeouts de 10-15s congelando la ventana entera.
+
+- **Cuatro etiquetas escritas tras `after()` sin comprobar que siguieran
+  vivas.** `hasattr()` NO alcanza: el atributo sobrevive aunque el widget
+  esté destruido, y por eso el fallo pasaba desapercibido. Hay que usar
+  `winfo_exists()` — o el helper `_actualizar_label()`.
+
+- **Una variable de bucle llamada `t`** pisaba la función de traducción
+  dentro de su función. Cualquier `t("clave")` ahí dentro habría reventado
+  con "dict object is not callable".
+
+- **Claves internas filtradas a la interfaz**: mensajes que interpolaban la
+  clave que entiende el sistema (`"silencioso"`, `"rapido"`, `"detener"`) en
+  vez del nombre traducido. En inglés salía "Switching to the 'silencioso'
+  profile...". La clave viaja al sistema; a la pantalla va el texto.
+
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
-1. `python3 -m py_compile` de todos los archivos `.py`
-2. Buscar métodos/funciones duplicados a nivel de clase o de módulo (no las
-   funciones anidadas locales con nombres genéricos como `worker`/`confirmar`
-   — esas SÍ pueden repetirse en distintos scopes sin problema)
-3. Buscar llamadas a `self._algo(...)` sin que `_algo` esté definido en la
-   clase (referencias rotas)
-4. Buscar llamadas a `opt.algo(...)` / `sysmon.algo(...)` sin que existan esas
-   funciones en sus módulos
-5. Si se tocó `idiomas.py`: verificar paridad de claves entre `es` y `en`, y
-   que toda clave usada en `main.py` con `t(...)` esté definida
-6. Si se agregó una ventana Toplevel nueva: confirmar que tiene `grab_set()`
-   (o una razón documentada para no tenerlo, como la ventana de error)
+Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
+corre las cinco comprobaciones seguidas y espera una tecla al final. Los
+`.py` sueltos imprimen y salen, así que al hacerles doble clic la ventana se
+cierra antes de poder leer nada — para eso está el `.bat`.
+
+| Herramienta | Qué comprueba |
+|---|---|
+| `auditoria.py` | Duplicados de clase/módulo, `self._algo()` sin definir, `opt.`/`sysmon.` inexistentes |
+| `verificar_idiomas.py` | Paridad es/en, claves sin definir o sin usar, y que los `{campos}` coincidan entre idiomas |
+| `prueba_arranque.py` | Construye la ventana y abre las 16 pantallas, en el idioma que se le pase |
+| `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
+| `prueba_animacion.py` | Que las barras animen y no revienten al destruirlas a media animación |
+
+Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
+a una carpeta temporal.
+
+Sigue valiendo, y ninguna herramienta lo cubre:
+- `python -m py_compile` de todos los `.py` (lo hace cualquier import, pero
+  conviene tenerlo presente).
+- Si se agrega una ventana `Toplevel`: confirmar que tiene `grab_set()`, o
+  una razón documentada para no tenerlo (como la ventana de error).
 
 ## Ideas ya discutidas y descartadas (para no proponerlas de nuevo sin repensar)
 
