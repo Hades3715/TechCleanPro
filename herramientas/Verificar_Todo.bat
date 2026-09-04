@@ -52,6 +52,13 @@ echo ---------- 7. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
+echo ---------- 8. Velocidad de internet (necesita conexion) ----------
+echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
+echo cierra esta ventana ahora.
+pause
+python herramientas\prueba_velocidad.py
+echo.
+
 echo ==========================================================
 echo   Termino. Revisa arriba que no haya FALLO ni errores.
 echo ==========================================================

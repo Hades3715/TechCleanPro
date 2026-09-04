@@ -13,7 +13,7 @@ sistema. Desarrollada por **Edwin Javier Cortez Cardoza**, alias **Hades**
 la instaló en su propia laptop y en la de otra persona con equipo de bajo
 rendimiento, y varios bugs se encontraron así, con uso real.
 
-- **Versión actual**: 1.4.0 (`APP_VERSION` en `main.py`)
+- **Versión actual**: 1.5.0 (`APP_VERSION` en `main.py`)
 - **Stack**: Python + customtkinter (tema oscuro), psutil, pystray+Pillow,
   winreg, ctypes, sqlite3, PowerShell (para WMI vía `Get-CimInstance`)
 - **~12,600 líneas** repartidas en `main.py`, `optimizer.py`,
@@ -93,11 +93,11 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 - **Plan de distribución**: dos builds separadas por idioma (ES/EN), que se
   eligen por el nombre del archivo en Releases. **Ya implementado**: el
   selector salió de la edición cliente (ver arriba).
-- **Versión**: `APP_VERSION = "1.4.0"` en `main.py`, unificada con el
+- **Versión**: `APP_VERSION = "1.5.0"` en `main.py`, unificada con el
   changelog del README (antes decía 1.0.0, un descuido). La etiqueta de la
   release de GitHub debe coincidir: el buscador de actualizaciones compara
   esa constante contra `tag_name`, quitandole la "v" inicial, así que la
-  etiqueta `v1.4.0` es la correcta. Si no coinciden, o avisa de una
+  etiqueta `v1.5.0` es la correcta. Si no coinciden, o avisa de una
   actualización que no existe, o no avisa de una que sí.
 - **Al subir una versión nueva**: cambiar `APP_VERSION`, recompilar las dos
   builds, y recién entonces crear la release con la etiqueta que coincida.
@@ -304,6 +304,71 @@ arriba ("Nunca comparar contra texto traducido").
   vez del nombre traducido. En inglés salía "Switching to the 'silencioso'
   profile...". La clave viaja al sistema; a la pantalla va el texto.
 
+## Bugs encontrados en la pasada de interfaz de la 1.5.0
+
+El usuario mandó tres capturas ("mejora esto") y de paso salió que el audio
+no sonaba. Buscando por qué, aparecieron estos:
+
+- **La subida de la prueba de internet fallaba de forma intermitente.**
+  Mandaba siempre 10 MB con `timeout=15`. Una conexión de 5 Mbps de subida
+  —muy común— tarda 16 s en mandar 10 MB: se agotaba el tiempo y la subida
+  salía vacía en una conexión sana. Es la queja literal del usuario: "a
+  veces no da la bajada y a veces no da la subida". Ahora hay un sondeo de
+  1.5 MB y con ese dato se calcula un tamaño que tarde ~4 s en ESA conexión;
+  si el intento grande falla, se conserva el número del sondeo.
+
+- **El `socket.setdefaulttimeout(20)` global era MENOR que algunos timeouts
+  de la propia función.** El socket se queda con el más corto de los dos, así
+  que cortaba antes de lo que el código decía. Subido a 60.
+
+- **Un fallo en la bajada cortaba la función entera** y la subida ni se
+  intentaba. Ahora cada mitad es independiente.
+
+- **El vigilante de tiempo (35 s) no miraba si la prueba ya había terminado**,
+  así que en una conexión lenta pero sana pintaba "tardó demasiado" encima
+  del resultado bueno. Y al pulsar "Reintentar" el vigilante viejo seguía
+  programado, pisando el intento nuevo. Ahora cada ejecución lleva número de
+  generación y una bandera de terminado.
+
+- **La prueba de internet consultaba `winfo_exists()` desde el hilo de la
+  prueba.** Tkinter no es seguro fuera del hilo principal — ver la sección
+  de Threading. Todo pasa ya por `after(0, ...)`.
+
+- **El tono de prueba de audio no sonaba en muchos equipos.** Este bug tiene
+  dos capas: la primera versión usaba `PlaySound("SystemAsterisk")`, que
+  depende del tema de sonidos de Windows; el "arreglo" fue `winsound.Beep()`,
+  que resultó peor, porque **no pasa por la tarjeta de sonido**: llama al
+  generador de tonos del kernel (`beep.sys`), desactivado de fábrica en
+  bastantes portátiles. Las dos versiones devolvían éxito sin sonar nada. Y
+  aunque Beep hubiera sonado, no probaba lo que interesa: ni el dispositivo
+  de salida, ni el volumen, ni las bocinas. Ahora se sintetiza un WAV en
+  memoria (`generar_wav_tono`) y se reproduce con `SND_MEMORY`.
+
+  **Lección general:** una función que "no da error" no es una función que
+  funcione. Cuando el resultado es algo que ocurre FUERA del programa —un
+  sonido, una ventana, un archivo— hay que preguntarle al usuario si pasó.
+  De ahí la ventana de confirmación con "¿Escuchaste el tono?".
+
+- **Las gráficas de línea (Sparkline) tenían un ancho fijo de 260 px** aunque
+  el panel que las contiene se estira con la ventana (`sticky="we"`). En una
+  pantalla ancha quedaban como un bloquecito perdido en un panel enorme y
+  vacío — que es exactamente lo que se veía en las capturas que mandó el
+  usuario. Ahora el canvas hace `fill="x"` y se redibuja con `<Configure>`.
+
+- **Inicio no tenía scroll.** Su contenido pide más de 1000 px de alto; en un
+  portátil de 768 px, o en uno de 1080 con escalado de Windows al 125% (lo
+  normal de fábrica), las dos gráficas de abajo quedaban cortadas y no había
+  forma de llegar a ellas. Ahora el cuerpo va en un `CTkScrollableFrame`,
+  como ya hacía Componentes.
+
+  **Ojo al medir esto:** una ventana con `withdraw()` no calcula geometría,
+  así que `winfo_width()` devuelve el tamaño de arranque y parece que nada
+  se estira. Para comprobarlo de verdad hay que abrir la ventana; el banco de
+  pruebas la abre en `+4000+4000`, fuera de la pantalla.
+
+- **La gráfica de temperatura estaba siempre en rojo**, incluso a 32 °C.
+  Alarmaba sin motivo. Ahora el color sigue la temperatura real.
+
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
@@ -317,7 +382,9 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `verificar_idiomas.py` | Paridad es/en, claves sin definir o sin usar, y que los `{campos}` coincidan entre idiomas |
 | `prueba_arranque.py` | Construye la ventana y abre las 16 pantallas, en el idioma que se le pase |
 | `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
-| `prueba_animacion.py` | Que las barras animen y no revienten al destruirlas a media animación |
+| `prueba_animacion.py` | Que las barras, gráficas, aguja y tarjetas animen, y no revienten al destruirlas a media animación |
+| `prueba_limpieza_temp.py` | Que limpiar temporales no borre la propia app descomprimida en `%TEMP%\_MEIxxxxx` |
+| `prueba_velocidad.py` | Que la prueba de internet devuelva latencia, bajada **y** subida (usa ~60 MB de datos reales) |
 
 Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
 a una carpeta temporal.

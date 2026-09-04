@@ -48,6 +48,19 @@ else:
         anotar("FALLO: _MEIPASS fue BORRADO")
         despues = 0
 
+    # El tono de audio se sintetiza con imports TARDIOS (io/math/struct/wave)
+    # dentro de la propia funcion. PyInstaller los detecta aunque esten
+    # anidados, pero eso hay que comprobarlo: si alguno faltara, la prueba de
+    # sonido reventaria solo en el .exe repartido, nunca aqui en el codigo.
+    try:
+        datos = opt.generar_wav_tono()
+        cabecera_ok = datos[:4] == b"RIFF" and datos[8:12] == b"WAVE"
+        anotar(f"tono WAV en el .exe: {len(datos)} bytes, cabecera {'OK' if cabecera_ok else 'MAL'}")
+        tono_ok = cabecera_ok and len(datos) > 10000
+    except Exception as e:
+        anotar(f"FALLO generando el tono: {type(e).__name__}: {e}")
+        tono_ok = False
+
     # La prueba de fuego: un import tardio, como el que reventaba antes.
     try:
         import ssl
@@ -61,7 +74,7 @@ else:
         ok = False
 
     anotar("")
-    anotar("RESULTADO: " + ("ARREGLADO" if ok and os.path.isdir(mei) else "SIGUE ROTO"))
+    anotar("RESULTADO: " + ("ARREGLADO" if ok and tono_ok and os.path.isdir(mei) else "SIGUE ROTO"))
 
 with open(destino, "w", encoding="utf-8") as f:
     f.write("\n".join(lineas))

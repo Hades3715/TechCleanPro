@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import json
+import math
 import socket
 import getpass
 import platform
@@ -54,7 +55,7 @@ COLOR_DONAR = "#ff5e5b"   # calido, para que la tarjeta de apoyo no se pierda en
 
 DEV_NAME = "Edwin Javier Cortez Cardoza"
 DEV_ALIAS = "Hades"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 # ---------------------------------------------------------------------------
 # EDICIÓN: "cliente" (por defecto) oculta todo lo administrativo/técnico y
@@ -161,6 +162,29 @@ def oscurecer_color(hex_color, factor=0.75):
         return f"#{r:02x}{g:02x}{b:02x}"
     except Exception:
         return hex_color
+
+
+def mezclar_color(color_a, color_b, proporcion):
+    """Mezcla dos colores hex: proporcion=0 devuelve `color_a`, proporcion=1
+    devuelve `color_b`.
+
+    Tkinter no sabe de transparencia (un Canvas clasico no tiene canal
+    alfa), asi que un degradado se finge mezclando cada tono contra el
+    color de fondo real del panel. Es lo que usa la Sparkline para que el
+    area bajo la linea se desvanezca hacia abajo en vez de quedar como un
+    bloque plano de un solo color."""
+    try:
+        a = color_a.lstrip("#")
+        b = color_b.lstrip("#")
+        f = max(0.0, min(1.0, proporcion))
+        canales = []
+        for i in (0, 2, 4):
+            ca = int(a[i:i + 2], 16)
+            cb = int(b[i:i + 2], 16)
+            canales.append(int(round(ca + (cb - ca) * f)))
+        return "#{:02x}{:02x}{:02x}".format(*canales)
+    except Exception:
+        return color_a
 
 
 # Con Modo Ligero activo las animaciones se apagan: en un equipo justo de
@@ -281,7 +305,23 @@ class Sparkline(ctk.CTkFrame):
     llamando a .configurar(...) — nunca por el constructor. Así se evita
     de raíz el problema de argumentos rechazados por customtkinter, sin
     depender de adivinar qué nombre específico le molesta.
+
+    BUG corregido (el que se veía feo en pantallas anchas): el canvas tenía
+    un ancho FIJO de 260 px, pero el panel que lo contiene se estira con la
+    ventana (sticky="we"). Resultado: la gráfica quedaba como un bloquecito
+    perdido en medio de un panel enorme y vacío. Ahora el canvas se estira
+    con el panel y se vuelve a dibujar solo cuando cambia de tamaño.
+
+    Además el valor nuevo ya no aparece de golpe: entra deslizándose por la
+    derecha mientras sube o baja desde el valor anterior, igual que la
+    aguja del Gauge.
     """
+
+    DURACION_MS = 360    # lo que tarda el punto nuevo en terminar de entrar
+    PASO_MS = 20
+    MARGEN = 6           # aire arriba y abajo para que la línea no se corte
+    BANDAS = 10          # franjas horizontales que fingen el degradado
+
     def __init__(self, master, titulo, unidad="%", **kwargs):
         super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=12, **kwargs)
         self.titulo = titulo
@@ -292,61 +332,414 @@ class Sparkline(ctk.CTkFrame):
         self.tono = COLOR_OK
         self.max_puntos = 60
         self.valores = []
+        self._t = 1.0          # 0 = el punto nuevo aún está entrando, 1 = ya llegó
+        self._anim_id = None
 
         fila = ctk.CTkFrame(self, fg_color="transparent")
-        fila.pack(fill="x", padx=10, pady=(8, 2))
+        fila.pack(fill="x", padx=12, pady=(8, 2))
         ctk.CTkLabel(fila, text=titulo, font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.lbl_actual = ctk.CTkLabel(fila, text="--", font=ctk.CTkFont(size=12), text_color="gray70")
+        self.lbl_actual = ctk.CTkLabel(fila, text="--", font=ctk.CTkFont(size=15, weight="bold"),
+                                        text_color=self.tono)
         self.lbl_actual.pack(side="right")
+        self.lbl_extremos = ctk.CTkLabel(fila, text="", font=ctk.CTkFont(size=10), text_color="gray45")
+        self.lbl_extremos.pack(side="right", padx=(0, 10))
 
-        self.canvas = tk.Canvas(self, width=self.ancho, height=self.alto, bg=COLOR_BG_PANEL, highlightthickness=0)
-        self.canvas.pack(padx=10, pady=(0, 10))
+        self.canvas = tk.Canvas(self, height=self.alto, bg=COLOR_BG_PANEL, highlightthickness=0)
+        self.canvas.pack(fill="x", expand=True, padx=12, pady=(0, 12))
+        self.canvas.bind("<Configure>", self._al_redimensionar)
+
+    def _al_redimensionar(self, event):
+        nuevo = max(int(event.width), 10)
+        if abs(nuevo - self.ancho) < 2:
+            return
+        self.ancho = nuevo
+        self._dibujar()
 
     def configurar(self, tono=None, maximo=None, ancho=None, alto=None, max_puntos=None):
         """Ajusta la apariencia después de construido — ver nota de la clase."""
         if tono is not None:
             self.tono = tono
+            self.lbl_actual.configure(text_color=tono)
         if maximo is not None:
             self.maximo = maximo
         if ancho is not None:
+            # Ya no se fija el ancho del canvas: manda el del panel. Se guarda
+            # solo como valor de arranque, hasta que llegue el primer <Configure>.
             self.ancho = ancho
-            self.canvas.configure(width=ancho)
         if alto is not None:
             self.alto = alto
             self.canvas.configure(height=alto)
         if max_puntos is not None:
             self.max_puntos = max_puntos
 
+    def _cancelar_animacion(self):
+        if self._anim_id is not None:
+            try:
+                self.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
+
+    def _pintar_valor(self, valor):
+        try:
+            if self.lbl_actual.winfo_exists():
+                self.lbl_actual.configure(text=f"{valor:.0f}{self.unidad}")
+        except Exception:
+            pass
+
     def agregar_valor(self, valor):
         if valor is None:
             return
+        valor = float(valor)
         self.valores.append(valor)
-        if len(self.valores) > self.max_puntos:
-            self.valores = self.valores[-self.max_puntos:]
-        self.lbl_actual.configure(text=f"{valor:.0f}{self.unidad}")
-        self._dibujar()
+        # Se guarda UN punto más de los que se dibujan: mientras la serie se
+        # desliza hacia la izquierda, ese punto extra es el que tapa el hueco
+        # que si no quedaría en el borde izquierdo del canvas.
+        tope = self.max_puntos + 1
+        if len(self.valores) > tope:
+            self.valores = self.valores[-tope:]
+
+        self._cancelar_animacion()
+        try:
+            if self.lbl_extremos.winfo_exists():
+                self.lbl_extremos.configure(
+                    text=t("spark_extremos", minimo=f"{min(self.valores):.0f}",
+                           maximo=f"{max(self.valores):.0f}", unidad=self.unidad)
+                    if len(self.valores) > 3 else "")
+        except Exception:
+            pass
+
+        if not ANIMAR_BARRAS or len(self.valores) < 3:
+            self._t = 1.0
+            self._pintar_valor(valor)
+            self._dibujar()
+            return
+
+        anterior = self.valores[-2]
+        pasos = max(1, self.DURACION_MS // self.PASO_MS)
+
+        def paso(i):
+            self._anim_id = None
+            # El usuario pudo cambiar de pantalla a media animación: la
+            # gráfica ya no existe y tocarla reventaría.
+            if not self.winfo_exists():
+                return
+            avance = i / pasos
+            self._t = 1 - (1 - avance) ** 3      # ease-out cúbico, igual que el Gauge
+            self._pintar_valor(anterior + (valor - anterior) * self._t)
+            self._dibujar()
+            if i < pasos:
+                self._anim_id = self.after(self.PASO_MS, paso, i + 1)
+
+        self._t = 0.0
+        paso(1)
 
     def _dibujar(self):
-        self.canvas.delete("all")
-        if len(self.valores) < 2:
+        if not self.canvas.winfo_exists():
             return
-        maximo_local = max(max(self.valores), 1) if self.maximo is None else self.maximo
-        n = len(self.valores)
-        paso_x = self.ancho / max(self.max_puntos - 1, 1)
-        offset_x = self.ancho - (n - 1) * paso_x
-        puntos = []
-        for i, v in enumerate(self.valores):
-            x = offset_x + i * paso_x
-            y = self.alto - (min(v, maximo_local) / maximo_local) * (self.alto - 6) - 3
-            puntos.append((x, y))
-        # Área sombreada bajo la línea
-        poligono = [(offset_x, self.alto)] + puntos + [(puntos[-1][0], self.alto)]
-        poligono_flat = [c for p in poligono for c in p]
-        self.canvas.create_polygon(*poligono_flat, fill=self.tono, stipple="gray25", outline="")
-        # Línea
-        linea_flat = [c for p in puntos for c in p]
-        self.canvas.create_line(*linea_flat, fill=self.tono, width=2, smooth=True)
+        self.canvas.delete("all")
+        ancho, alto = self.ancho, self.alto
+        if ancho <= 10:
+            return
+        tope, piso = self.MARGEN, alto - self.MARGEN
 
+        # Rejilla de fondo: tres guías para poder leer la altura de un
+        # vistazo, más la línea de base. Antes no había ninguna referencia y
+        # una línea plana no decía nada.
+        for frac in (0.25, 0.5, 0.75):
+            y = piso - (piso - tope) * frac
+            self.canvas.create_line(0, y, ancho, y, fill="#2a2e37", dash=(2, 4))
+        self.canvas.create_line(0, piso, ancho, piso, fill="#343842")
+
+        if len(self.valores) < 2:
+            # Sin datos la gráfica quedaba como un recuadro vacío sin ninguna
+            # explicación — pasa siempre en los equipos que no reportan
+            # temperatura de CPU, que son muchos. Mejor decirlo.
+            self.canvas.create_text(ancho / 2, alto / 2, text=t("spark_sin_datos"),
+                                     fill="#4a4f5a", font=("Segoe UI", 10))
+            return
+        maximo = self.maximo if self.maximo else max(max(self.valores), 1)
+        n = len(self.valores)
+        paso_x = ancho / max(self.max_puntos - 1, 1)
+        desplaz = (1.0 - self._t) * paso_x
+        offset_x = ancho - (n - 1) * paso_x + desplaz
+
+        valores = list(self.valores)
+        if self._t < 1.0:
+            valores[-1] = valores[-2] + (valores[-1] - valores[-2]) * self._t
+
+        puntos = []
+        for i, v in enumerate(valores):
+            x = offset_x + i * paso_x
+            y = piso - (min(max(v, 0), maximo) / maximo) * (piso - tope)
+            puntos.append((x, y))
+
+        # Degradado bajo la línea, en franjas horizontales. Un Canvas de
+        # Tkinter no tiene transparencia, así que cada franja se pinta con el
+        # tono ya mezclado contra el fondo del panel: mucho más denso arriba
+        # que abajo. El "stipple" de antes daba un bloque plano y granulado.
+        for b in range(self.BANDAS):
+            y0 = tope + (piso - tope) * b / self.BANDAS
+            y1 = tope + (piso - tope) * (b + 1) / self.BANDAS
+            recorte = [(x, min(max(y, y0), y1)) for x, y in puntos]
+            if all(abs(y - y1) < 0.01 for _, y in recorte):
+                continue                       # franja entera por encima de la línea
+            plano = [puntos[0][0], y1]
+            for x, y in recorte:
+                plano.extend((x, y))
+            plano.extend((puntos[-1][0], y1))
+            intensidad = 0.42 * (1 - b / self.BANDAS) + 0.05
+            self.canvas.create_polygon(*plano, outline="",
+                                        fill=mezclar_color(COLOR_BG_PANEL, self.tono, intensidad))
+
+        linea = [c for p in puntos for c in p]
+        self.canvas.create_line(*linea, fill=self.tono, width=2, smooth=True, capstyle="round")
+
+        # Punto vivo en la punta, con un halo suave: marca de un vistazo
+        # dónde está el "ahora" de la gráfica.
+        cx, cy = puntos[-1]
+        self.canvas.create_oval(cx - 6, cy - 6, cx + 6, cy + 6, outline="",
+                                 fill=mezclar_color(COLOR_BG_PANEL, self.tono, 0.32))
+        self.canvas.create_oval(cx - 3, cy - 3, cx + 3, cy + 3, fill=self.tono, outline="")
+
+
+
+def animar_progreso(barra, destino, estado, duracion_ms=300, paso_ms=20):
+    """Lleva una CTkProgressBar hasta `destino` sin dar el tirón de .set().
+
+    `estado` es un dict que el llamador conserva entre llamadas: ahí se
+    guarda el valor que se está mostrando y el id de la animación en
+    curso, para poder cancelarla si llega un destino nuevo antes de que
+    la anterior termine (si no, las dos se pisan y la barra tiembla).
+    """
+    id_previo = estado.get("id")
+    if id_previo is not None:
+        try:
+            barra.after_cancel(id_previo)
+        except Exception:
+            pass
+        estado["id"] = None
+
+    inicio = estado.get("valor", 0.0)
+    destino = max(0.0, min(1.0, float(destino)))
+    if not ANIMAR_BARRAS or abs(destino - inicio) < 0.005:
+        estado["valor"] = destino
+        try:
+            barra.set(destino)
+        except Exception:
+            pass
+        return
+
+    pasos = max(1, duracion_ms // paso_ms)
+
+    def paso(i):
+        estado["id"] = None
+        try:
+            if not barra.winfo_exists():
+                return
+        except Exception:
+            return
+        suave = 1 - (1 - i / pasos) ** 3
+        valor = inicio + (destino - inicio) * suave
+        estado["valor"] = valor
+        barra.set(valor)
+        if i < pasos:
+            estado["id"] = barra.after(paso_ms, paso, i + 1)
+
+    paso(1)
+
+
+class MedidorAguja(ctk.CTkFrame):
+    """Velocímetro de aguja para la prueba de internet.
+
+    La escala es LOGARÍTMICA a propósito. Con una escala lineal de 0 a
+    1000 Mbps, una conexión de 6 Mbps —perfectamente normal en El
+    Salvador— dejaría la aguja pegada al cero, sin poder distinguir 2 de
+    8. En logarítmica cada multiplicación por diez ocupa el mismo tramo,
+    así que se lee igual de bien una conexión lenta que una de fibra.
+    """
+
+    ANCHO = 290
+    ALTO = 208
+    INICIO = 190          # grados; 0 = las 3 en punto, sentido antihorario
+    BARRIDO = 200         # recorrido total de la aguja
+    TOPE = 1000.0         # Mbps al final de la escala
+    DURACION_MS = 260
+    PASO_MS = 20
+    # El "0" no lleva rotulo: el arranque del arco ya se entiende solo, y
+    # puesto ahi chocaba con el "1", que queda a un palmo en escala log.
+    MARCAS = ((0, None), (1, "1"), (5, None), (10, "10"), (50, None),
+              (100, "100"), (500, None), (1000, "1000"))
+
+    def __init__(self, master, **kwargs):
+        super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=16, **kwargs)
+        self.canvas = tk.Canvas(self, width=self.ANCHO, height=self.ALTO,
+                                 bg=COLOR_BG_PANEL, highlightthickness=0)
+        self.canvas.pack(padx=6, pady=(6, 2))
+        self._valor = 0.0
+        self._tono = COLOR_ACCENT
+        self._texto = "—"
+        self._anim_id = None
+        self._cx = self.ANCHO / 2
+        # El eje de la aguja va arriba del centro del recuadro a proposito:
+        # asi queda sitio LIBRE debajo para el numero grande. En la primera
+        # version el numero iba dentro del arco y se le montaban encima la
+        # aguja y el rotulo del "100".
+        self._cy = self.ALTO - 80
+        self._radio = 100
+        self._dibujar()
+
+    # -- geometría ---------------------------------------------------------
+    def _fraccion(self, mbps):
+        v = max(0.0, min(float(mbps), self.TOPE))
+        return math.log10(1 + v) / math.log10(1 + self.TOPE)
+
+    def _punto(self, fraccion, radio):
+        grados = self.INICIO - self.BARRIDO * fraccion
+        rad = math.radians(grados)
+        return (self._cx + radio * math.cos(rad),
+                self._cy - radio * math.sin(rad))
+
+    # -- API ---------------------------------------------------------------
+    def _cancelar(self):
+        if self._anim_id is not None:
+            try:
+                self.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
+
+    def set_tono(self, tono):
+        self._tono = tono
+        self._dibujar()
+
+    def set_texto(self, texto):
+        """Cambia solo el rótulo del centro, sin tocar la aguja."""
+        self._texto = texto
+        self._dibujar()
+
+    def set_valor(self, mbps, texto=None):
+        destino = max(0.0, float(mbps or 0.0))
+        self._texto = texto if texto is not None else f"{destino:.1f}"
+        self._cancelar()
+        if not ANIMAR_BARRAS:
+            self._valor = destino
+            self._dibujar()
+            return
+        inicio = self._valor
+        pasos = max(1, self.DURACION_MS // self.PASO_MS)
+
+        def paso(i):
+            self._anim_id = None
+            if not self.winfo_exists():
+                return
+            suave = 1 - (1 - i / pasos) ** 3
+            self._valor = inicio + (destino - inicio) * suave
+            self._dibujar()
+            if i < pasos:
+                self._anim_id = self.after(self.PASO_MS, paso, i + 1)
+
+        paso(1)
+
+    # -- dibujo ------------------------------------------------------------
+    def _dibujar(self):
+        if not self.canvas.winfo_exists():
+            return
+        c = self.canvas
+        c.delete("all")
+        caja = (self._cx - self._radio, self._cy - self._radio,
+                self._cx + self._radio, self._cy + self._radio)
+
+        c.create_arc(*caja, start=self.INICIO, extent=-self.BARRIDO, style="arc",
+                     outline="#2b2f38", width=13)
+        f = self._fraccion(self._valor)
+        if f > 0.003:
+            c.create_arc(*caja, start=self.INICIO, extent=-self.BARRIDO * f, style="arc",
+                         outline=self._tono, width=13)
+
+        for valor, etiqueta in self.MARCAS:
+            fm = self._fraccion(valor)
+            largo = 9 if etiqueta else 5
+            x1, y1 = self._punto(fm, self._radio - 11)
+            x2, y2 = self._punto(fm, self._radio - 11 - largo)
+            c.create_line(x1, y1, x2, y2, fill="#4a4f5a", width=2)
+            if etiqueta:
+                ex, ey = self._punto(fm, self._radio - 30)
+                c.create_text(ex, ey, text=etiqueta, fill="#6b7280",
+                              font=("Segoe UI", 8))
+
+        ax, ay = self._punto(f, self._radio - 24)
+        c.create_line(self._cx, self._cy, ax, ay, fill=self._tono, width=3,
+                      capstyle="round")
+        c.create_oval(self._cx - 6, self._cy - 6, self._cx + 6, self._cy + 6,
+                      fill=self._tono, outline=COLOR_BG_PANEL, width=2)
+
+        c.create_text(self._cx, self._cy + 44, text=self._texto, fill="white",
+                      font=("Segoe UI", 27, "bold"))
+        c.create_text(self._cx, self._cy + 68, text="Mbps", fill="#6b7280",
+                      font=("Segoe UI", 10))
+
+
+class TarjetaMedicion(ctk.CTkFrame):
+    """Una de las tres cifras del resultado: latencia, bajada o subida.
+
+    El número no aparece de golpe: sube desde cero, así que se nota que
+    acaba de llegar un dato nuevo aunque no estés mirando esa esquina.
+    """
+
+    DURACION_MS = 520
+    PASO_MS = 25
+
+    def __init__(self, master, icono, titulo, unidad, tono, **kwargs):
+        super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=12, **kwargs)
+        self.unidad = unidad
+        self.tono = tono
+        self._anim_id = None
+        ctk.CTkLabel(self, text=f"{icono}  {titulo}", font=ctk.CTkFont(size=11),
+                     text_color="gray60").pack(pady=(10, 1))
+        self.lbl_valor = ctk.CTkLabel(self, text="—", font=ctk.CTkFont(size=21, weight="bold"),
+                                       text_color="gray40")
+        self.lbl_valor.pack()
+        ctk.CTkLabel(self, text=unidad, font=ctk.CTkFont(size=10),
+                     text_color="gray45").pack(pady=(0, 10))
+
+    def _cancelar(self):
+        if self._anim_id is not None:
+            try:
+                self.after_cancel(self._anim_id)
+            except Exception:
+                pass
+            self._anim_id = None
+
+    def limpiar(self):
+        self._cancelar()
+        if self.lbl_valor.winfo_exists():
+            self.lbl_valor.configure(text="—", text_color="gray40")
+
+    def set_valor(self, valor, decimales=2):
+        self._cancelar()
+        if valor is None:
+            self.limpiar()
+            return
+        destino = float(valor)
+        if not ANIMAR_BARRAS:
+            self.lbl_valor.configure(text=f"{destino:.{decimales}f}", text_color=self.tono)
+            return
+        pasos = max(1, self.DURACION_MS // self.PASO_MS)
+
+        def paso(i):
+            self._anim_id = None
+            if not self.winfo_exists():
+                return
+            suave = 1 - (1 - i / pasos) ** 3
+            self.lbl_valor.configure(text=f"{destino * suave:.{decimales}f}",
+                                     text_color=self.tono)
+            if i < pasos:
+                self._anim_id = self.after(self.PASO_MS, paso, i + 1)
+            else:
+                self.lbl_valor.configure(text=f"{destino:.{decimales}f}")
+
+        paso(1)
 
 
 class DevConsole(ctk.CTkFrame):
@@ -694,12 +1087,25 @@ class TechCleanApp(ctk.CTk):
     def mostrar_dashboard(self):
         self._limpiar_contenido()
 
-        ctk.CTkLabel(self.contenido, text=t("dash_titulo"),
+        # BUG corregido: Inicio no tenia scroll. El contenido de esta
+        # pantalla mide algo mas de 1000 px de alto, asi que en cualquier
+        # portatil de 768 px —o en uno de 1080 con el escalado de Windows al
+        # 125%, que es lo normal de fabrica— las dos graficas de abajo
+        # quedaban cortadas por el borde de la ventana y no habia NINGUNA
+        # forma de llegar a ellas. Ahora el cuerpo va dentro de un marco con
+        # scroll, como ya hacia Componentes.
+        self.contenido.grid_rowconfigure(0, weight=1)
+        lienzo = ctk.CTkScrollableFrame(self.contenido, fg_color="transparent")
+        lienzo.grid(row=0, column=0, columnspan=3, sticky="nswe")
+        for col in range(3):
+            lienzo.grid_columnconfigure(col, weight=1)
+
+        ctk.CTkLabel(lienzo, text=t("dash_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
         # ---- Acción rápida: un clic, sin tecnicismos ----
-        panel_rapido = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_rapido = ctk.CTkFrame(lienzo, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_rapido.grid(row=1, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 12))
         fila_rapida = ctk.CTkFrame(panel_rapido, fg_color="transparent")
         fila_rapida.pack(fill="x", padx=16, pady=14)
@@ -715,7 +1121,7 @@ class TechCleanApp(ctk.CTk):
         self.lbl_resultado_user.pack(fill="x", padx=16, pady=(0, 14), anchor="w")
 
         # ---- Salud del sistema (semáforo) ----
-        panel_salud = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_salud = ctk.CTkFrame(lienzo, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_salud.grid(row=2, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 12))
         self._panel_salud_actual = panel_salud
         fila_salud = ctk.CTkFrame(panel_salud, fg_color="transparent")
@@ -746,17 +1152,17 @@ class TechCleanApp(ctk.CTk):
                 self.after(0, self._mostrar_aviso_limpieza_programada)
         threading.Thread(target=worker_limpieza, daemon=True).start()
 
-        self.gauge_ram = Gauge(self.contenido, t("dash_gauge_ram"))
+        self.gauge_ram = Gauge(lienzo, t("dash_gauge_ram"))
         self.gauge_ram.grid(row=3, column=0, padx=8, pady=8, sticky="we")
-        self.gauge_cpu = Gauge(self.contenido, t("dash_gauge_cpu"))
+        self.gauge_cpu = Gauge(lienzo, t("dash_gauge_cpu"))
         self.gauge_cpu.grid(row=3, column=1, padx=8, pady=8, sticky="we")
-        self.gauge_disco = Gauge(self.contenido, t("dash_gauge_disco"))
+        self.gauge_disco = Gauge(lienzo, t("dash_gauge_disco"))
         self.gauge_disco.grid(row=3, column=2, padx=8, pady=8, sticky="we")
 
-        self.gauge_gpu = Gauge(self.contenido, t("dash_gauge_gpu"))
+        self.gauge_gpu = Gauge(lienzo, t("dash_gauge_gpu"))
         self.gauge_gpu.grid(row=4, column=0, padx=8, pady=8, sticky="we")
 
-        info_frame = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        info_frame = ctk.CTkFrame(lienzo, fg_color=COLOR_BG_PANEL, corner_radius=16)
         info_frame.grid(row=4, column=1, columnspan=2, padx=8, pady=8, sticky="nswe")
         ctk.CTkLabel(info_frame, text=t("dash_info_equipo_titulo"),
                      font=ctk.CTkFont(size=14, weight="bold"), anchor="w").pack(fill="x", padx=12, pady=(12, 6))
@@ -767,12 +1173,21 @@ class TechCleanApp(ctk.CTk):
                                              font=ctk.CTkFont(size=12))
         self.lbl_info_equipo.pack(fill="x", padx=12, pady=(0, 12))
 
-        self.spark_ram = Sparkline(self.contenido, t("dash_spark_ram"))
-        self.spark_ram.configurar(tono=COLOR_OK)
-        self.spark_ram.grid(row=5, column=0, columnspan=2, padx=8, pady=8, sticky="we")
-        self.spark_cpu = Sparkline(self.contenido, t("dash_spark_cpu"))
-        self.spark_cpu.configurar(tono="#3d8bfd")
-        self.spark_cpu.grid(row=5, column=2, padx=8, pady=8, sticky="we")
+        # Las dos gráficas van dentro de su propio contenedor con dos columnas
+        # de peso igual. Antes iban sueltas en la rejilla de tres columnas
+        # (RAM ocupando dos y CPU una), así que quedaban de anchos distintos
+        # sin ninguna razón — y la de CPU salía apretada.
+        fila_sparks = ctk.CTkFrame(lienzo, fg_color="transparent")
+        fila_sparks.grid(row=5, column=0, columnspan=3, padx=0, pady=0, sticky="we")
+        fila_sparks.grid_columnconfigure(0, weight=1, uniform="spark")
+        fila_sparks.grid_columnconfigure(1, weight=1, uniform="spark")
+
+        self.spark_ram = Sparkline(fila_sparks, t("dash_spark_ram"))
+        self.spark_ram.configurar(tono=COLOR_OK, alto=92)
+        self.spark_ram.grid(row=0, column=0, padx=8, pady=8, sticky="we")
+        self.spark_cpu = Sparkline(fila_sparks, t("dash_spark_cpu"))
+        self.spark_cpu.configurar(tono="#3d8bfd", alto=92)
+        self.spark_cpu.grid(row=0, column=1, padx=8, pady=8, sticky="we")
 
         self._refrescar_gauges()
         self._calcular_salud_sistema()
@@ -989,7 +1404,7 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker_audio, daemon=True).start()
 
         self.spark_temp_cpu = Sparkline(scroll, t("comp_spark_temp"), unidad="°C")
-        self.spark_temp_cpu.configurar(maximo=100, tono=COLOR_CRIT)
+        self.spark_temp_cpu.configurar(maximo=100, tono=COLOR_OK, alto=92)
         self.spark_temp_cpu.grid(row=4, column=0, columnspan=2, padx=8, pady=8, sticky="we")
 
         # ---- Historial de arranques (tendencia en el tiempo) ----
@@ -1062,9 +1477,119 @@ class TechCleanApp(ctk.CTk):
         self.panel_audio.configure(text=texto)
 
     def _accion_probar_sonido(self):
-        threading.Thread(target=opt.reproducir_sonido_prueba, daemon=True).start()
-        self._log_dev(t("comp_log_sonido"), "winsound.Beep(880, 300)",
-                      t("comp_sonido_ok"), seccion=t("seccion_componentes"), exito=True)
+        """Prueba de sonido con confirmación y ayuda si no se oye nada.
+
+        BUG corregido (lo que el usuario reportó como "el audio no
+        funciona"): esto disparaba un tono y no decía absolutamente nada
+        más. Si no se escuchaba, no había forma de saber si el equipo
+        estaba mudo, si el volumen estaba al mínimo, si el sonido salía por
+        otro dispositivo, o si la app simplemente no había hecho nada. Y
+        encima el tono se generaba con winsound.Beep(), que ni siquiera
+        pasa por la tarjeta de sonido (ver reproducir_sonido_prueba en
+        optimizer.py): en muchos portátiles no suena nunca.
+
+        Ahora suena un tono real por la salida de audio normal, la ventana
+        pregunta si se escuchó, y si la respuesta es que no, ofrece los dos
+        sitios donde está el problema el 90% de las veces: el mezclador de
+        volumen y el dispositivo de salida elegido.
+        """
+        dialogo = ctk.CTkToplevel(self)
+        dialogo.title(t("comp_snd_ventana"))
+        dialogo.geometry("400x495")
+        dialogo.resizable(False, False)
+        dialogo.transient(self)
+        dialogo.grab_set()
+
+        ctk.CTkLabel(dialogo, text="🔊", font=ctk.CTkFont(size=54)).pack(pady=(24, 2))
+        lbl_estado = ctk.CTkLabel(dialogo, text=t("comp_snd_reproduciendo"),
+                                   font=ctk.CTkFont(size=14, weight="bold"),
+                                   wraplength=340, justify="center")
+        lbl_estado.pack(pady=(0, 4))
+        lbl_pista = ctk.CTkLabel(dialogo, text=t("comp_snd_canales_nota"),
+                                  font=ctk.CTkFont(size=11), text_color="gray55",
+                                  wraplength=340, justify="center")
+        lbl_pista.pack(pady=(0, 12))
+
+        zona = ctk.CTkFrame(dialogo, fg_color="transparent")
+        zona.pack(fill="both", expand=True, padx=18)
+
+        ctk.CTkButton(dialogo, text=t("comun_cerrar"), fg_color="gray40", width=110,
+                      command=dialogo.destroy).pack(side="bottom", pady=14)
+
+        estado = {"ocupado": False}
+
+        def limpiar_zona():
+            for hijo in zona.winfo_children():
+                hijo.destroy()
+
+        def sonar(canal="ambos"):
+            """Reproduce el tono en un hilo — PlaySound sin SND_ASYNC bloquea
+            hasta que termina, y hacerlo en el hilo principal congelaría la
+            ventana justo mientras suena."""
+            if estado["ocupado"]:
+                return
+            estado["ocupado"] = True
+            limpiar_zona()
+            lbl_estado.configure(text=t("comp_snd_reproduciendo"), text_color="gray90")
+
+            def worker():
+                exito, comando = opt.reproducir_sonido_prueba(canal)
+
+                def despues():
+                    estado["ocupado"] = False
+                    if not dialogo.winfo_exists():
+                        return
+                    if exito:
+                        preguntar()
+                    else:
+                        lbl_estado.configure(text=t("comp_snd_error"), text_color=COLOR_CRIT)
+                        mostrar_ayuda()
+                self.after(0, despues)
+                self._log_dev(t("comp_log_sonido"), comando,
+                              t("comp_sonido_ok") if exito else t("comp_snd_error"),
+                              seccion=t("seccion_componentes"), exito=exito)
+            threading.Thread(target=worker, daemon=True).start()
+
+        def preguntar():
+            limpiar_zona()
+            lbl_estado.configure(text=t("comp_snd_pregunta"), text_color="gray90")
+
+            def confirmado():
+                limpiar_zona()
+                lbl_estado.configure(text=t("comp_snd_confirmado"), text_color=COLOR_OK)
+                ctk.CTkLabel(zona, text=t("comp_snd_confirmado_detalle"),
+                             font=ctk.CTkFont(size=11), text_color="gray55",
+                             wraplength=330, justify="center").pack(pady=(4, 10))
+                fila = ctk.CTkFrame(zona, fg_color="transparent")
+                fila.pack()
+                ctk.CTkButton(fila, text=t("comp_snd_izq"), width=100, fg_color="#2a2d36",
+                              command=lambda: sonar("izquierdo")).pack(side="left", padx=4)
+                ctk.CTkButton(fila, text=t("comp_snd_der"), width=100, fg_color="#2a2d36",
+                              command=lambda: sonar("derecho")).pack(side="left", padx=4)
+
+            ctk.CTkButton(zona, text=t("comp_snd_si"), height=38, fg_color=COLOR_OK,
+                          hover_color=oscurecer_color(COLOR_OK),
+                          command=confirmado).pack(fill="x", pady=(4, 6))
+            ctk.CTkButton(zona, text=t("comp_snd_no"), height=38, fg_color="#2a2d36",
+                          command=mostrar_ayuda).pack(fill="x", pady=(0, 6))
+            ctk.CTkButton(zona, text=t("comp_snd_repetir"), height=32, fg_color="transparent",
+                          border_width=1, border_color="gray40",
+                          command=lambda: sonar("ambos")).pack(fill="x")
+
+        def mostrar_ayuda():
+            limpiar_zona()
+            lbl_estado.configure(text=t("comp_snd_ayuda_titulo"), text_color=COLOR_WARN)
+            ctk.CTkLabel(zona, text=t("comp_snd_ayuda_texto"), font=ctk.CTkFont(size=11),
+                         text_color="gray65", wraplength=330, justify="left").pack(pady=(2, 10))
+            ctk.CTkButton(zona, text=t("comp_btn_mezclador"), height=34,
+                          command=self._accion_abrir_mezclador).pack(fill="x", pady=(0, 6))
+            ctk.CTkButton(zona, text=t("comp_snd_abrir_sonido"), height=34, fg_color="#2a2d36",
+                          command=self._accion_abrir_prueba_microfono).pack(fill="x", pady=(0, 6))
+            ctk.CTkButton(zona, text=t("comp_snd_repetir"), height=32, fg_color="transparent",
+                          border_width=1, border_color="gray40",
+                          command=lambda: sonar("ambos")).pack(fill="x")
+
+        sonar("ambos")
 
     def _accion_probar_disco(self):
         self.lbl_resultado_disco.configure(text=t("comp_preparando"))
@@ -1204,7 +1729,20 @@ class TechCleanApp(ctk.CTk):
             texto_cpu += t("comp_throttling")
         self.panel_cpu.configure(text=texto_cpu)
         if hasattr(self, "spark_temp_cpu") and self.spark_temp_cpu.winfo_exists():
-            self.spark_temp_cpu.agregar_valor(cpu.get("temperatura_c"))
+            grados = cpu.get("temperatura_c")
+            # La gráfica de temperatura estaba SIEMPRE en rojo, incluso a 32 °C.
+            # Un CPU frío pintado de rojo alarma sin motivo; ahora el color
+            # sigue la temperatura real: verde hasta 65, ámbar hasta 80, rojo
+            # arriba de eso (los umbrales típicos de un portátil).
+            if grados is not None:
+                if grados < 65:
+                    tono_temp = COLOR_OK
+                elif grados < 80:
+                    tono_temp = COLOR_WARN
+                else:
+                    tono_temp = COLOR_CRIT
+                self.spark_temp_cpu.configurar(tono=tono_temp)
+            self.spark_temp_cpu.agregar_valor(grados)
 
         gpu = datos["gpu"]
         if gpu.get("porcentaje") is not None:
@@ -1279,119 +1817,198 @@ class TechCleanApp(ctk.CTk):
             horas=horas, minutos=minutos, procesos=datos["procesos"]))
 
     def _abrir_ventana_speedtest(self):
-        """Ventana dedicada para el test de velocidad — antes era solo una
-        etiqueta apretada dentro de la tarjeta de Red; ahora tiene su
-        propia ventana con progreso en vivo, resultado grande y un botón
-        de reintentar, sin depender de que la pantalla Componentes siga
-        abierta (evita que un resultado tardío intente pintar sobre un
-        widget de una visita anterior ya destruido)."""
+        """Ventana dedicada para el test de velocidad.
+
+        Antes era solo una etiqueta apretada dentro de la tarjeta de Red;
+        después pasó a una ventana con dos números y una barra. Esta versión
+        muestra además la latencia, y sobre todo enseña lo que está pasando
+        MIENTRAS pasa: la aguja se mueve con la velocidad real de cada
+        instante, así que se ve enseguida si la conexión va estable o a
+        tirones — algo que un solo número al final no cuenta.
+
+        Sigue siendo una ventana aparte a propósito: así el resultado no
+        depende de que la pantalla Componentes siga abierta (evita que un
+        resultado tardío intente pintar sobre un widget de una visita
+        anterior ya destruido).
+        """
         dialogo = ctk.CTkToplevel(self)
         dialogo.title(t("comp_st_ventana"))
-        dialogo.geometry("380x300")
+        dialogo.geometry("430x525")
         dialogo.resizable(False, False)
+        dialogo.transient(self)
         dialogo.grab_set()
 
         ctk.CTkLabel(dialogo, text=t("comp_st_titulo"),
-                     font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(20, 4))
+                     font=ctk.CTkFont(size=19, weight="bold")).pack(pady=(18, 2))
         lbl_estado = ctk.CTkLabel(dialogo, text=t("comp_preparando"), font=ctk.CTkFont(size=12),
-                                   text_color="gray60", wraplength=320, justify="center")
-        lbl_estado.pack(pady=(0, 2))
-        ctk.CTkLabel(dialogo, text=t("comp_st_datos"), font=ctk.CTkFont(size=10),
-                     text_color="gray50", wraplength=320, justify="center").pack(pady=(0, 10))
+                                   text_color="gray60", wraplength=380, justify="center")
+        lbl_estado.pack(pady=(0, 8))
 
-        barra = ctk.CTkProgressBar(dialogo, width=280)
+        medidor = MedidorAguja(dialogo)
+        medidor.pack(pady=(0, 10))
+
+        barra = ctk.CTkProgressBar(dialogo, width=320, height=8)
         barra.set(0)
-        barra.pack(pady=(0, 20))
+        barra.pack(pady=(0, 14))
 
-        lbl_bajada = ctk.CTkLabel(dialogo, text="", font=ctk.CTkFont(size=24, weight="bold"))
-        lbl_bajada.pack()
-        lbl_subida = ctk.CTkLabel(dialogo, text="", font=ctk.CTkFont(size=24, weight="bold"))
-        lbl_subida.pack()
+        fila_tarjetas = ctk.CTkFrame(dialogo, fg_color="transparent")
+        fila_tarjetas.pack(fill="x", padx=14)
+        for col in range(3):
+            fila_tarjetas.grid_columnconfigure(col, weight=1, uniform="resultado")
+        tarj_ping = TarjetaMedicion(fila_tarjetas, "⏱", t("comp_st_latencia"),
+                                     t("comp_st_unidad_ms"), COLOR_WARN)
+        tarj_ping.grid(row=0, column=0, padx=4, sticky="we")
+        tarj_bajada = TarjetaMedicion(fila_tarjetas, "↓", t("comp_st_bajada_titulo"),
+                                       t("comp_st_unidad_mbps"), COLOR_ACCENT)
+        tarj_bajada.grid(row=0, column=1, padx=4, sticky="we")
+        tarj_subida = TarjetaMedicion(fila_tarjetas, "↑", t("comp_st_subida_titulo"),
+                                       t("comp_st_unidad_mbps"), COLOR_OK)
+        tarj_subida.grid(row=0, column=2, padx=4, sticky="we")
+
+        ctk.CTkLabel(dialogo, text=t("comp_st_datos"), font=ctk.CTkFont(size=10),
+                     text_color="gray45", wraplength=380, justify="center").pack(pady=(14, 0))
 
         fila_botones = ctk.CTkFrame(dialogo, fg_color="transparent")
         fila_botones.pack(side="bottom", pady=16)
         ctk.CTkButton(fila_botones, text=t("comun_cerrar"), fg_color="gray40",
-                      command=dialogo.destroy).pack(
-            side="left", padx=6)
+                      command=dialogo.destroy).pack(side="left", padx=6)
         btn_reintentar = ctk.CTkButton(fila_botones, text=t("comp_btn_reintentar"), width=110,
-                                       state="disabled")
+                                        state="disabled")
         btn_reintentar.pack(side="left", padx=6)
-        btn_reintentar.configure(
-            command=lambda: self._ejecutar_speedtest(dialogo, lbl_estado, barra, lbl_bajada, lbl_subida, btn_reintentar))
 
-        self._ejecutar_speedtest(dialogo, lbl_estado, barra, lbl_bajada, lbl_subida, btn_reintentar)
+        refs = {"dialogo": dialogo, "estado": lbl_estado, "medidor": medidor, "barra": barra,
+                "ping": tarj_ping, "bajada": tarj_bajada, "subida": tarj_subida,
+                "btn_reintentar": btn_reintentar, "barra_estado": {"valor": 0.0, "id": None}}
 
-    def _ejecutar_speedtest(self, dialogo, lbl_estado, barra, lbl_bajada, lbl_subida, btn_reintentar):
+        btn_reintentar.configure(command=lambda: self._ejecutar_speedtest(refs))
+        self._ejecutar_speedtest(refs)
+
+    def _ejecutar_speedtest(self, refs):
+        dialogo = refs["dialogo"]
         if not dialogo.winfo_exists():
             return
-        # opt.test_velocidad_internet avisa la fase con un CODIGO estable, no
-        # con texto: antes este mapa estaba indexado por las frases en espanol
-        # que producia el optimizador, asi que en cuanto ese texto cambiara de
-        # idioma el .get() habria caido siempre en el 0.5 por defecto y la
-        # barra de progreso habria dejado de avanzar.
+
+        # Límite total. Antes eran 35 s, que no alcanzaban ni para una prueba
+        # normal en una conexión modesta: el aviso de "tardó demasiado" salía
+        # sobre pruebas que iban perfectamente.
+        LIMITE_S = 90
+
+        # opt.test_velocidad_internet avisa la fase con un CÓDIGO estable, no
+        # con texto: antes este mapa estaba indexado por las frases en español
+        # que producía el optimizador, así que en cuanto ese texto cambiara de
+        # idioma el .get() habría caído siempre en el 0.5 por defecto y la
+        # barra de progreso habría dejado de avanzar.
         FASES = {
-            "conexion": (t("comp_st_fase_conexion"), 0.15),
-            "bajada": (t("comp_st_fase_bajada"), 0.45),
-            "subida": (t("comp_st_fase_subida"), 0.80),
+            "conexion": (t("comp_st_fase_conexion"), 0.10),
+            "bajada": (t("comp_st_fase_bajada"), 0.35),
+            "subida": (t("comp_st_fase_subida"), 0.72),
             "listo": (t("comp_st_fase_listo"), 1.0),
         }
-        btn_reintentar.configure(state="disabled")
-        lbl_bajada.configure(text="")
-        lbl_subida.configure(text="")
-        lbl_estado.configure(text=t("comp_preparando"), text_color="gray60")
-        barra.set(0)
+        TONO_FASE = {"bajada": COLOR_ACCENT, "subida": COLOR_OK}
 
-        # BUG corregido: si la conexión se quedaba a medias (por ejemplo,
-        # la resolución de DNS de Windows puede tardar más de lo que
-        # cualquier "timeout" de Python alcanza a cubrir en ciertas redes
-        # con firewall/antivirus/VPN), la ventana se quedaba cargando para
-        # siempre, sin ningún mensaje ni forma de reintentar. Ahora hay un
-        # límite de tiempo total: si en 35 segundos no terminó, se avisa y
-        # se reactiva "Reintentar", sin importar en qué paso se haya
-        # atascado el intento anterior (que sigue en su hilo, abandonado).
-        estado_interno = {"completado": False}
+        # BUG corregido: cada ejecución lleva su propio número. Si el usuario
+        # pulsaba "Reintentar" mientras un intento anterior seguía vivo, el
+        # vigilante de aquel intento seguía programado y acababa pintando
+        # "tardó demasiado" encima del intento nuevo, que iba perfectamente.
+        self._speedtest_gen = getattr(self, "_speedtest_gen", 0) + 1
+        gen = self._speedtest_gen
+        marcha = {"terminado": False}
+
+        def vigente():
+            return gen == getattr(self, "_speedtest_gen", 0) and dialogo.winfo_exists()
+
+        refs["btn_reintentar"].configure(state="disabled")
+        for tarjeta in (refs["ping"], refs["bajada"], refs["subida"]):
+            tarjeta.limpiar()
+        refs["estado"].configure(text=t("comp_preparando"), text_color="gray60")
+        refs["medidor"].set_tono(COLOR_ACCENT)
+        refs["medidor"].set_valor(0, texto="—")
+        refs["barra_estado"] = {"valor": 0.0, "id": None}
+        refs["barra"].set(0)
+
+        suavizado = {"mbps": 0.0}
 
         def progreso(codigo):
-            if dialogo.winfo_exists():
+            # BUG corregido: esto se llamaba desde el hilo de la prueba y
+            # consultaba winfo_exists() ahí mismo. Tkinter NO es seguro fuera
+            # del hilo principal; toda comprobación y todo cambio de interfaz
+            # tiene que pasar por after(0, ...), como ahora.
+            def aplicar():
+                if not vigente():
+                    return
                 texto, avance = FASES.get(codigo, (codigo, 0.5))
-                self.after(0, lambda: (lbl_estado.configure(text=texto),
-                                        barra.set(avance)))
+                refs["estado"].configure(text=texto, text_color="gray60")
+                animar_progreso(refs["barra"], avance, refs["barra_estado"])
+                if codigo in TONO_FASE:
+                    refs["medidor"].set_tono(TONO_FASE[codigo])
+                    suavizado["mbps"] = 0.0
+                    refs["medidor"].set_valor(0, texto="0.0")
+            self.after(0, aplicar)
+
+        def muestra(fase, mbps):
+            def aplicar():
+                if not vigente():
+                    return
+                # Media móvil: las muestras instantáneas saltan mucho (la red
+                # entrega a ráfagas) y la aguja daría tirones sin esto.
+                suavizado["mbps"] = suavizado["mbps"] * 0.55 + float(mbps) * 0.45
+                refs["medidor"].set_valor(suavizado["mbps"])
+            self.after(0, aplicar)
 
         def worker():
-            resultado = opt.test_velocidad_internet(callback_progreso=progreso)
+            resultado = opt.test_velocidad_internet(callback_progreso=progreso,
+                                                     callback_muestra=muestra)
 
             def pintar():
-                estado_interno["completado"] = True
-                if not dialogo.winfo_exists():
+                marcha["terminado"] = True
+                if not vigente():
                     return
-                barra.set(1.0)
-                btn_reintentar.configure(state="normal")
-                if resultado["bajada_mbps"] is None:
-                    lbl_estado.configure(text=resultado["error"], text_color=COLOR_CRIT)
-                    return
-                lbl_bajada.configure(text=t("comp_st_bajada", mbps=resultado["bajada_mbps"]),
-                                     text_color=COLOR_OK)
-                if resultado["subida_mbps"] is not None:
-                    lbl_subida.configure(text=t("comp_st_subida", mbps=resultado["subida_mbps"]),
-                                         text_color=COLOR_OK)
-                    lbl_estado.configure(text=t("comp_st_aproximado"), text_color="gray60")
+                animar_progreso(refs["barra"], 1.0, refs["barra_estado"])
+                refs["btn_reintentar"].configure(state="normal")
+                refs["ping"].set_valor(resultado["latencia_ms"], decimales=0)
+                refs["bajada"].set_valor(resultado["bajada_mbps"])
+                refs["subida"].set_valor(resultado["subida_mbps"])
+
+                # La aguja se queda en la bajada, que es el número que la
+                # gente entiende como "mi velocidad".
+                principal = resultado["bajada_mbps"] or resultado["subida_mbps"]
+                if principal is not None:
+                    refs["medidor"].set_tono(COLOR_ACCENT)
+                    refs["medidor"].set_valor(principal, texto=f"{principal:.1f}")
                 else:
-                    lbl_estado.configure(text=resultado["error"], text_color=COLOR_WARN)
+                    refs["medidor"].set_valor(0, texto="—")
+
+                if resultado["bajada_mbps"] is None and resultado["subida_mbps"] is None:
+                    refs["estado"].configure(text=resultado["error"] or t("optmod_sin_internet"),
+                                             text_color=COLOR_CRIT)
+                elif resultado["error"]:
+                    # Media prueba salió: se muestra lo que sí se midió y se
+                    # dice qué falló, en vez de tirar todo el resultado.
+                    refs["estado"].configure(text=resultado["error"], text_color=COLOR_WARN)
+                else:
+                    refs["estado"].configure(text=t("comp_st_aproximado"), text_color="gray60")
             self.after(0, pintar)
 
-            resumen = (t("comp_st_resumen", bajada=resultado["bajada_mbps"],
-                         subida=resultado["subida_mbps"])
-                       if resultado["bajada_mbps"] is not None else resultado["error"])
+            hubo_algo = (resultado["bajada_mbps"] is not None
+                         or resultado["subida_mbps"] is not None)
+            resumen = (t("comp_st_resumen", latencia=resultado["latencia_ms"],
+                        bajada=resultado["bajada_mbps"], subida=resultado["subida_mbps"])
+                       if hubo_algo else (resultado["error"] or ""))
             self._log_dev(t("comp_log_speedtest"), "Descarga/subida de prueba a speed.cloudflare.com",
-                          resumen, seccion=t("seccion_componentes"), exito=resultado["bajada_mbps"] is not None)
+                          resumen, seccion=t("seccion_componentes"), exito=hubo_algo)
+
         threading.Thread(target=worker, daemon=True).start()
 
-        def watchdog():
-            if not dialogo.winfo_exists() or estado_interno["completado"]:
+        def vigilante():
+            # BUG corregido: antes el vigilante no miraba si la prueba ya
+            # había terminado, así que en una prueba lenta pero exitosa el
+            # aviso de tiempo agotado se pintaba encima del resultado bueno.
+            if marcha["terminado"] or not vigente():
                 return
-            lbl_estado.configure(text=t("comp_st_timeout"), text_color=COLOR_CRIT)
-            btn_reintentar.configure(state="normal")
-        self.after(35000, watchdog)
+            refs["estado"].configure(text=t("comp_st_timeout", segundos=LIMITE_S),
+                                     text_color=COLOR_CRIT)
+            refs["btn_reintentar"].configure(state="normal")
+        self.after(LIMITE_S * 1000, vigilante)
 
     def _exportar_reporte_hardware(self):
         def worker():

@@ -333,7 +333,68 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 8. Novedades y correcciones de la versión 1.4.0
+## 8. Novedades y correcciones de la versión 1.5.0
+
+**Nuevo:**
+- **Prueba de velocidad de internet rehecha.** Ahora mide también la
+  **latencia** (ping) y enseña la velocidad **en vivo** mientras corre, con
+  una aguja de escala logarítmica: una conexión de 6 Mbps se lee igual de
+  bien que una de fibra, cosa que en una escala normal es imposible.
+  Latencia, bajada y subida quedan cada una en su tarjeta, y el número
+  sube contando en vez de aparecer de golpe.
+- **Prueba de sonido con confirmación.** Antes sonaba un tono y ya; si no
+  se oía nada, no había forma de saber por qué. Ahora la ventana pregunta
+  si lo escuchaste y, si la respuesta es que no, lleva directo al
+  mezclador de volumen y al selector de dispositivo de salida. También
+  permite probar la bocina izquierda y la derecha por separado, para
+  descubrir si una está muerta.
+- **Gráficas de línea de tiempo (RAM, CPU, temperatura) rehechas:** el
+  valor nuevo entra deslizándose desde la derecha en vez de dar un salto,
+  hay rejilla de fondo para leer la altura de un vistazo, degradado bajo la
+  línea, punto vivo en la punta y los valores mínimo y máximo del tramo.
+- La gráfica de temperatura ya no está siempre en rojo: **el color sigue la
+  temperatura real** (verde hasta 65 °C, ámbar hasta 80, rojo por encima).
+- Cuando una gráfica no tiene datos lo dice, en vez de quedarse como un
+  recuadro vacío sin explicación (pasa en los equipos que no exponen
+  temperatura de CPU, que son muchos).
+
+**Corregido:**
+- **La subida de la prueba de internet fallaba de forma intermitente.**
+  Mandaba siempre 10 MB con un límite de 15 segundos: en una conexión de
+  5 Mbps de subida —muy común— esos 10 MB tardan 16 segundos, así que la
+  prueba se agotaba por tiempo y la subida salía vacía en una conexión
+  perfectamente sana. Ahora se manda primero un sondeo pequeño y con ese
+  dato se elige un tamaño que tarde unos 4 segundos en ESA conexión.
+- Un fallo en la bajada cortaba la prueba entera y la subida ni se
+  intentaba. Ahora cada mitad es independiente y se muestra lo que sí se
+  pudo medir.
+- El aviso de "tardó demasiado" salía a los 35 segundos, que no alcanzan
+  ni para una prueba normal en una conexión modesta, y además se pintaba
+  encima de resultados buenos que habían llegado tarde. Corregido.
+- Pulsar "Reintentar" mientras un intento anterior seguía vivo dejaba al
+  vigilante viejo pintando errores sobre el intento nuevo.
+- La prueba de internet consultaba el estado de la ventana **desde el hilo
+  de la prueba**. Tkinter no es seguro fuera del hilo principal.
+- **El tono de prueba de audio no sonaba en muchos equipos.** Usaba
+  `winsound.Beep()`, que no pasa por la tarjeta de sonido: llama al
+  generador de tonos del kernel (`beep.sys`), desactivado de fábrica en
+  bastantes portátiles. Ningún error, ningún sonido. Ahora se sintetiza un
+  WAV en memoria y se reproduce por la salida de audio normal — que además
+  es lo que de verdad interesa probar.
+- **Las gráficas tenían un ancho fijo de 260 px** mientras el panel que las
+  contiene se estira con la ventana: en una pantalla ancha quedaban como un
+  bloquecito perdido en medio de un panel enorme y vacío.
+- Las gráficas de Inicio eran de anchos distintos entre sí (RAM ocupaba dos
+  columnas y CPU una) sin ninguna razón.
+- **La pantalla de Inicio no tenía scroll.** Su contenido mide más de
+  1000 px de alto, así que en un portátil de 768 px —o en uno de 1080 con
+  el escalado de Windows al 125%, que es lo normal de fábrica— las
+  gráficas de abajo quedaban cortadas por el borde de la ventana y no
+  había ninguna forma de llegar a ellas.
+
+---
+
+## 9. Novedades y correcciones de la versión 1.4.0
 
 **Nuevo:**
 - Ícono propio de la app (ventana, bandeja del sistema y el `.exe` compilado).
@@ -365,7 +426,7 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 9. Correcciones de la versión 1.3.0
+## 10. Correcciones de la versión 1.3.0
 
 - El autopiloto (y ahora Modo Juego) llamaban a la función que registra
   acciones **desde su propio hilo de fondo**, tocando directamente la
@@ -397,7 +458,7 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 10. Estructura del proyecto
+## 11. Estructura del proyecto
 
 ```
 main.py              → interfaz gráfica + edición cliente
@@ -441,7 +502,7 @@ cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 
 ---
 
-## 11. Licencia y autoría
+## 12. Licencia y autoría
 
 TechClean Pro es **gratis** pero **no** es de dominio público ni de código
 abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los

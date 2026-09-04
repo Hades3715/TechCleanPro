@@ -122,7 +122,30 @@ if not exist "dist\TechCleanPro_%2.exe" (
     echo   [ERROR] Fallo la compilacion de la version %2. Revisa los mensajes de arriba.
     exit /b 1
 )
-copy /Y "dist\TechCleanPro_%2.exe" "TechCleanPro_%2.exe" >nul
+REM BUG corregido: este copy mandaba su salida a nul, asi que cuando
+REM fallaba nadie se enteraba. Y falla de verdad: si el .exe anterior
+REM esta ABIERTO (tipico, porque uno lo deja minimizado en la bandeja
+REM para probarlo), Windows no deja sobreescribirlo. El script seguia
+REM diciendo "Listo" y en la carpeta quedaba el ejecutable VIEJO, listo
+REM para subirse a una release con codigo de hace dos versiones.
+REM
+REM Truco: Windows SI deja renombrar un .exe en ejecucion (el candado es
+REM sobre el contenido, no sobre el nombre). Se aparta el viejo y se copia
+REM el nuevo en su lugar; el que este corriendo sigue vivo sin enterarse.
+if exist "TechCleanPro_%2.exe" (
+    del /q "TechCleanPro_%2_anterior.exe" >nul 2>nul
+    ren "TechCleanPro_%2.exe" "TechCleanPro_%2_anterior.exe" >nul 2>nul
+)
+copy /Y "dist\TechCleanPro_%2.exe" "TechCleanPro_%2.exe"
+if errorlevel 1 (
+    echo.
+    echo   [ERROR] No se pudo dejar TechCleanPro_%2.exe en esta carpeta.
+    echo   Cierra la app si la tienes abierta (mira el icono de la bandeja,
+    echo   junto al reloj: clic derecho y Salir) y vuelve a intentarlo.
+    echo   El ejecutable recien compilado quedo en la carpeta dist.
+    exit /b 1
+)
+del /q "TechCleanPro_%2_anterior.exe" >nul 2>nul
 call :firmar "TechCleanPro_%2.exe"
 exit /b 0
 

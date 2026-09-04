@@ -10,6 +10,9 @@ TechCleanPro.exe
 TechCleanPro_ES.exe
 TechCleanPro_EN.exe
 TechCleanPro_Admin.exe
+# copias de seguridad que deja el generador si el .exe anterior estaba abierto
+TechCleanPro_*_anterior.exe
+TechCleanPro_*_viejo_en_uso.exe
 
 # Entornos virtuales
 .venv/

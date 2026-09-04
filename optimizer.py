@@ -1012,19 +1012,46 @@ def listar_carpetas_pesadas(ruta_base, top_n=15, max_profundidad=2):
 
 # ---------------- Medidor de velocidad de internet ----------------
 
-def test_velocidad_internet(callback_progreso=None):
+def test_velocidad_internet(callback_progreso=None, callback_muestra=None):
     """
-    Prueba aproximada de velocidad de bajada y subida contra los
-    endpoints públicos de prueba de Cloudflare (sin API key, pensados
-    exactamente para esto). No es tan preciso como una app dedicada, pero
-    no agrega ninguna dependencia nueva. Devuelve un dict con Mbps o None
-    en cada campo si algo falla — con un mensaje de error específico
-    (sin internet vs. servidor de prueba bloqueado, SSL, tiempo agotado,
-    etc.) en vez de un "no funcionó" genérico.
+    Prueba aproximada de latencia, bajada y subida contra los endpoints
+    públicos de prueba de Cloudflare (sin API key, pensados exactamente
+    para esto). No es tan preciso como una app dedicada, pero no agrega
+    ninguna dependencia nueva.
 
-    callback_progreso: función opcional que recibe un texto de estado
-    ("Verificando conexión...", "Midiendo bajada...", ...) para que la
-    interfaz pueda mostrar progreso en vivo mientras corre.
+    Devuelve un dict con `latencia_ms`, `bajada_mbps`, `subida_mbps`
+    (None en el campo que no se haya podido medir) y `error` con un
+    mensaje específico — sin internet vs. servidor de prueba bloqueado,
+    SSL, tiempo agotado, etc. — en vez de un "no funcionó" genérico.
+
+    callback_progreso(codigo): avisa la fase con un CÓDIGO estable
+        ("conexion", "bajada", "subida", "listo"), nunca con texto: la
+        interfaz es la que traduce y la que usa esos códigos como clave.
+
+    callback_muestra(fase, mbps): se llama unas 4 veces por segundo
+        mientras hay datos moviéndose, con la velocidad instantánea. Es
+        lo que alimenta la aguja en vivo de la ventana; si no interesa,
+        se omite y no cuesta nada.
+
+    BUGS corregidos aquí (el usuario reportaba que "a veces no da la
+    bajada y a veces no da la subida"):
+
+      1. La subida mandaba SIEMPRE 10 MB con un límite de 15 segundos.
+         En una conexión de 5 Mbps de subida —muy común— esos 10 MB
+         tardan 16 segundos: la prueba reventaba por tiempo agotado y la
+         subida salía vacía, en una conexión perfectamente sana. Ahora
+         primero se manda un sondeo pequeño y, con ese dato, se elige un
+         tamaño que tarde ~4 segundos en ESA conexión. Si el segundo
+         intento falla, se conserva el número del sondeo: mientras algo
+         haya subido, siempre sale un resultado.
+
+      2. Un fallo en la bajada cortaba la función de golpe y la subida ni
+         se intentaba. Ahora cada mitad es independiente y se reporta lo
+         que sí se pudo medir.
+
+      3. El timeout global de socket era de 20 s, MENOR que el límite que
+         se le pasaba a algunas peticiones: mandaba el más corto de los
+         dos y cortaba antes de tiempo.
     """
     import urllib.request
     import urllib.error
@@ -1045,17 +1072,27 @@ def test_velocidad_internet(callback_progreso=None):
     # de Python/sockets) — eso podía dejar la prueba colgada mucho más
     # tiempo del que cualquiera de los timeouts de abajo sugiere. Fijar un
     # timeout global de socket es una segunda capa que sí cubre esa fase.
+    # Tiene que ser MAYOR que cualquier timeout de esta función: el socket
+    # se queda con el más corto de los dos.
     socket_timeout_anterior = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(20)
+    socket.setdefaulttimeout(60)
 
-    def _avisar(texto):
+    def _avisar(codigo):
         if callback_progreso:
             try:
-                callback_progreso(texto)
+                callback_progreso(codigo)
             except Exception:
                 pass
 
-    resultado = {"bajada_mbps": None, "subida_mbps": None, "error": None}
+    def _muestra(fase, mbps):
+        if callback_muestra:
+            try:
+                callback_muestra(fase, mbps)
+            except Exception:
+                pass
+
+    resultado = {"bajada_mbps": None, "subida_mbps": None,
+                 "latencia_ms": None, "error": None}
 
     def _error_legible(e):
         if isinstance(e, ssl.SSLError):
@@ -1071,52 +1108,130 @@ def test_velocidad_internet(callback_progreso=None):
             return f"{razon}"
         return str(e)
 
-    try:
-        # Las fases se avisan como CODIGO, no como texto: la interfaz las
-        # traduce y ademas las usa como clave para la barra de progreso. Si
-        # aqui viajara texto traducido, ese mapa fallaria al cambiar de idioma.
-        _avisar("conexion")
-        try:
-            req_conexion = urllib.request.Request("https://www.gstatic.com/generate_204",
-                                                    headers=HEADERS_NAVEGADOR)
-            urllib.request.urlopen(req_conexion, timeout=6)
-            hay_internet = True
-        except Exception:
-            hay_internet = False
+    class _FuenteSubida:
+        """Objeto tipo archivo que le va entregando bytes a urllib.
 
+        Se usa en vez de pasar el payload entero como `data` por dos
+        razones: no hay que tener 15 MB de golpe en RAM, y cada bloque
+        que se entrega es una oportunidad de reportar la velocidad en
+        vivo — que es lo que mueve la aguja mientras sube.
+
+        Ojo con lo que mide: los bytes se cuentan cuando urllib los
+        recoge, no cuando llegan al otro lado, así que el primer cuarto
+        de segundo se ve más rápido de lo real (el búfer del socket se
+        llena de un tirón). El número FINAL no depende de esto: ese se
+        calcula con el tiempo total, desde que se empieza hasta que el
+        servidor responde.
+        """
+
+        BLOQUE = 65536
+
+        def __init__(self, total, avisar):
+            self.total = total
+            self.entregado = 0
+            self._avisar = avisar
+            self._datos = os.urandom(self.BLOQUE)
+            self._ultimo_aviso = time.time()
+            self._desde_aviso = 0
+
+        def __len__(self):
+            return self.total
+
+        def read(self, n=-1):
+            if self.entregado >= self.total:
+                return b""
+            if n is None or n < 0:
+                n = self.BLOQUE
+            n = min(n, self.BLOQUE, self.total - self.entregado)
+            self.entregado += n
+            self._desde_aviso += n
+            ahora = time.time()
+            transcurrido = ahora - self._ultimo_aviso
+            if transcurrido >= 0.25:
+                self._avisar("subida", (self._desde_aviso * 8 / 1_000_000) / transcurrido)
+                self._ultimo_aviso = ahora
+                self._desde_aviso = 0
+            return self._datos[:n]
+
+    try:
+        # ---------------- Latencia y comprobación de conexión ----------------
+        _avisar("conexion")
+        latencias = []
+        hay_internet = False
+        for _ in range(3):
+            try:
+                req_ping = urllib.request.Request(
+                    "https://speed.cloudflare.com/__down?bytes=0", headers=HEADERS_NAVEGADOR)
+                marca = time.perf_counter()
+                with urllib.request.urlopen(req_ping, timeout=8) as r:
+                    r.read()
+                latencias.append((time.perf_counter() - marca) * 1000)
+                hay_internet = True
+            except Exception:
+                pass
+        if latencias:
+            # El mínimo, no el promedio: es la medición menos contaminada por
+            # un pico puntual de la red o del propio equipo.
+            resultado["latencia_ms"] = round(min(latencias), 1)
+        if not hay_internet:
+            # Segunda opinión: puede haber internet y estar bloqueado
+            # justamente Cloudflare (pasa con algunos filtros corporativos).
+            try:
+                urllib.request.urlopen(
+                    urllib.request.Request("https://www.gstatic.com/generate_204",
+                                            headers=HEADERS_NAVEGADOR), timeout=8)
+                hay_internet = True
+            except Exception:
+                hay_internet = False
+
+        error_bajada = None
+        error_subida = None
+
+        # ---------------- Bajada ----------------
         _avisar("bajada")
         try:
-            # BUG corregido: antes se descargaban 10 MB de una sola vez y se
-            # dividia el total entre el tiempo total. El problema es que los
-            # primeros segundos de una conexion TCP van ACELERANDO (slow
-            # start): en esos 10 MB, la mayor parte del tiempo se pasa
-            # subiendo la rampa, no a velocidad de crucero. Medido en la
-            # linea del desarrollador, esta prueba reportaba ~18 Mbps sobre
-            # una conexion real de ~135 Mbps: siete veces menos.
+            # Antes se descargaban 10 MB de una sola vez y se dividía el total
+            # entre el tiempo total. El problema es que los primeros segundos
+            # de una conexión TCP van ACELERANDO (slow start): en esos 10 MB,
+            # la mayor parte del tiempo se pasa subiendo la rampa, no a
+            # velocidad de crucero. Medido en la línea del desarrollador, esa
+            # prueba reportaba ~18 Mbps sobre una conexión real de ~135 Mbps:
+            # siete veces menos.
             #
             # Ahora se lee en trozos y se DESCARTAN los primeros segundos: el
-            # cronometro arranca cuando la conexion ya va a su ritmo, y se
-            # mide una ventana corta de ese tramo estable. Se pide un archivo
-            # grande pero no se descarga entero — se corta en cuanto la
-            # ventana de medicion se cumple, asi que una conexion lenta gasta
-            # pocos datos y una rapida termina igual de rapido.
-            CALENTAMIENTO_S = 2.0
-            MEDICION_S = 5.0
+            # cronómetro arranca cuando la conexión ya va a su ritmo, y se mide
+            # una ventana corta de ese tramo estable. Se pide un archivo grande
+            # pero no se descarga entero — se corta en cuanto la ventana se
+            # cumple, así que una conexión lenta gasta pocos datos y una rápida
+            # termina igual de rápido.
+            CALENTAMIENTO_S = 1.2
+            MEDICION_S = 3.5
             TROZO = 65536
+            TOPE_BYTES = 45_000_000
 
-            url_descarga = "https://speed.cloudflare.com/__down?bytes=50000000"
+            url_descarga = f"https://speed.cloudflare.com/__down?bytes={TOPE_BYTES}"
             req_descarga = urllib.request.Request(url_descarga, headers=HEADERS_NAVEGADOR)
             inicio = time.time()
             t_medicion = None
             bytes_medidos = 0
             bytes_totales = 0
-            with urllib.request.urlopen(req_descarga, timeout=15) as resp:
+            ultimo_aviso = inicio
+            desde_aviso = 0
+            with urllib.request.urlopen(req_descarga, timeout=20) as resp:
                 while True:
                     trozo = resp.read(TROZO)
                     if not trozo:
                         break
                     bytes_totales += len(trozo)
+                    desde_aviso += len(trozo)
                     ahora = time.time()
+
+                    transcurrido = ahora - ultimo_aviso
+                    if transcurrido >= 0.25:
+                        _muestra("bajada", (desde_aviso * 8 / 1_000_000) / transcurrido)
+                        ultimo_aviso = ahora
+                        desde_aviso = 0
+
                     if t_medicion is None:
                         if ahora - inicio >= CALENTAMIENTO_S:
                             t_medicion = ahora
@@ -1128,35 +1243,70 @@ def test_velocidad_internet(callback_progreso=None):
             if t_medicion is not None and bytes_medidos > 0:
                 duracion = max(time.time() - t_medicion, 0.001)
                 resultado["bajada_mbps"] = round((bytes_medidos * 8 / 1_000_000) / duracion, 2)
-            else:
-                # La descarga entera termino antes de salir del calentamiento
-                # (conexion muy rapida): no hay tramo estable que aislar, asi
+            elif bytes_totales > 0:
+                # La descarga entera terminó antes de salir del calentamiento
+                # (conexión muy rápida): no hay tramo estable que aislar, así
                 # que se mide la transferencia completa, que es lo que hay.
                 duracion = max(time.time() - inicio, 0.001)
                 resultado["bajada_mbps"] = round((bytes_totales * 8 / 1_000_000) / duracion, 2)
+            else:
+                raise OSError("0 bytes")
         except Exception as e:
             if not hay_internet:
-                resultado["error"] = t("optmod_sin_internet")
+                error_bajada = t("optmod_sin_internet")
             else:
-                resultado["error"] = t("optmod_servidor_bloqueado", detalle=_error_legible(e))
-            return resultado
+                error_bajada = t("optmod_servidor_bloqueado", detalle=_error_legible(e))
 
+        # ---------------- Subida ----------------
         _avisar("subida")
-        try:
-            url_subida = "https://speed.cloudflare.com/__up"
-            # 3 MB se transferian en poco mas de un segundo: demasiado corto
-            # para que la medicion signifique algo. Con 10 MB la subida da un
-            # numero estable y sigue tardando menos de tres segundos.
-            payload = os.urandom(10_000_000)
-            inicio = time.time()
-            headers_subida = dict(HEADERS_NAVEGADOR, **{"Content-Type": "application/octet-stream"})
-            req = urllib.request.Request(url_subida, data=payload, method="POST", headers=headers_subida)
-            with urllib.request.urlopen(req, timeout=15) as resp:
+
+        def _subir(tamano_bytes, tiempo_limite):
+            """Sube `tamano_bytes` y devuelve (mbps, segundos)."""
+            fuente = _FuenteSubida(tamano_bytes, _muestra)
+            headers = dict(HEADERS_NAVEGADOR, **{
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(tamano_bytes),
+            })
+            req = urllib.request.Request("https://speed.cloudflare.com/__up",
+                                          data=fuente, method="POST", headers=headers)
+            marca = time.time()
+            with urllib.request.urlopen(req, timeout=tiempo_limite) as resp:
                 resp.read()
-            duracion = max(time.time() - inicio, 0.001)
-            resultado["subida_mbps"] = round((len(payload) * 8 / 1_000_000) / duracion, 2)
+            segundos = max(time.time() - marca, 0.001)
+            return (tamano_bytes * 8 / 1_000_000) / segundos, segundos
+
+        SONDEO_BYTES = 1_500_000
+        OBJETIVO_S = 4.0          # cuánto queremos que dure la medición buena
+        MIN_BYTES = 4_000_000
+        MAX_BYTES = 15_000_000    # tope para no gastar datos de más
+
+        try:
+            mbps_subida, duracion_sondeo = _subir(SONDEO_BYTES, 40)
+            resultado["subida_mbps"] = round(mbps_subida, 2)
+
+            # Si el sondeo voló, ese número no vale gran cosa (demasiado corto
+            # para significar algo): se repite con un tamaño calculado para
+            # esta conexión en concreto. Si el sondeo ya tardó lo suyo, la
+            # conexión es lenta y no tiene sentido mandarle más datos.
+            if duracion_sondeo < 2.0:
+                objetivo = int((mbps_subida / 8) * 1_000_000 * OBJETIVO_S)
+                tamano = max(MIN_BYTES, min(MAX_BYTES, objetivo))
+                try:
+                    mbps_bueno, _ = _subir(tamano, 45)
+                    resultado["subida_mbps"] = round(mbps_bueno, 2)
+                except Exception:
+                    # El intento grande falló, pero el sondeo sí funcionó:
+                    # se conserva ese resultado en vez de dejar la subida
+                    # vacía, que era justo la queja.
+                    pass
         except Exception as e:
-            resultado["error"] = t("optmod_subida_error", detalle=_error_legible(e))
+            error_subida = t("optmod_subida_error", detalle=_error_legible(e))
+
+        # ---------------- Resultado ----------------
+        if resultado["bajada_mbps"] is None and resultado["subida_mbps"] is None:
+            resultado["error"] = error_bajada or error_subida or t("optmod_sin_internet")
+        else:
+            resultado["error"] = error_bajada or error_subida
 
         _avisar("listo")
         return resultado
@@ -2409,29 +2559,102 @@ def listar_dispositivos_audio():
         return []
 
 
-def reproducir_sonido_prueba():
-    """
-    Reproduce un tono de prueba directo (winsound.Beep) para confirmar que
-    el audio de salida funciona.
+def generar_wav_tono(canal="ambos", notas=((660, 260), (880, 340)), volumen=0.5,
+                      hz_muestreo=44100):
+    """Sintetiza en memoria un WAV corto (dos notas, tipo timbre) y devuelve
+    sus bytes, listos para winsound.PlaySound con SND_MEMORY.
 
-    BUG corregido: antes usaba winsound.PlaySound('SystemAsterisk', ...),
-    que depende de que el TEMA DE SONIDOS de Windows tenga un archivo
-    asignado a ese evento — si el usuario tiene el esquema en "Sin
-    sonidos" (algo común), la llamada "funcionaba" sin ningún error pero
-    no sonaba nada, sin ninguna forma de saber por qué. winsound.Beep()
-    genera el tono directamente por hardware, sin depender de ningún
-    archivo ni configuración de temas — si el equipo tiene salida de
-    audio funcional, SIEMPRE se escucha.
+    Se genera aquí en vez de traer un archivo .wav suelto porque así no hay
+    nada que empaquetar ni que se pueda perder al compilar con PyInstaller
+    —el tono existe siempre, aunque falte la carpeta assets—, y porque
+    permite mandar la señal por un solo canal para probar cada bocina por
+    separado.
+
+    canal: "ambos", "izquierdo" o "derecho".
     """
-    comando = "winsound.Beep(880, 300)"
+    import io
+    import math
+    import struct
+    import wave
+
+    canal = canal if canal in ("ambos", "izquierdo", "derecho") else "ambos"
+    volumen = max(0.05, min(1.0, float(volumen)))
+    muestras = []
+    for frecuencia, duracion_ms in notas:
+        total = int(hz_muestreo * duracion_ms / 1000)
+        # Rampa de entrada y de salida: sin ella, cortar la onda a media
+        # oscilación produce un "clic" seco al principio y al final.
+        rampa = max(1, int(hz_muestreo * 0.008))
+        for i in range(total):
+            atenuacion = 1.0
+            if i < rampa:
+                atenuacion = i / rampa
+            elif i > total - rampa:
+                atenuacion = max(0.0, (total - i) / rampa)
+            valor = math.sin(2 * math.pi * frecuencia * i / hz_muestreo)
+            muestras.append(int(valor * atenuacion * volumen * 32767))
+
+    izquierdo = canal in ("ambos", "izquierdo")
+    derecho = canal in ("ambos", "derecho")
+    marco = struct.Struct("<hh")
+    cuerpo = b"".join(marco.pack(m if izquierdo else 0, m if derecho else 0)
+                      for m in muestras)
+
+    memoria = io.BytesIO()
+    with wave.open(memoria, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(hz_muestreo)
+        w.writeframes(cuerpo)
+    return memoria.getvalue()
+
+
+def reproducir_sonido_prueba(canal="ambos"):
+    """
+    Reproduce un tono de prueba para confirmar que la salida de audio
+    funciona. Devuelve (exito, comando_para_el_registro).
+
+    Historia de dos bugs en el mismo sitio:
+
+      1. La primera versión usaba winsound.PlaySound("SystemAsterisk"),
+         que depende de que el TEMA DE SONIDOS de Windows tenga un archivo
+         asignado a ese evento. Con el esquema en "Sin sonidos" —algo
+         común— la llamada "funcionaba" sin ningún error y no sonaba nada.
+
+      2. El arreglo fue winsound.Beep(), pero resultó ser peor: Beep() NO
+         pasa por la tarjeta de sonido. Llama a la API del kernel, que usa
+         el generador de tonos del sistema (beep.sys). En bastantes
+         portátiles modernos ese controlador viene desactivado de fábrica,
+         así que otra vez: ningún error, ningún sonido. Y aunque hubiera
+         sonado, no habría probado NADA de lo que interesa aquí — ni el
+         dispositivo de salida, ni el volumen, ni las bocinas.
+
+    Esta versión sintetiza un WAV en memoria y lo reproduce por la ruta de
+    audio normal de Windows: el mismo camino que usa cualquier otra
+    aplicación. Si suena, el audio funciona de verdad; si no suena, el
+    problema está en el volumen, en el dispositivo elegido o en las
+    bocinas — y la ventana de la app ahora ayuda a mirar justo eso.
+    """
+    comando = f"winsound.PlaySound(<tono WAV sintetizado: {canal}>, SND_MEMORY)"
     if not IS_WINDOWS:
         return False, comando
     try:
         import winsound
-        winsound.Beep(880, 300)
+        datos = generar_wav_tono(canal=canal)
+        # Sin SND_ASYNC a propósito: la llamada vuelve cuando el tono ya
+        # terminó, que es lo que necesita la ventana para preguntar
+        # "¿lo escuchaste?" en el momento correcto y no antes de que empiece.
+        winsound.PlaySound(datos, winsound.SND_MEMORY)
         return True, comando
     except Exception:
-        return False, comando
+        # Último recurso: si la síntesis o la reproducción fallan, al menos
+        # intentar el pitido del kernel antes de darse por vencido.
+        try:
+            import winsound
+            winsound.Beep(880, 300)
+            return True, "winsound.Beep(880, 300) [respaldo]"
+        except Exception:
+            return False, comando
 
 
 def abrir_prueba_microfono():
