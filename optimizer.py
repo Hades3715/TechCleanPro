@@ -2023,22 +2023,79 @@ def desbloquear_app_firewall(nombre_regla):
 # Microsoft a nivel de sistema operativo y los anti-cheats ya lo tienen en
 # lista blanca porque es parte de Windows, no una inyección de terceros.
 
+def protocolo_registrado(nombre):
+    """¿Sabe Windows abrir un enlace del tipo `nombre:`?
+
+    Se mira en el registro, bajo HKEY_CLASSES_ROOT, que es exactamente
+    donde busca Windows al pedirle que abra uno. Es instantáneo — nada de
+    lanzar PowerShell.
+
+    Comprobar esto ANTES de intentar abrirlo es la única forma de saber si
+    va a funcionar: `os.startfile` con un protocolo que nadie registró NO
+    lanza ningún error. Windows lo considera "abierto con éxito" y a
+    cambio muestra la Microsoft Store diciendo que te falta una app.
+    """
+    if not IS_WINDOWS:
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, nombre) as clave:
+            winreg.QueryValueEx(clave, "URL Protocol")
+        return True
+    except OSError:
+        return False
+
+
 def abrir_contador_fps_windows():
-    """Abre el overlay de Rendimiento de Xbox Game Bar (incluye FPS).
-    Requiere que "Xbox Game Bar" esté activado en Configuración > Juegos
-    (viene activado por defecto en la gran mayoría de instalaciones)."""
-    comando = "ms-gamebaroverlay: (Xbox Game Bar — panel de Rendimiento)"
+    """Abre Xbox Game Bar, que trae el panel de Rendimiento con los FPS.
+
+    BUG corregido (reportado por el usuario: "me manda a la Microsoft
+    Store y no encuentra lo que busca").
+
+    Se intentaba `ms-gamebaroverlay:` y, si fallaba, `ms-gamebar:`. El
+    problema es que **el primero nunca fallaba**. `ms-gamebaroverlay:` era
+    válido en versiones viejas de Game Bar y las nuevas ya no lo
+    registran; pero `os.startfile` con un protocolo sin registrar no lanza
+    excepción: Windows da la llamada por buena y abre la Microsoft Store
+    ofreciendo "buscar una app". Como no había excepción, el respaldo
+    —que sí funciona— no se probaba nunca.
+
+    Comprobado en el equipo del desarrollador: el paquete
+    Microsoft.XboxGamingOverlay está instalado y en estado Ok, `ms-gamebar`
+    está registrado, y `ms-gamebaroverlay` NO.
+
+    Ahora se mira el registro primero y solo se abre el protocolo que de
+    verdad existe. Si no hay ninguno, se dice claramente en vez de mandar
+    a nadie a la tienda.
+    """
+    comando = "Xbox Game Bar (protocolo ms-gamebar)"
     if not IS_WINDOWS:
         return False, comando
-    try:
-        os.startfile("ms-gamebaroverlay:")
-        return True, comando
-    except Exception:
+
+    # En orden de preferencia: el que lleva directo al overlay primero.
+    for protocolo in ("ms-gamebaroverlay", "ms-gamebar"):
+        if not protocolo_registrado(protocolo):
+            continue
         try:
-            os.startfile("ms-gamebar:")
-            return True, "ms-gamebar: (Xbox Game Bar)"
+            os.startfile(protocolo + ":")
+            return True, f"{protocolo}: (Xbox Game Bar)"
         except Exception:
-            return False, comando
+            continue
+
+    return False, comando
+
+
+def game_bar_disponible():
+    """(disponible, motivo_clave) — para poder explicar POR QUÉ no se puede.
+
+    `motivo_clave` es una clave de idiomas, nunca texto ya traducido: si
+    aquí viajara texto, la interfaz no podría traducirlo a su idioma.
+    """
+    if not IS_WINDOWS:
+        return False, "gaming_fps_no_windows"
+    if protocolo_registrado("ms-gamebaroverlay") or protocolo_registrado("ms-gamebar"):
+        return True, ""
+    return False, "gaming_fps_no_instalada"
 
 
 # ---------------- Reparar: Windows Store y adaptador de red específico ----------------

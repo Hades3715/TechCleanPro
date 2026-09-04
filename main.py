@@ -15,6 +15,7 @@ import sys
 import time
 import json
 import math
+import queue
 import socket
 import getpass
 import platform
@@ -847,11 +848,51 @@ class ComandoConsole(ctk.CTkFrame):
 
 
 class TechCleanApp(ctk.CTk):
+
+    # Cada cuánto revisa el hilo principal si algún hilo de fondo dejó algo
+    # pendiente. 40 ms no se nota y no cuesta prácticamente nada.
+    PULSO_COLA_MS = 40
+
     def __init__(self):
         super().__init__()
         global _instancia_app
         _instancia_app = self
         self._ultimo_aviso_error = 0.0
+
+        # ---- Puente seguro entre los hilos de fondo y la interfaz ----
+        #
+        # BUG corregido (el error que reportó un usuario al abrir la app):
+        #
+        #     RuntimeError: main thread is not in main loop
+        #       File "main.py", line 1152, in worker_limpieza
+        #       File "tkinter/__init__.py", in after
+        #
+        # En toda la app, el patrón para tocar la interfaz desde un hilo es
+        # `self.after(0, ...)`. Es el patrón correcto y está bien... casi
+        # siempre. Tkinter solo acepta llamadas desde otros hilos MIENTRAS
+        # el hilo principal está dentro de mainloop(); si no lo está, revienta.
+        #
+        # Y hay dos momentos en que no lo está:
+        #
+        #   * AL ARRANCAR. La primera pantalla se construye dentro de
+        #     __init__, o sea ANTES de que se llame a mainloop(). Los hilos
+        #     que lanza esa pantalla ya están corriendo; si alguno termina
+        #     rápido (schtasks devolviendo de la caché, por ejemplo) llama a
+        #     after() cuando todavía no hay mainloop. Justo lo que pasó.
+        #
+        #   * AL CERRAR. Los hilos son daemon: siguen vivos un rato después
+        #     de que la ventana se destruye.
+        #
+        # Había 89 llamadas así repartidas por el archivo. Arreglarlas una
+        # por una es garantizar que la número 90 vuelva a estar mal, así que
+        # se arregla en un solo sitio: `after` (más abajo) detecta si la
+        # llamada viene de un hilo de fondo y, en ese caso, la mete en una
+        # cola en vez de tocar Tk. Esta bomba la vacía el hilo principal.
+        self._cola_ui = queue.Queue()
+        self._pulso_cola_id = None
+        # Se programa con el after DE VERDAD (el de Tk), no con el nuestro:
+        # esto corre en el hilo principal, así que es seguro.
+        self._pulso_cola_id = ctk.CTk.after(self, self.PULSO_COLA_MS, self._vaciar_cola_ui)
 
         self.title("TechClean Pro" + (t("app_edicion_admin") if EDICION == "admin" else ""))
         try:
@@ -1047,6 +1088,52 @@ class TechCleanApp(ctk.CTk):
             self.contenido.grid_columnconfigure(col, weight=1)
         for fila in range(8):
             self.contenido.grid_rowconfigure(fila, weight=0)
+
+    # ---------------- Puente entre hilos y la interfaz ----------------
+    def after(self, ms, func=None, *args):
+        """`after` a prueba de hilos — ver la explicación larga en __init__.
+
+        Desde el hilo principal se comporta exactamente igual que el de
+        Tkinter. Desde un hilo de fondo NO toca Tk: deja el encargo en una
+        cola que el hilo principal vacía enseguida.
+
+        Lo único que cambia es el valor devuelto: desde un hilo no hay un
+        identificador que cancelar. Ningún sitio de la app guarda el
+        resultado de `self.after(...)` de la ventana principal (las
+        animaciones usan el `after` de SU propio widget, que no pasa por
+        aquí), así que no rompe nada.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return ctk.CTk.after(self, ms, func, *args)
+        if func is not None:
+            self._cola_ui.put((ms, func, args))
+        return None
+
+    def _vaciar_cola_ui(self):
+        """Ejecuta, ya en el hilo principal, lo que dejaron los hilos."""
+        while True:
+            try:
+                ms, func, args = self._cola_ui.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                if ms and ms > 0:
+                    # Se respeta el retraso que pidió quien lo encoló: hay
+                    # sitios que usan after(500, ...) o after(800, ...) a
+                    # propósito, para dar tiempo a que se vea un mensaje.
+                    ctk.CTk.after(self, ms, func, *args)
+                else:
+                    func(*args)
+            except Exception:
+                # Un encargo que falla no puede llevarse por delante la
+                # bomba: si esta se para, la app deja de recibir CUALQUIER
+                # resultado de los hilos y parece que nada funciona.
+                import traceback
+                self._reportar_error_interno(traceback.format_exc())
+        try:
+            self._pulso_cola_id = ctk.CTk.after(self, self.PULSO_COLA_MS, self._vaciar_cola_ui)
+        except Exception:
+            self._pulso_cola_id = None      # la ventana ya no existe: se acabó
 
     def solicitar_admin(self):
         opt.relaunch_as_admin()
@@ -4582,7 +4669,14 @@ class TechCleanApp(ctk.CTk):
 
     def _accion_abrir_fps(self):
         exito, comando = opt.abrir_contador_fps_windows()
-        msg = t("gaming_fps_ok") if exito else t("gaming_fps_error")
+        if exito:
+            msg = t("gaming_fps_ok")
+        else:
+            # Se dice qué falta exactamente, en vez de un "no se pudo" a
+            # secas. El motivo llega como CLAVE desde el optimizador, nunca
+            # como texto ya traducido.
+            _, motivo = opt.game_bar_disponible()
+            msg = t(motivo) if motivo else t("gaming_fps_error")
         self._log_dev(t("gaming_log_fps"), comando, msg,
                       seccion=t("seccion_gaming"), exito=exito)
         if not exito:
