@@ -254,20 +254,73 @@ def clear_temp_files():
     return liberado, borrados, comando
 
 
+class _SHQUERYRBINFO(ctypes.Structure):
+    """Estructura que Windows rellena con el estado de la papelera."""
+    _fields_ = [("cbSize", ctypes.c_uint32),
+                ("i64Size", ctypes.c_int64),
+                ("i64NumItems", ctypes.c_int64)]
+
+
+def consultar_papelera():
+    """Cuánto ocupa la papelera y cuántos elementos tiene, sin tocar nada.
+
+    Devuelve (bytes, elementos). Se consulta ANTES de vaciar para poder
+    decirle al usuario cuánto se liberó — el resto de la app siempre da un
+    número concreto ("se liberaron 340 MB") y vaciar la papelera era la
+    única acción que se limitaba a decir "listo"."""
+    if not IS_WINDOWS:
+        return 0, 0
+    info = _SHQUERYRBINFO()
+    info.cbSize = ctypes.sizeof(info)
+    try:
+        shell32 = ctypes.windll.shell32
+        shell32.SHQueryRecycleBinW.restype = ctypes.c_long
+        # None como ruta = todas las unidades del equipo.
+        if shell32.SHQueryRecycleBinW(None, ctypes.byref(info)) != 0:
+            return 0, 0
+        return int(info.i64Size), int(info.i64NumItems)
+    except Exception:
+        return 0, 0
+
+
 def empty_recycle_bin():
+    """Vacía la papelera de reciclaje.
+
+    Devuelve (exito, comando, bytes_liberados, elementos).
+
+    OJO al llamarla: SHEmptyRecycleBinW es SÍNCRONA — borra los archivos de
+    verdad antes de volver. Con una papelera de varios GB tarda segundos, y
+    con SHERB_NOPROGRESSUI ni siquiera sale la ventanita de progreso de
+    Windows. Tiene que ejecutarse en un hilo aparte, nunca en el hilo de la
+    interfaz, o la ventana se queda congelada y Windows la marca como "No
+    responde".
+
+    BUG corregido: no se miraba el valor que devuelve la llamada, así que
+    la función contestaba "listo" pasara lo que pasara — incluso si Windows
+    se negaba a borrar. El usuario veía "Papelera vaciada ✅" con la
+    papelera intacta.
+    """
     comando = "SHEmptyRecycleBinW() vía shell32.dll"
     if not IS_WINDOWS:
-        return False, comando
+        return False, comando, 0, 0
+    bytes_antes, elementos_antes = consultar_papelera()
     try:
         SHERB_NOCONFIRMATION = 0x00000001
         SHERB_NOPROGRESSUI = 0x00000002
         SHERB_NOSOUND = 0x00000004
-        ctypes.windll.shell32.SHEmptyRecycleBinW(
+        shell32 = ctypes.windll.shell32
+        shell32.SHEmptyRecycleBinW.restype = ctypes.c_long
+        hr = shell32.SHEmptyRecycleBinW(
             None, None, SHERB_NOCONFIRMATION | SHERB_NOPROGRESSUI | SHERB_NOSOUND
         )
-        return True, comando
+        # S_OK (0) es éxito. Con la papelera YA vacía, varias versiones de
+        # Windows devuelven E_UNEXPECTED (0x8000FFFF) en vez de S_OK — no es
+        # un fallo, simplemente no había nada que borrar.
+        if hr == 0 or (hr & 0xFFFFFFFF) == 0x8000FFFF:
+            return True, comando, bytes_antes, elementos_antes
+        return False, comando, 0, 0
     except Exception:
-        return False, comando
+        return False, comando, 0, 0
 
 
 def flush_dns():

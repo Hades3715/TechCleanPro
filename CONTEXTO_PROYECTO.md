@@ -369,6 +369,83 @@ no sonaba. Buscando por qué, aparecieron estos:
 - **La gráfica de temperatura estaba siempre en rojo**, incluso a 32 °C.
   Alarmaba sin motivo. Ahora el color sigue la temperatura real.
 
+## Segunda pasada de revisión de la 1.5.0 (buscando bugs a propósito)
+
+Esta tanda salió de revisar el widget y los modulos que nunca se habian
+mirado a fondo. Casi todos son del mismo puñado de patrones que ya estaban
+documentados aquí arriba — la lección es que documentarlos no basta: hay
+que tener una herramienta que los busque sola.
+
+- **Modo Juego le subía la prioridad al Explorador de Windows.** La
+  heurística era "si la ventana activa mide lo mismo o más que la pantalla,
+  es un juego". Dos falsos positivos, los dos comprobados en el equipo:
+  al minimizar todo, la ventana en primer plano pasa a ser Progman —el
+  escritorio, dueño explorer.exe— que mide exactamente la pantalla; y
+  cualquier ventana MAXIMIZADA cuenta también, porque Windows le da unos
+  píxeles de más por los bordes invisibles de redimensionado.
+
+  La regla que de verdad separa los casos es **WS_CAPTION**: un juego a
+  pantalla completa (o en ventana sin bordes) no tiene barra de título;
+  una ventana maximizada sí la conserva. Está cubierto por
+  `prueba_modo_juego.py`.
+
+- **Cuatro sitios más tocaban la interfaz desde un hilo** sin pasar por
+  `after(0, ...)` y sin comprobar `winfo_exists()`. Ya se había corregido
+  este patrón dos veces (autopiloto, prueba de velocidad) sin revisar si
+  quedaban más. Quedaban. Ahora hay `revisar_hilos.py`, que los busca solo.
+
+- **Vaciar la papelera congelaba la ventana.** `SHEmptyRecycleBinW` es
+  síncrona: borra de verdad antes de volver. Iba en el hilo principal, en
+  el botón de Inicio (el primero que toca cualquiera). Y encima no se
+  miraba lo que devolvía, así que decía "vaciada ✅" pasara lo que pasara.
+
+- **El widget saltaba al arrastrarlo.** Guardaba `event.x`, que es la
+  posición del clic DENTRO del widget que lo recibió — y en Tk una
+  vinculación puesta en el toplevel salta también con los eventos de todos
+  sus hijos. Agarrándolo por un botón de atajo, ese número valía 5 en vez
+  de 300 y la ventana pegaba un brinco. Lo correcto es el desfase contra
+  la VENTANA: `winfo_pointerx() - winfo_x()`.
+
+- **Las preferencias se leían del disco en cada consulta** y el widget las
+  consulta cada segundo. Además `carpeta_datos()` llamaba a `os.makedirs`
+  en cada lectura: 245 µs por llamada, el 65% del coste total, para
+  comprobar algo que ya se sabía. Ahora hay caché con firma del archivo
+  (mtime + tamaño) y la carpeta se crea una vez por ejecución.
+
+- **Guardar preferencias no era atómico**: `open(ruta, "w")` vacía el
+  archivo ANTES de escribir. Un corte a mitad y `preferencias.json` queda
+  roto; como `cargar()` se traga los errores y devuelve valores de fábrica,
+  el usuario perdía toda su configuración sin un solo aviso.
+
+- El widget pintaba la temperatura con `_color()`, que es para
+  PORCENTAJES: 62 °C —normal— salía en ámbar. Mismo error que ya se había
+  corregido en la gráfica de Inicio; el widget se quedó fuera.
+
+- Los tooltips del widget son `Toplevel` aparte: al ocultar el widget con
+  uno abierto, el globito negro se quedaba flotando solo en el escritorio.
+
+- Oculto, el widget seguía haciendo las consultas CARAS (GPU, temperatura)
+  y repintándose cada segundo. Y al volver marcaba un pico de red falso,
+  porque dividía todo el tráfico acumulado mientras estuvo oculto entre un
+  segundo.
+
+### Añadido: la temperatura ahora sí funciona en este equipo
+
+Solo se consultaba `MSAcpi_ThermalZoneTemperature` (root/wmi). En el
+portátil del desarrollador esa clase no devuelve NADA, y sin embargo
+`Win32_PerfFormattedData_Counters_ThermalZoneInformation` sí: da 324, que
+son 50.9 °C. La app decía "No disponible en este equipo" teniendo el dato
+a mano, y con eso se quedaban muertas cuatro cosas: la tarjeta de
+temperatura, su gráfica, la fila del widget y la alerta de Ajustes.
+
+**Cuidado con las unidades**: la clase ACPI da DÉCIMAS de kelvin; el
+contador da KELVIN ENTEROS. Confundirlas da un número absurdo.
+
+Y hay que **recordar cuál de las dos funciona**: cada consulta WMI levanta
+un PowerShell y cuesta ~0.9 s. Probar siempre las dos, sabiendo ya cuál
+contesta, era pagar el doble en una función que el widget llama cada
+4 segundos.
+
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
@@ -383,6 +460,9 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `prueba_arranque.py` | Construye la ventana y abre las 16 pantallas, en el idioma que se le pase |
 | `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
 | `prueba_animacion.py` | Que las barras, gráficas, aguja y tarjetas animen, y no revienten al destruirlas a media animación |
+| `revisar_hilos.py` | Que nadie toque la interfaz desde un hilo de fondo sin pasar por `after(0, ...)` |
+| `prueba_widget.py` | Widget flotante: arrastre sin saltos, límites de pantalla, tooltips, colores de temperatura, no trabajar oculto |
+| `prueba_modo_juego.py` | Que el escritorio, la barra de tareas y una ventana maximizada NO se tomen por un juego |
 | `prueba_limpieza_temp.py` | Que limpiar temporales no borre la propia app descomprimida en `%TEMP%\_MEIxxxxx` |
 | `prueba_velocidad.py` | Que la prueba de internet devuelva latencia, bajada **y** subida (usa ~60 MB de datos reales) |
 

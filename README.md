@@ -335,6 +335,62 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ## 8. Novedades y correcciones de la versión 1.5.0
 
+**También en la 1.5.0 — segunda pasada de revisión:**
+
+**Nuevo:**
+- **La temperatura del CPU ahora funciona en muchos más equipos.** Solo se
+  consultaba el sensor ACPI clásico, que un montón de portátiles no
+  publican — en el del desarrollador, por ejemplo, no devuelve nada. Se
+  añadió una segunda fuente (el contador de zonas térmicas de Windows), y
+  con eso aparece la temperatura donde antes decía "No disponible en este
+  equipo". Eso reactiva de golpe la tarjeta de temperatura, su gráfica, la
+  fila del widget flotante y la alerta de temperatura de Ajustes.
+- Vaciar la papelera ahora **dice cuánto liberó** ("340 elementos, 1.2 GB")
+  en vez de un simple "listo", y avisa aparte cuando ya estaba vacía.
+
+**Corregido:**
+- **Modo Juego le subía la prioridad al Explorador de Windows.** Daba por
+  "juego a pantalla completa" a cualquier ventana del tamaño de la
+  pantalla, y eso incluye el ESCRITORIO (al minimizar todo) y cualquier
+  ventana maximizada — Windows les da unos píxeles de más. Ahora se exige
+  que la ventana no tenga barra de título, que no sea del sistema, y que
+  cubra el monitor en el que está (no el principal).
+- **Vaciar la papelera congelaba la aplicación.** La llamada de Windows no
+  vuelve hasta haber borrado todo, y se hacía en el hilo de la interfaz:
+  con una papelera grande, la ventana se quedaba tiesa y Windows la
+  marcaba como "No responde".
+- Vaciar la papelera decía "✅ hecho" aunque Windows se hubiera negado: no
+  se miraba el resultado de la llamada.
+- Cuatro sitios más escribían resultados en la pantalla **desde su hilo de
+  trabajo**, sin comprobar que el widget siguiera vivo. Si cambiabas de
+  pantalla mientras la tarea corría, el resultado se perdía en silencio.
+- Reducir animaciones también bloqueaba la ventana: avisa del cambio a
+  todas las ventanas abiertas del escritorio y espera respuesta de cada una.
+- **El widget flotante pegaba un salto al arrastrarlo** si lo agarrabas por
+  cualquier sitio que no fuera el borde superior.
+- El widget se podía arrastrar **fuera de la pantalla**, y como no tiene
+  barra de título de Windows, ya no había forma de recuperarlo.
+- El widget pintaba la temperatura con los umbrales de un porcentaje: 62 °C
+  —normal— salía en ámbar como si algo fuera mal.
+- Los globos de ayuda del widget son ventanas aparte: al ocultar el widget
+  con uno abierto, el globito se quedaba flotando solo en el escritorio.
+- Oculto, el widget seguía consultando GPU y temperatura y repintándose
+  cada segundo. Ahora se calla hasta que vuelve.
+- Al reaparecer, el widget marcaba un pico de red falso de miles de KB/s
+  (dividía todo el tráfico acumulado mientras estuvo oculto entre 1 segundo).
+- **Las preferencias se leían del disco en cada consulta**, y el widget
+  consulta una vez por segundo: una lectura y un parseo de JSON por
+  segundo, para siempre, en el hilo de la interfaz. Ahora van en caché y
+  solo se releen si el archivo cambió — 5 veces más rápido.
+- Guardar preferencias vaciaba el archivo antes de escribirlo: un corte a
+  mitad dejaba `preferencias.json` roto y el usuario perdía toda su
+  configuración sin ningún aviso. Ahora la escritura es atómica.
+- El widget escribía preferencias en **cada clic**, aunque no lo movieras.
+
+---
+
+### Primera pasada
+
 **Nuevo:**
 - **Prueba de velocidad de internet rehecha.** Ahora mide también la
   **latencia** (ping) y enseña la velocidad **en vivo** mientras corre, con

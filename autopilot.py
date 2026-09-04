@@ -9,6 +9,7 @@ Hace dos cosas:
    le sube la prioridad de CPU mientras dura, y la revierte al salir.
 """
 
+import os
 import platform
 import threading
 import time
@@ -25,27 +26,108 @@ if IS_WINDOWS:
     from ctypes import wintypes
     user32 = ctypes.windll.user32
 
+    # Tipos declarados a mano: por defecto ctypes trata lo que devuelven
+    # estas funciones como enteros de 32 bits, y en 64 bits eso recorta los
+    # punteros.
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetShellWindow.restype = wintypes.HWND
+    user32.GetDesktopWindow.restype = wintypes.HWND
+    user32.GetWindowLongW.restype = ctypes.c_long
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.MonitorFromWindow.restype = ctypes.c_void_p
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+
+    class _MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD),
+                    ("rcMonitor", wintypes.RECT),
+                    ("rcWork", wintypes.RECT),
+                    ("dwFlags", wintypes.DWORD)]
+
+    GWL_STYLE = -16
+    WS_CAPTION = 0x00C00000
+    MONITOR_DEFAULTTONEAREST = 2
+
+    # Ventanas del propio Windows que SIEMPRE ocupan la pantalla entera y
+    # nunca son un juego: el escritorio, el fondo de pantalla, la barra de
+    # tareas y la vista de tareas.
+    CLASES_DEL_SISTEMA = {
+        "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd",
+        "Windows.UI.Core.CoreWindow", "MultitaskingViewFrame",
+        "XamlExplorerHostIslandWindow", "ForegroundStaging",
+    }
+
 
 def _get_foreground_fullscreen_pid():
-    """Heurística: si la ventana activa ocupa toda la pantalla, se asume juego/app fullscreen."""
+    """PID de la app en pantalla completa, o None si no hay ninguna.
+
+    BUG GORDO corregido. La heurística anterior era: "si la ventana activa
+    mide lo mismo o más que la pantalla, es un juego". Dos falsos positivos
+    graves, los dos comprobados en el equipo de pruebas:
+
+      1. EL ESCRITORIO. Al minimizar todo, la ventana en primer plano pasa
+         a ser Progman —el escritorio de Windows, dueño explorer.exe— que
+         mide exactamente la pantalla. O sea: con Modo Juego encendido,
+         mirar el escritorio le subía la prioridad de CPU al explorador de
+         Windows, y ahí se quedaba hasta apagar el modo.
+
+      2. CUALQUIER VENTANA MAXIMIZADA. Windows le da a una ventana
+         maximizada un rectángulo un poco MÁS grande que la pantalla (los
+         bordes invisibles de redimensionado se salen unos píxeles por cada
+         lado), así que el navegador maximizado también contaba como
+         "juego a pantalla completa".
+
+    Ahora se piden tres cosas, y las tres a la vez:
+
+      - Que no sea una ventana del propio Windows (escritorio, barra de
+        tareas...) ni la nuestra.
+      - Que NO tenga barra de título (WS_CAPTION). Esta es la que de verdad
+        separa los casos: un juego a pantalla completa —o en modo ventana
+        sin bordes— no tiene barra de título; una ventana maximizada
+        normal sí la conserva.
+      - Que cubra el monitor DONDE ESTÁ, no el principal: con dos pantallas
+        de distinto tamaño, comparar siempre contra la principal daba
+        cualquier cosa.
+    """
     if not IS_WINDOWS:
         return None
     try:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return None
-        rect = wintypes.RECT()
-        user32.GetWindowRect(hwnd, ctypes.byref(rect))
-        ancho_pantalla = user32.GetSystemMetrics(0)
-        alto_pantalla = user32.GetSystemMetrics(1)
-        ventana_ancho = rect.right - rect.left
-        ventana_alto = rect.bottom - rect.top
-        es_fullscreen = ventana_ancho >= ancho_pantalla and ventana_alto >= alto_pantalla
-        if not es_fullscreen:
+        if hwnd in (user32.GetShellWindow(), user32.GetDesktopWindow()):
             return None
+
+        clase = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, clase, 256)
+        if clase.value in CLASES_DEL_SISTEMA:
+            return None
+
+        if user32.GetWindowLongW(hwnd, GWL_STYLE) & WS_CAPTION:
+            return None                     # ventana normal, aunque esté maximizada
+
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return None
+
+        monitor = user32.MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        if not user32.GetMonitorInfoW(ctypes.c_void_p(monitor), ctypes.byref(info)):
+            return None
+        pantalla = info.rcMonitor
+        cubre_todo = (rect.left <= pantalla.left and rect.top <= pantalla.top
+                      and rect.right >= pantalla.right and rect.bottom >= pantalla.bottom)
+        if not cubre_todo:
+            return None
+
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        return pid.value
+        valor = pid.value
+        # PID 0 y 4 son del propio sistema; y tocarnos a nosotros mismos no
+        # tendría ningún sentido.
+        if not valor or valor in (0, 4) or valor == os.getpid():
+            return None
+        return valor
     except Exception:
         return None
 

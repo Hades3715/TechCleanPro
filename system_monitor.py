@@ -246,16 +246,27 @@ def get_cpu_details(incluir_temperatura=True):
     }
 
 
+# Qué fuente de temperatura funciona en ESTE equipo. Cada consulta WMI
+# levanta un PowerShell y cuesta cerca de un segundo; probar siempre las
+# dos, sabiendo ya cuál contesta, era pagar el doble para nada — y esto se
+# consulta cada pocos segundos desde el widget flotante.
+#   None = todavía no se sabe · "acpi" / "perf" = la que funciona
+#   "ninguna" = este equipo no publica la temperatura
+_fuente_temperatura = {"cual": None, "probado_en": 0.0}
+
+# Si no hay ninguna fuente, se vuelve a probar de vez en cuando por si
+# entró un driver nuevo; pero no en cada lectura.
+_REINTENTO_TEMPERATURA_S = 300
+
+
 def get_cpu_temperature():
     """
     Temperatura del procesador, cuando el equipo la expone.
     Aviso honesto: Windows no tiene una API pública y universal para esto.
     Cada fabricante la expone distinto (o no la expone en absoluto sin un
-    driver adicional de terceros). Se intenta vía el sensor ACPI estándar
-    (root/wmi, MSAcpi_ThermalZoneTemperature), que funciona en varias
-    laptops pero no en todos los equipos ni en la mayoría de PCs de
-    escritorio. Si no está disponible, se devuelve None (la interfaz
-    muestra "No disponible en este equipo" en vez de inventar un dato).
+    driver adicional de terceros). Se prueban DOS fuentes distintas, en
+    orden, y si ninguna contesta se devuelve None (la interfaz muestra
+    "No disponible en este equipo" en vez de inventar un dato).
     """
     if not IS_WINDOWS:
         if hasattr(psutil, "sensors_temperatures"):
@@ -268,15 +279,74 @@ def get_cpu_temperature():
                 pass
         return None
 
-    filas = _cim("MSAcpi_ThermalZoneTemperature", ["CurrentTemperature"], namespace="root/wmi")
-    if filas:
-        try:
-            decikelvin = float(filas[0]["CurrentTemperature"])
+    def _por_acpi():
+        """Sensor ACPI estándar. Es el más fino (viene en DÉCIMAS de
+        kelvin), pero muchos fabricantes sencillamente no lo publican."""
+        for fila in _cim("MSAcpi_ThermalZoneTemperature", ["CurrentTemperature"],
+                          namespace="root/wmi"):
+            try:
+                decikelvin = float(fila.get("CurrentTemperature"))
+            except (TypeError, ValueError):
+                continue
             celsius = (decikelvin / 10) - 273.15
-            if -20 < celsius < 130:
+            if 0 < celsius < 130:
                 return round(celsius, 1)
-        except Exception:
-            pass
+        return None
+
+    def _por_contador():
+        """Contador de rendimiento de las zonas térmicas ACPI.
+
+        AÑADIDO tras comprobarlo en el portátil del desarrollador (Lenovo
+        con Ryzen 7): ahí la clase de arriba no devuelve absolutamente
+        nada, y sin embargo esta sí — reporta 324, que son 50.9 °C. O sea
+        que la app decía "No disponible en este equipo" teniendo el dato a
+        mano, y con eso se quedaban muertas la tarjeta de temperatura de
+        Componentes, su gráfica, la fila del widget flotante y la alerta de
+        temperatura configurable en Ajustes.
+
+        OJO CON LAS UNIDADES: esta clase da KELVIN ENTEROS, no décimas de
+        kelvin como la anterior. Confundirlas daría un número absurdo.
+
+        Puede haber varias zonas térmicas; se toma la más caliente, que es
+        la que de verdad importa para avisar."""
+        lecturas = []
+        for fila in _cim("Win32_PerfFormattedData_Counters_ThermalZoneInformation",
+                          ["Name", "Temperature"]):
+            try:
+                kelvin = float(fila.get("Temperature"))
+            except (TypeError, ValueError):
+                continue
+            celsius = kelvin - 273.15
+            # 0 K no es una lectura: es un contador sin inicializar.
+            if 0 < celsius < 130:
+                lecturas.append(celsius)
+        return round(max(lecturas), 1) if lecturas else None
+
+    fuentes = {"acpi": _por_acpi, "perf": _por_contador}
+    recordada = _fuente_temperatura["cual"]
+
+    # Ya se sabe cuál funciona: se va directo a esa y se ahorra la otra
+    # consulta. Cada una levanta un PowerShell y cuesta cerca de un segundo.
+    if recordada in fuentes:
+        valor = fuentes[recordada]()
+        if valor is not None:
+            return valor
+        _fuente_temperatura["cual"] = None      # dejó de contestar: volver a probar
+
+    if recordada == "ninguna":
+        if time.time() - _fuente_temperatura["probado_en"] < _REINTENTO_TEMPERATURA_S:
+            return None
+        _fuente_temperatura["cual"] = None
+
+    for nombre, consultar in fuentes.items():
+        valor = consultar()
+        if valor is not None:
+            _fuente_temperatura["cual"] = nombre
+            _fuente_temperatura["probado_en"] = time.time()
+            return valor
+
+    _fuente_temperatura["cual"] = "ninguna"
+    _fuente_temperatura["probado_en"] = time.time()
     return None
 
 

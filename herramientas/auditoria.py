@@ -22,7 +22,14 @@ TK = {"after","destroy","geometry","title","protocol","withdraw","deiconify","li
       "configure","overrideredirect","update_idletasks","clipboard_append","clipboard_clear",
       "winfo_pointerx","winfo_pointery","winfo_screenwidth","winfo_screenheight","winfo_x","winfo_y",
       "create_rectangle","delete","state","after_cancel","winfo_exists",
-      "winfo_reqwidth","winfo_reqheight","winfo_children","pack","grid","bind","cget"}
+      "winfo_reqwidth","winfo_reqheight","winfo_children","pack","grid","bind","cget",
+      # Falta ninguna de estas es un falso positivo: las hereda Tk, no las
+      # define la clase. Se listan a mano porque el analisis es estatico y
+      # no sabe de que hereda cada clase.
+      "winfo_width","winfo_height","winfo_rootx","winfo_rooty","winfo_viewable",
+      "winfo_toplevel","update","grab_set","grab_release","transient","resizable",
+      "bind_all","unbind","event_generate","pack_forget","grid_forget","place",
+      "wm_geometry","wm_attributes","iconify","focus_set","tkraise"}
 r = []
 for f, a in arb.items():
     for n in ast.walk(a):

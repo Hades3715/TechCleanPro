@@ -140,8 +140,11 @@ copy /Y "dist\TechCleanPro_%2.exe" "TechCleanPro_%2.exe"
 if errorlevel 1 (
     echo.
     echo   [ERROR] No se pudo dejar TechCleanPro_%2.exe en esta carpeta.
-    echo   Cierra la app si la tienes abierta (mira el icono de la bandeja,
-    echo   junto al reloj: clic derecho y Salir) y vuelve a intentarlo.
+    REM Ojo: NADA de parentesis sueltos dentro de un bloque if ^(...^) —
+    REM cmd cierra el bloque en el primer ^) que encuentra y revienta con
+    REM "No se esperaba y en este momento". Van escapados con ^.
+    echo   Cierra la app si la tienes abierta: mira el icono de la bandeja,
+    echo   junto al reloj, clic derecho y Salir. Luego vuelve a intentarlo.
     echo   El ejecutable recien compilado quedo en la carpeta dist.
     exit /b 1
 )

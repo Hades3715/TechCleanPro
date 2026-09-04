@@ -35,24 +35,36 @@ echo ---------- 3. Animacion de las barras ----------
 python herramientas\prueba_animacion.py
 echo.
 
-echo ---------- 4. Ediciones (que opciones ve cada una) ----------
+echo ---------- 4. Hilos (nadie toca la interfaz desde un hilo) ----------
+python herramientasevisar_hilos.py
+echo.
+
+echo ---------- 5. Widget flotante (arrastre, tooltips, colores) ----------
+python herramientas\prueba_widget.py
+echo.
+
+echo ---------- 6. Modo Juego (no confundir el escritorio con un juego) ----------
+python herramientas\prueba_modo_juego.py
+echo.
+
+echo ---------- 7. Ediciones (que opciones ve cada una) ----------
 python herramientas\prueba_ediciones.py cliente
 python herramientas\prueba_ediciones.py admin
 echo.
 
-echo ---------- 5. Limpieza de temporales (no borrar la propia app) ----------
+echo ---------- 8. Limpieza de temporales (no borrar la propia app) ----------
 python herramientas\prueba_limpieza_temp.py
 echo.
 
-echo ---------- 6. Arranque real en espanol ----------
+echo ---------- 9. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 7. Arranque real en ingles ----------
+echo ---------- 10. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
-echo ---------- 8. Velocidad de internet (necesita conexion) ----------
+echo ---------- 11. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause

@@ -2800,7 +2800,11 @@ class TechCleanApp(ctk.CTk):
         def worker():
             liberado, afectados, comando = opt.trim_process_memory()
             msg = t("opt_ram_ok", procesos=afectados, tamano=opt.format_bytes(liberado))
-            self.lbl_resultado_opt.configure(text=msg)
+            # BUG corregido: esto tocaba la etiqueta DESDE EL HILO del trabajo, y
+            # ademas sin comprobar que siguiera viva. Si el usuario cambiaba de
+            # pantalla mientras la tarea corria (limpiar temporales tarda lo suyo),
+            # el widget ya no existia y el resultado se perdia en silencio.
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_ram"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
         threading.Thread(target=worker, daemon=True).start()
@@ -2964,7 +2968,11 @@ class TechCleanApp(ctk.CTk):
             detalle = "\n".join(t("opt_espacio_detalle", categoria=r["categoria"],
                                    tamano=opt.format_bytes(r["bytes"])) for r in resultados)
             msg = t("opt_espacio_estimado", total=opt.format_bytes(total), detalle=detalle)
-            self.lbl_resultado_opt.configure(text=msg)
+            # BUG corregido: esto tocaba la etiqueta DESDE EL HILO del trabajo, y
+            # ademas sin comprobar que siguiera viva. Si el usuario cambiaba de
+            # pantalla mientras la tarea corria (limpiar temporales tarda lo suyo),
+            # el widget ya no existia y el resultado se perdia en silencio.
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_estimar"), t("opt_log_estimar_cmd"),
                           msg, seccion=t("seccion_optimizador"), exito=True)
         threading.Thread(target=worker, daemon=True).start()
@@ -2974,17 +2982,35 @@ class TechCleanApp(ctk.CTk):
         def worker():
             liberado, borrados, comando = opt.clear_temp_files()
             msg = t("opt_temp_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
-            self.lbl_resultado_opt.configure(text=msg)
+            # BUG corregido: esto tocaba la etiqueta DESDE EL HILO del trabajo, y
+            # ademas sin comprobar que siguiera viva. Si el usuario cambiaba de
+            # pantalla mientras la tarea corria (limpiar temporales tarda lo suyo),
+            # el widget ya no existia y el resultado se perdia en silencio.
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_temp"), comando, msg, seccion=t("seccion_optimizador"),
                           exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_opt.configure(text=t("opt_limpiando_temp"))
 
     def _accion_vaciar_papelera(self):
-        exito, comando = opt.empty_recycle_bin()
-        msg = t("opt_papelera_ok") if exito else t("opt_papelera_error")
-        self.lbl_resultado_opt.configure(text=msg)
-        self._log_dev(t("opt_log_papelera"), comando, msg, seccion=t("seccion_optimizador"), exito=exito)
+        """BUG corregido: esto vaciaba la papelera EN EL HILO DE LA INTERFAZ.
+        SHEmptyRecycleBinW no vuelve hasta haber borrado todo de verdad, así
+        que con una papelera de varios GB la ventana se quedaba tiesa y
+        Windows la marcaba como "No responde" — justo la sensación que esta
+        app existe para evitar. Ahora va en un hilo y avisa mientras trabaja."""
+        def worker():
+            exito, comando, liberado, elementos = opt.empty_recycle_bin()
+            if exito and elementos == 0:
+                msg = t("opt_papelera_vacia")
+            elif exito:
+                msg = t("opt_papelera_ok", tamano=opt.format_bytes(liberado), elementos=elementos)
+            else:
+                msg = t("opt_papelera_error")
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
+            self._log_dev(t("opt_log_papelera"), comando, msg, seccion=t("seccion_optimizador"),
+                          exito=exito, bytes_liberados=liberado, archivos_afectados=elementos)
+        threading.Thread(target=worker, daemon=True).start()
+        self.lbl_resultado_opt.configure(text=t("opt_vaciando_papelera"))
 
     def _accion_flush_dns(self):
         exito, comando = opt.flush_dns()
@@ -3113,7 +3139,11 @@ class TechCleanApp(ctk.CTk):
             liberado_disco, archivos, cmd2 = opt.clear_temp_files()
             msg = t("dash_optimizacion_lista", procesos=procesos, ram=opt.format_bytes(liberado_ram),
                     archivos=archivos, disco=opt.format_bytes(liberado_disco))
-            self.lbl_resultado_user.configure(text=msg)
+            # BUG corregido: esto tocaba la etiqueta DESDE EL HILO del trabajo, y
+            # ademas sin comprobar que siguiera viva. Si el usuario cambiaba de
+            # pantalla mientras la tarea corria (limpiar temporales tarda lo suyo),
+            # el widget ya no existia y el resultado se perdia en silencio.
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_user", msg))
             self._log_dev(t("dash_log_optimizacion"), f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
                           exito=True, bytes_liberados=liberado_ram + liberado_disco,
                           archivos_afectados=procesos + archivos)
@@ -3121,10 +3151,22 @@ class TechCleanApp(ctk.CTk):
         self.lbl_resultado_user.configure(text=t("dash_optimizando"))
 
     def _accion_vaciar_papelera_user(self):
-        exito, comando = opt.empty_recycle_bin()
-        msg = t("dash_papelera_vaciada") if exito else t("dash_papelera_error")
-        self.lbl_resultado_user.configure(text=msg)
-        self._log_dev(t("dash_log_papelera"), comando, msg, seccion=t("seccion_inicio"), exito=exito)
+        """Mismo arreglo que en Optimizar: vaciar la papelera bloqueaba la
+        ventana entera. Y este es el botón de Inicio, el primero que toca
+        cualquiera al abrir la app."""
+        def worker():
+            exito, comando, liberado, elementos = opt.empty_recycle_bin()
+            if exito and elementos == 0:
+                msg = t("dash_papelera_vacia")
+            elif exito:
+                msg = t("dash_papelera_vaciada", tamano=opt.format_bytes(liberado), elementos=elementos)
+            else:
+                msg = t("dash_papelera_error")
+            self.after(0, lambda: self._actualizar_label("lbl_resultado_user", msg))
+            self._log_dev(t("dash_log_papelera"), comando, msg, seccion=t("seccion_inicio"),
+                          exito=exito, bytes_liberados=liberado, archivos_afectados=elementos)
+        threading.Thread(target=worker, daemon=True).start()
+        self.lbl_resultado_user.configure(text=t("dash_vaciando_papelera"))
 
     # ---------------- Seguridad ----------------
     def mostrar_seguridad(self):
@@ -3747,10 +3789,18 @@ class TechCleanApp(ctk.CTk):
         self._log_dev(t("rep_log_efectos"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
 
     def _accion_reducir_animaciones(self):
-        exito, comando = opt.reducir_animaciones_ahora(activar_reduccion=True)
-        msg = t("rep_animaciones_ok") if exito else t("rep_animaciones_error")
-        self.lbl_resultado_reparar.configure(text=msg)
-        self._log_dev(t("rep_log_animaciones"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
+        """En un hilo, aunque parezca instantáneo: SystemParametersInfo con
+        SPIF_SENDCHANGE avisa del cambio a TODAS las ventanas abiertas del
+        escritorio y espera respuesta de cada una. Basta con que un programa
+        cualquiera esté ocupado para que la llamada tarde varios segundos, y
+        con esto en el hilo principal ese tiempo lo pagaba nuestra ventana."""
+        def worker():
+            exito, comando = opt.reducir_animaciones_ahora(activar_reduccion=True)
+            msg = t("rep_animaciones_ok") if exito else t("rep_animaciones_error")
+            self.after(0, lambda: self._actualizar_resultado_reparar(msg))
+            self._log_dev(t("rep_log_animaciones"), comando, msg,
+                          seccion=t("seccion_reparar"), exito=exito)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _pintar_estado_indexacion(self, estado):
         if not (hasattr(self, "lbl_estado_indexacion") and self.lbl_estado_indexacion.winfo_exists()):
@@ -5007,11 +5057,15 @@ class TechCleanApp(ctk.CTk):
             return
 
         if comando == "/papelera":
-            exito, _ = opt.empty_recycle_bin()
-            msg = t("consola_papelera_ok") if exito else t("consola_papelera_error")
-            consola.imprimir(msg)
-            self._log_dev(t("consola_log_papelera", origen=seccion_origen), "N/A", msg,
-                          seccion=seccion_origen, exito=exito)
+            def worker():
+                exito, _, liberado, elementos = opt.empty_recycle_bin()
+                msg = (t("consola_papelera_ok", tamano=opt.format_bytes(liberado), elementos=elementos)
+                       if exito else t("consola_papelera_error"))
+                self.after(0, lambda: consola.imprimir(msg))
+                self._log_dev(t("consola_log_papelera", origen=seccion_origen), "N/A", msg,
+                              seccion=seccion_origen, exito=exito,
+                              bytes_liberados=liberado, archivos_afectados=elementos)
+            threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/dns":

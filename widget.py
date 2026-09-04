@@ -35,11 +35,30 @@ COLOR_TXT_DIM = "#8a8f99"
 
 
 def _color(valor):
+    """Color para un PORCENTAJE de uso (CPU, RAM, disco, GPU)."""
     if valor is None:
         return "#777777"
     if valor < 60:
         return COLOR_OK
     if valor < 85:
+        return COLOR_WARN
+    return COLOR_CRIT
+
+
+def _color_temp(grados):
+    """Color para una TEMPERATURA en °C.
+
+    BUG corregido: la temperatura se pintaba con _color(), pensada para
+    porcentajes. Con esos umbrales, un procesador a 62 °C —absolutamente
+    normal, casi frío para un portátil— salía en ámbar como si algo fuera
+    mal. Los umbrales de verdad para temperatura son otros: por debajo de
+    65 va sobrado, hasta 80 va caliente pero bien, y de ahí para arriba sí
+    conviene mirarlo."""
+    if grados is None:
+        return COLOR_TXT_DIM
+    if grados < 65:
+        return COLOR_OK
+    if grados < 80:
         return COLOR_WARN
     return COLOR_CRIT
 
@@ -125,6 +144,8 @@ class PerformanceWidget(tk.Toplevel):
         self.on_cerrar = on_cerrar
         self._expandido = False
         self._activo = True
+        self._visible = True
+        self._tooltips = []
         self._gpu_cache = {"nombre": "N/D", "porcentaje": None}
         self._cpu_temp_cache = None
         self._net_prev = psutil.net_io_counters()
@@ -240,9 +261,14 @@ class PerformanceWidget(tk.Toplevel):
     def _crear_tooltip(self, widget, texto):
         """Tooltip simple (sin dependencias): aparece al pasar el mouse encima."""
         globo = {"win": None}
+        # Se apuntan todos para poder cerrarlos de golpe: un tooltip es una
+        # ventana APARTE, así que si el widget se ocultaba con uno abierto,
+        # el globito negro se quedaba flotando solo en el escritorio, sin
+        # nada a lo que pertenecer y sin forma de quitarlo.
+        self._tooltips.append(globo)
 
         def mostrar(_e):
-            if globo["win"] is not None:
+            if globo["win"] is not None or not self._visible:
                 return
             x = widget.winfo_rootx()
             y = widget.winfo_rooty() + widget.winfo_height() + 4
@@ -254,13 +280,20 @@ class PerformanceWidget(tk.Toplevel):
             win.geometry(f"+{x}+{y}")
             globo["win"] = win
 
-        def ocultar(_e):
+        def ocultar(_e=None):
             if globo["win"] is not None:
                 globo["win"].destroy()
                 globo["win"] = None
 
         widget.bind("<Enter>", mostrar, add="+")
         widget.bind("<Leave>", ocultar, add="+")
+        # Se guardan las dos funciones junto al globo para que el banco de
+        # pruebas pueda ejercitarlas directamente: los eventos <Enter> y
+        # <Leave> los genera el gestor de ventanas y no se pueden simular
+        # de forma fiable en una ventana que está fuera de la pantalla, que
+        # es donde corren las pruebas para no molestar al usuario.
+        globo["mostrar"] = mostrar
+        globo["ocultar"] = ocultar
 
     def _crear_metric_label(self, parent):
         lbl = tk.Label(parent, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
@@ -328,24 +361,55 @@ class PerformanceWidget(tk.Toplevel):
     def _bind_arrastre(self):
         self._drag_x = 0
         self._drag_y = 0
+        self._pos_al_agarrar = None
         for widget in (self, self.frame_header, self.frame_compacto):
             widget.bind("<ButtonPress-1>", self._iniciar_arrastre)
             widget.bind("<B1-Motion>", self._arrastrar)
             widget.bind("<ButtonRelease-1>", self._terminar_arrastre)
 
     def _iniciar_arrastre(self, event):
-        self._drag_x = event.x
-        self._drag_y = event.y
+        """BUG corregido — el salto al arrastrar.
+
+        Se guardaba `event.x`, que es la posición del clic DENTRO del widget
+        que recibió el evento. Y en Tk, una vinculación puesta sobre la
+        ventana raíz salta con los eventos de todos sus hijos (el toplevel
+        está en los bindtags de cada descendiente). Así que al agarrar el
+        widget por cualquier sitio que no fuera el borde —un botón de
+        atajo, una etiqueta, la tarjeta de Sistema— ese `event.x` valía
+        unos pocos píxeles en vez de los 300 reales, y la ventana pegaba un
+        brinco hasta colocar su esquina junto al cursor.
+
+        Lo que hace falta es el desfase respecto a la VENTANA, y eso se
+        calcula igual venga el evento de donde venga."""
+        self._drag_x = self.winfo_pointerx() - self.winfo_x()
+        self._drag_y = self.winfo_pointery() - self.winfo_y()
+        self._pos_al_agarrar = (self.winfo_x(), self.winfo_y())
 
     def _arrastrar(self, event):
         x = self.winfo_pointerx() - self._drag_x
         y = self.winfo_pointery() - self._drag_y
-        self.geometry(f"+{x}+{y}")
+        # Sin límites se podía empujar el widget fuera de la pantalla, y como
+        # no tiene barra de título de Windows (overrideredirect) no había
+        # forma de traerlo de vuelta: solo cerrarlo y volver a abrirlo. Se
+        # deja siempre un trozo agarrable a la vista.
+        margen = 60
+        max_x = self.winfo_screenwidth() - margen
+        max_y = self.winfo_screenheight() - margen
+        x = max(margen - self.winfo_width(), min(x, max_x))
+        y = max(0, min(y, max_y))
+        self.geometry(f"+{int(x)}+{int(y)}")
 
     def _terminar_arrastre(self, event):
-        """Guarda la posición actual para la próxima vez que se abra el widget."""
+        """Guarda la posición actual para la próxima vez que se abra el widget.
+
+        Solo si de verdad se movió: antes se escribía preferencias.json en
+        CADA clic sobre el widget, aunque no se hubiera arrastrado nada."""
         try:
-            prefs.guardar({"widget_pos": [self.winfo_x(), self.winfo_y()]})
+            actual = (self.winfo_x(), self.winfo_y())
+            if actual == self._pos_al_agarrar:
+                return
+            self._pos_al_agarrar = actual
+            prefs.guardar({"widget_pos": [actual[0], actual[1]]})
         except Exception:
             pass
 
@@ -355,16 +419,25 @@ class PerformanceWidget(tk.Toplevel):
         cada 4s en este hilo aparte (8s con Modo Ligero), no en el tick de
         1s, para no afectar el rendimiento mientras juegas."""
         while self._activo:
-            try:
-                self._gpu_cache = sysmon.get_gpu_info()
-                self._cpu_temp_cache = sysmon.get_cpu_temperature()
-            except Exception:
-                pass
+            # Estas dos son las consultas CARAS del widget (WMI, nvidia-smi):
+            # hacerlas con el widget oculto era gasto puro. El usuario cerró
+            # la barra justamente para que dejara de molestar.
+            if self._visible:
+                try:
+                    self._gpu_cache = sysmon.get_gpu_info()
+                    self._cpu_temp_cache = sysmon.get_cpu_temperature()
+                except Exception:
+                    pass
             segundos = 8 if prefs.cargar().get("modo_ligero") else 4
             time.sleep(segundos)
 
     def _actualizar_loop(self):
         if not self._activo:
+            return
+        if not self._visible:
+            # Oculto no hay nada que pintar. El bucle sigue vivo, pero
+            # despacio, solo para poder retomar el ritmo cuando vuelva.
+            self.after(2000, self._actualizar_loop)
             return
         try:
             cpu = psutil.cpu_percent(interval=None)
@@ -415,7 +488,7 @@ class PerformanceWidget(tk.Toplevel):
 
                 temp_cpu_txt = (t("wid_temp", temp=f"{self._cpu_temp_cache:.0f}")
                                 if self._cpu_temp_cache is not None else t("wid_temp_nd"))
-                color_temp = _color(self._cpu_temp_cache) if self._cpu_temp_cache is not None else COLOR_TXT_DIM
+                color_temp = _color_temp(self._cpu_temp_cache)
 
                 uptime = sysmon.get_uptime_seconds()
                 horas, minutos = int(uptime // 3600), int((uptime % 3600) // 60)
@@ -440,7 +513,19 @@ class PerformanceWidget(tk.Toplevel):
         milisegundos = 2000 if prefs.cargar().get("modo_ligero") else 1000
         self.after(milisegundos, self._actualizar_loop)
 
+    def _cerrar_tooltips(self):
+        for globo in self._tooltips:
+            win = globo.get("win")
+            if win is not None:
+                try:
+                    win.destroy()
+                except Exception:
+                    pass
+                globo["win"] = None
+
     def ocultar(self):
+        self._visible = False
+        self._cerrar_tooltips()
         self.withdraw()
 
     def _cerrar_desde_boton(self):
@@ -456,10 +541,18 @@ class PerformanceWidget(tk.Toplevel):
                 pass
 
     def mostrar(self):
+        # Los contadores de red se ponen a cero al volver: si no, el primer
+        # tick dividiría todo el tráfico acumulado mientras el widget estuvo
+        # oculto entre un segundo, y saldría un pico absurdo de varios miles
+        # de KB/s que no ocurrió nunca.
+        self._net_prev = psutil.net_io_counters()
+        self._net_prev_time = time.time()
+        self._visible = True
         self.deiconify()
 
     def destruir(self):
         self._activo = False
+        self._cerrar_tooltips()
         try:
             self.destroy()
         except Exception:
