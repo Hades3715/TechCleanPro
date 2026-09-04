@@ -5,18 +5,19 @@ __pycache__/
 # Salidas de PyInstaller (Generar_App_Instalable.bat / Generar_App_Admin.bat)
 build/
 dist/
+dist_rapida/
 *.spec
-TechCleanPro.exe
-TechCleanPro_ES.exe
-TechCleanPro_EN.exe
-TechCleanPro_Admin.exe
+TechClean.exe
+TechClean_ES.exe
+TechClean_EN.exe
+TechClean_Admin.exe
 # copias de seguridad que deja el generador si el .exe anterior estaba abierto
-TechCleanPro_*_anterior.exe
-TechCleanPro_*_viejo_en_uso.exe
+TechClean_*_anterior.exe
+TechClean_*_viejo_en_uso.exe
 
 # Entornos virtuales
 .venv/
 venv/
 
 # Nota: preferencias.json y el registro de errores viven en
-# %APPDATA%\TechCleanPro, fuera de esta carpeta — no hace falta ignorarlos.
+# %APPDATA%\TechClean, fuera de esta carpeta — no hace falta ignorarlos.

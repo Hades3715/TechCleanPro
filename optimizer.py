@@ -25,7 +25,7 @@ if platform.system() == "Windows":
 
 IS_WINDOWS = platform.system() == "Windows"
 
-APP_STARTUP_NAME = "TechCleanPro"
+APP_STARTUP_NAME = "TechClean"
 
 
 def _cim(clase, propiedades, namespace="root/cimv2", timeout=8):
@@ -440,13 +440,43 @@ def hibernar_equipo():
 # administrador), y desde ahí Windows la deja iniciar sola sin pedir
 # permiso de nuevo cada vez.
 
-NOMBRE_TAREA_INICIO = "TechCleanPro_InicioAutomatico"
+NOMBRE_TAREA_INICIO = "TechClean_InicioAutomatico"
+
+# La app se llamaba "TechClean Pro" y su tarea llevaba ese nombre. Hay que
+# seguir mirándola: si no, en un equipo que ya tenía el inicio automático
+# activado el interruptor aparecería apagado, y al activarlo quedarían DOS
+# tareas — la vieja rota y la nueva — intentando abrir la app a la vez.
+NOMBRE_TAREA_INICIO_ANTERIOR = "TechCleanPro_InicioAutomatico"
+
+
+def _existe_tarea(nombre):
+    if not IS_WINDOWS:
+        return False
+    try:
+        r = subprocess.run(["schtasks", "/query", "/tn", nombre],
+                            capture_output=True, text=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _borrar_tarea(nombre):
+    if not IS_WINDOWS:
+        return False
+    try:
+        r = subprocess.run(["schtasks", "/delete", "/tn", nombre, "/f"],
+                            capture_output=True, text=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def _startup_registry_path():
     """Usada por listar_apps_inicio()/set_app_inicio_activa() para
     gestionar OTRAS apps de terceros que inician con Windows — no
-    relacionada con el inicio automático de TechClean Pro mismo (ver
+    relacionada con el inicio automático de TechClean mismo (ver
     set_startup() más abajo, que usa una tarea programada en vez de
     esta clave, por requerir permisos de administrador)."""
     return r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -461,15 +491,10 @@ def _ruta_ejecutable_actual():
 
 
 def is_startup_enabled():
-    if not IS_WINDOWS:
-        return False
-    try:
-        r = subprocess.run(["schtasks", "/query", "/tn", NOMBRE_TAREA_INICIO],
-                            capture_output=True, text=True,
-                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
-        return r.returncode == 0
-    except Exception:
-        return False
+    """¿Está activado el inicio automático? Cuenta también la tarea con el
+    nombre anterior, para que en un equipo que venía de la versión "Pro" el
+    interruptor no aparezca apagado cuando en realidad está puesto."""
+    return _existe_tarea(NOMBRE_TAREA_INICIO) or _existe_tarea(NOMBRE_TAREA_INICIO_ANTERIOR)
 
 
 def diagnostico_inicio_automatico():
@@ -494,6 +519,10 @@ def diagnostico_inicio_automatico():
     """
     if not IS_WINDOWS:
         return None
+    # Si solo queda la tarea con el nombre anterior, hay que rehacerla igual:
+    # esa es justo la que trae la configuración mala de la que se habla abajo.
+    if not _existe_tarea(NOMBRE_TAREA_INICIO):
+        return "inicio_config_vieja" if _existe_tarea(NOMBRE_TAREA_INICIO_ANTERIOR) else None
     try:
         r = subprocess.run(["schtasks", "/query", "/tn", NOMBRE_TAREA_INICIO, "/xml"],
                             capture_output=True, text=True,
@@ -513,7 +542,7 @@ def diagnostico_inicio_automatico():
 
 def set_startup(habilitar):
     """
-    Agrega o quita TechClean Pro del inicio automático de Windows usando
+    Agrega o quita TechClean del inicio automático de Windows usando
     una tarea programada con privilegios más altos — necesario porque la
     app requiere permisos de administrador (ver nota arriba). Requiere
     que la app YA esté corriendo como administrador para poder crear la
@@ -525,13 +554,12 @@ def set_startup(habilitar):
 
     if not habilitar:
         comando = f'schtasks /delete /tn "{NOMBRE_TAREA_INICIO}" /f'
-        try:
-            r = subprocess.run(["schtasks", "/delete", "/tn", NOMBRE_TAREA_INICIO, "/f"],
-                                capture_output=True, text=True,
-                                creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
-            return r.returncode == 0, comando
-        except Exception:
-            return False, comando
+        # Se borran las dos: la del nombre actual y la del anterior. Si no,
+        # apagar el interruptor dejaría viva la vieja y la app seguiría
+        # abriéndose sola sin que nada en la pantalla lo explique.
+        borrada_nueva = _borrar_tarea(NOMBRE_TAREA_INICIO)
+        borrada_vieja = _borrar_tarea(NOMBRE_TAREA_INICIO_ANTERIOR)
+        return (borrada_nueva or borrada_vieja), comando
 
     # BUG GORDO corregido: "activo el interruptor pero la app no arranca
     # con Windows".
@@ -572,7 +600,7 @@ def set_startup(habilitar):
     xml = f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Inicia TechClean Pro minimizado en la bandeja al iniciar sesion.</Description>
+    <Description>Inicia TechClean minimizado en la bandeja al iniciar sesion.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -627,6 +655,10 @@ def set_startup(habilitar):
         r = subprocess.run(
             ["schtasks", "/create", "/tn", NOMBRE_TAREA_INICIO, "/xml", ruta_xml, "/f"],
             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        if r.returncode == 0:
+            # Ya hay tarea buena: fuera la del nombre viejo, para que no
+            # queden dos abriendo la app a la vez.
+            _borrar_tarea(NOMBRE_TAREA_INICIO_ANTERIOR)
         return r.returncode == 0, comando
     except Exception:
         return False, comando
@@ -703,7 +735,7 @@ def get_active_power_plan_name():
 
 # ---------------- Reparación del sistema ----------------
 # Todas usan herramientas OFICIALES de Windows (sfc, DISM, fsutil, netsh) —
-# TechClean Pro no reemplaza ni reinventa nada de esto, solo les da un botón.
+# TechClean no reemplaza ni reinventa nada de esto, solo les da un botón.
 
 def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_progreso=None, evento_cancelar=None):
     """
@@ -863,7 +895,7 @@ def reparar_red():
 
 # ---------------- Limpieza programada automática ----------------
 
-SCHEDULED_TASK_NAME = "TechCleanPro_LimpiezaAutomatica"
+SCHEDULED_TASK_NAME = "TechClean_LimpiezaAutomatica"
 
 
 def _accion_para_tarea_programada():
@@ -925,7 +957,7 @@ def limpieza_programada_activa():
 # clave de respaldo propia (no se borra el comando original), así se
 # puede reactivar después sin haber perdido nada.
 
-STARTUP_BACKUP_KEY = r"Software\TechCleanPro\InicioDeshabilitado"
+STARTUP_BACKUP_KEY = r"Software\TechClean\InicioDeshabilitado"
 
 
 def listar_apps_inicio():
@@ -1082,7 +1114,7 @@ $textos = $xml.GetElementsByTagName("text")
 $textos.Item(0).AppendChild($xml.CreateTextNode("{titulo_seguro}")) | Out-Null
 $textos.Item(1).AppendChild($xml.CreateTextNode("{mensaje_seguro}")) | Out-Null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
-[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("TechClean Pro").Show($toast)
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("TechClean").Show($toast)
 '''
     try:
         subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
@@ -1094,7 +1126,7 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 
 # ---------------- Punto de restauración del sistema ----------------
 
-def crear_punto_restauracion(descripcion="TechClean Pro - antes de reparar"):
+def crear_punto_restauracion(descripcion="TechClean - antes de reparar"):
     """
     Crea un punto de restauración de Windows antes de tocar archivos del
     sistema (sfc/DISM). Requiere administrador y que la Protección del
@@ -1532,7 +1564,7 @@ def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
             except Exception:
                 pass
 
-    ruta_prueba = os.path.join(tempfile.gettempdir(), "techcleanpro_prueba_disco.tmp")
+    ruta_prueba = os.path.join(tempfile.gettempdir(), "techclean_prueba_disco.tmp")
     bloque = os.urandom(1024 * 1024)  # 1 MB de datos aleatorios — no comprimibles, prueba más honesta
     try:
         _avisar(t("comp_disco_fase_escribiendo"))
@@ -1993,7 +2025,7 @@ def iniciar_escaneo_defender(tipo="rapido"):
     """
     Inicia un escaneo con Windows Defender. tipo: 'rapido' (unos minutos)
     o 'completo' (puede tardar horas). No se espera a que termine — el
-    escaneo sigue corriendo en Windows aunque cierres TechClean Pro.
+    escaneo sigue corriendo en Windows aunque cierres TechClean.
     """
     scan_type = "QuickScan" if tipo == "rapido" else "FullScan"
     comando = f"Start-MpScan -ScanType {scan_type}"
@@ -2118,7 +2150,7 @@ def bloquear_app_firewall(ruta_exe):
     salida) a un programa puntual — sin tocar el resto del firewall.
     Requiere administrador. Devuelve (exito, nombre_regla, comando).
     """
-    nombre_regla = f"TechCleanPro-Bloqueo-{os.path.basename(ruta_exe)}"
+    nombre_regla = f"TechClean-Bloqueo-{os.path.basename(ruta_exe)}"
     comando = (f'New-NetFirewallRule -DisplayName "{nombre_regla}" -Direction Outbound '
                f'-Program "{ruta_exe}" -Action Block; '
                f'New-NetFirewallRule -DisplayName "{nombre_regla}-In" -Direction Inbound '
@@ -2374,7 +2406,7 @@ def listar_tareas_programadas_terceros(limite=100):
         if isinstance(datos, dict):
             datos = [datos]
         return [{"nombre": d.get("TaskName"), "ruta": d.get("TaskPath")} for d in datos
-                if d.get("TaskName") and not str(d.get("TaskName")).startswith("TechCleanPro")]
+                if d.get("TaskName") and not str(d.get("TaskName")).startswith("TechClean")]
     except Exception:
         return []
 
@@ -2513,7 +2545,7 @@ def crear_limpieza_unica(minutos_desde_ahora=5):
     from datetime import datetime, timedelta
     hora_objetivo = (datetime.now() + timedelta(minutes=minutos_desde_ahora)).strftime("%H:%M")
     accion = _accion_para_tarea_programada()
-    nombre_tarea = "TechCleanPro_LimpiezaUnica"
+    nombre_tarea = "TechClean_LimpiezaUnica"
     comando = f'schtasks /create /tn "{nombre_tarea}" /tr {accion} /sc once /st {hora_objetivo} /f'
     if not IS_WINDOWS:
         return False, comando
@@ -2927,7 +2959,7 @@ def abrir_mezclador_volumen():
         return False, comando
 
 
-# ---------------- Buscar actualizaciones de TechClean Pro ----------------
+# ---------------- Buscar actualizaciones de TechClean ----------------
 # Usa la API pública de GitHub Releases — gratis, sin necesitar un
 # servidor propio. Requiere que el desarrollador publique cada versión
 # como un "Release" en un repositorio de GitHub (ver README para el paso
@@ -3035,7 +3067,7 @@ def buscar_actualizacion_app(version_actual):
     try:
         url = f"https://api.github.com/repos/{REPO_ACTUALIZACIONES}/releases/latest"
         req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                     "User-Agent": "TechCleanPro"})
+                                                     "User-Agent": "TechClean"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             datos = _json.loads(resp.read().decode("utf-8"))
         version_remota = (datos.get("tag_name") or "").lstrip("vV")
@@ -3266,7 +3298,7 @@ def terminar_proceso(pid):
 
 def listar_ventanas_abiertas():
     """Ventanas de aplicaciones visibles ahora mismo, con su título,
-    proceso y PID. Excluye la propia ventana de TechClean Pro y la
+    proceso y PID. Excluye la propia ventana de TechClean y la
     ventana de fondo del Explorador (Alt+Tab tampoco las muestra)."""
     if not IS_WINDOWS:
         return []

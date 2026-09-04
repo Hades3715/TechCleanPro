@@ -178,7 +178,7 @@ class PerformanceWidget(tk.Toplevel):
         # ---- Encabezado: título + arrastre + expandir + cerrar ----
         self.frame_header = tk.Frame(self, bg=COLOR_BG)
         self.frame_header.pack(fill="x", padx=8, pady=(6, 2))
-        tk.Label(self.frame_header, text="⚙ TechClean Pro", bg=COLOR_BG, fg=COLOR_TXT_DIM,
+        tk.Label(self.frame_header, text="⚙ TechClean", bg=COLOR_BG, fg=COLOR_TXT_DIM,
                   font=("Segoe UI", 8, "bold")).pack(side="left")
         self.btn_cerrar = tk.Label(self.frame_header, text="✕", bg=COLOR_BG, fg="gray50",
                                     font=("Segoe UI", 9), cursor="hand2")

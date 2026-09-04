@@ -1,6 +1,6 @@
 """
 tray.py
-Icono en la bandeja del sistema (system tray) para que TechClean Pro pueda
+Icono en la bandeja del sistema (system tray) para que TechClean pueda
 seguir corriendo en segundo plano sin ocupar espacio en la barra de tareas.
 Los callbacks de pystray corren en su PROPIO hilo — por eso, quien use esta
 clase debe reenviar las llamadas al hilo principal de Tkinter (con
@@ -128,7 +128,7 @@ class TrayIcon:
             pystray.MenuItem(t("tray_modo_juego"), lambda: self.on_toggle_auto()),
             pystray.MenuItem(t("tray_salir"), lambda: self._salir()),
         )
-        self.icon = pystray.Icon("TechCleanPro", _crear_icono_imagen(), "TechClean Pro", menu)
+        self.icon = pystray.Icon("TechClean", _crear_icono_imagen(), "TechClean", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
         return True
 

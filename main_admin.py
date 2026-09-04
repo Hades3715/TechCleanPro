@@ -1,6 +1,6 @@
 """
 main_admin.py
-Punto de entrada de la EDICIÓN ADMINISTRADOR de TechClean Pro.
+Punto de entrada de la EDICIÓN ADMINISTRADOR de TechClean.
 
 Comparte el 100% del código con la edición cliente (main.py): la misma
 interfaz, los mismos optimizadores, el mismo monitoreo de componentes.
@@ -12,10 +12,10 @@ La única diferencia es que aquí NO se oculta nada técnico:
     "Reiniciar como Admin") en vez del lenguaje simplificado del cliente.
 
 Pensado para el propio desarrollador o para soporte técnico — no para
-distribuir al usuario final (para eso está TechCleanPro.exe / main.py).
+distribuir al usuario final (para eso está TechClean.exe / main.py).
 
 Ejecutar:      python main_admin.py
-Compilar:      Generar_App_Admin.bat  →  produce TechCleanPro_Admin.exe
+Compilar:      Generar_App_Admin.bat  →  produce TechClean_Admin.exe
 """
 
 import main

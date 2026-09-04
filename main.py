@@ -1,6 +1,6 @@
 """
 main.py
-TechClean Pro — Panel de Optimización y Diagnóstico de Sistema
+TechClean — Panel de Optimización y Diagnóstico de Sistema
 Aplicación de escritorio para Windows con monitoreo real de hardware,
 optimización de RAM/disco, limpieza de privacidad, consola de desarrollador,
 reporte transparente de sesión, widget flotante y modo automático en
@@ -894,7 +894,7 @@ class TechCleanApp(ctk.CTk):
         # esto corre en el hilo principal, así que es seguro.
         self._pulso_cola_id = ctk.CTk.after(self, self.PULSO_COLA_MS, self._vaciar_cola_ui)
 
-        self.title("TechClean Pro" + (t("app_edicion_admin") if EDICION == "admin" else ""))
+        self.title("TechClean" + (t("app_edicion_admin") if EDICION == "admin" else ""))
         try:
             self.iconbitmap(ICON_PATH)
         except Exception:
@@ -1008,7 +1008,7 @@ class TechCleanApp(ctk.CTk):
 
         self.sidebar.grid_rowconfigure(20, weight=1)
 
-        _add(ctk.CTkLabel(self.sidebar, text="⚙ TechClean Pro", font=ctk.CTkFont(size=18, weight="bold"))).grid(
+        _add(ctk.CTkLabel(self.sidebar, text="⚙ TechClean", font=ctk.CTkFont(size=18, weight="bold"))).grid(
             row=0, column=0, padx=20, pady=(24, 4), sticky="w")
 
         if EDICION == "admin":
@@ -2145,7 +2145,7 @@ class TechCleanApp(ctk.CTk):
             # PyInstaller esa es la carpeta temporal donde se descomprime
             # el .exe y Windows la borra al cerrar la app, asi que el
             # archivo se "guardaba" y desaparecia solo. carpeta_datos()
-            # apunta a %APPDATA% + TechCleanPro, que si persiste.
+            # apunta a %APPDATA% + TechClean, que si persiste.
             carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
             destino = os.path.join(carpeta, "reporte_hardware_techclean.txt")
             try:
@@ -3491,7 +3491,7 @@ class TechCleanApp(ctk.CTk):
             ctk.CTkLabel(fila, text=t("seg_regla_detalle", nombre=r["nombre"], direccion=r["direccion"]),
                          font=ctk.CTkFont(size=12), anchor="w",
                          wraplength=650, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
-            if str(r["nombre"]).startswith("TechCleanPro-Bloqueo-"):
+            if str(r["nombre"]).startswith("TechClean-Bloqueo-"):
                 ctk.CTkButton(fila, text=t("seg_btn_desbloquear"), width=100, fg_color="#2a2d36",
                               hover_color="#3a3e4a",
                               command=lambda n=r["nombre"]: self._accion_desbloquear_app(n)).pack(

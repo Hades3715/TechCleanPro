@@ -1,15 +1,15 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro - Generador de la app instalable (ES + EN)
+title TechClean - Generador de la app instalable (ES + EN)
 cd /d "%~dp0"
 echo ============================================================
-echo   TechClean Pro - Generando tus aplicaciones (.exe)
+echo   TechClean - Generando tus aplicaciones (.exe)
 echo ============================================================
 echo.
 echo Genera los DOS ejecutables de la edicion cliente:
 echo.
-echo     TechCleanPro_ES.exe   (espanol)
-echo     TechCleanPro_EN.exe   (ingles)
+echo     TechClean_ES.exe   (espanol)
+echo     TechClean_EN.exe   (ingles)
 echo.
 echo La edicion cliente ya no lleva selector de idioma dentro: se
 echo publican los dos archivos y cada quien descarga el que le
@@ -59,9 +59,9 @@ echo.
 echo Limpiando restos de compilaciones anteriores (para evitar usar codigo viejo por error)...
 rmdir /s /q build >nul 2>nul
 rmdir /s /q dist >nul 2>nul
-del /q "TechCleanPro.spec" >nul 2>nul
-del /q "TechCleanPro_ES.spec" >nul 2>nul
-del /q "TechCleanPro_EN.spec" >nul 2>nul
+del /q "TechClean.spec" >nul 2>nul
+del /q "TechClean_ES.spec" >nul 2>nul
+del /q "TechClean_EN.spec" >nul 2>nul
 if exist "__pycache__" rmdir /s /q "__pycache__" >nul 2>nul
 
 echo.
@@ -90,15 +90,15 @@ call :fijar_idioma es
 echo.
 echo [4/4] Limpiando archivos temporales de la compilacion...
 rmdir /s /q build >nul 2>nul
-del /q "TechCleanPro_ES.spec" >nul 2>nul
-del /q "TechCleanPro_EN.spec" >nul 2>nul
+del /q "TechClean_ES.spec" >nul 2>nul
+del /q "TechClean_EN.spec" >nul 2>nul
 
 echo.
 echo ============================================================
 echo   Listo. En esta carpeta quedaron:
 echo.
-echo     TechCleanPro_ES.exe   - version en espanol
-echo     TechCleanPro_EN.exe   - version en ingles
+echo     TechClean_ES.exe   - version en espanol
+echo     TechClean_EN.exe   - version en ingles
 echo.
 echo   Subilos con esos nombres a Releases de GitHub: el nombre del
 echo   archivo es lo unico que le dice a la gente cual descargar,
@@ -115,9 +115,9 @@ REM ------------------------------------------------------------
 echo.
 echo   --- Compilando version %2 ---
 call :fijar_idioma %1
-python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_%2" --add-data "assets;assets" main.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_%2" --add-data "assets;assets" main.py
 
-if not exist "dist\TechCleanPro_%2.exe" (
+if not exist "dist\TechClean_%2.exe" (
     echo.
     echo   [ERROR] Fallo la compilacion de la version %2. Revisa los mensajes de arriba.
     exit /b 1
@@ -132,14 +132,14 @@ REM
 REM Truco: Windows SI deja renombrar un .exe en ejecucion (el candado es
 REM sobre el contenido, no sobre el nombre). Se aparta el viejo y se copia
 REM el nuevo en su lugar; el que este corriendo sigue vivo sin enterarse.
-if exist "TechCleanPro_%2.exe" (
-    del /q "TechCleanPro_%2_anterior.exe" >nul 2>nul
-    ren "TechCleanPro_%2.exe" "TechCleanPro_%2_anterior.exe" >nul 2>nul
+if exist "TechClean_%2.exe" (
+    del /q "TechClean_%2_anterior.exe" >nul 2>nul
+    ren "TechClean_%2.exe" "TechClean_%2_anterior.exe" >nul 2>nul
 )
-copy /Y "dist\TechCleanPro_%2.exe" "TechCleanPro_%2.exe"
+copy /Y "dist\TechClean_%2.exe" "TechClean_%2.exe"
 if errorlevel 1 (
     echo.
-    echo   [ERROR] No se pudo dejar TechCleanPro_%2.exe en esta carpeta.
+    echo   [ERROR] No se pudo dejar TechClean_%2.exe en esta carpeta.
     REM Ojo: NADA de parentesis sueltos dentro de un bloque if ^(...^) —
     REM cmd cierra el bloque en el primer ^) que encuentra y revienta con
     REM "No se esperaba y en este momento". Van escapados con ^.
@@ -148,8 +148,8 @@ if errorlevel 1 (
     echo   El ejecutable recien compilado quedo en la carpeta dist.
     exit /b 1
 )
-del /q "TechCleanPro_%2_anterior.exe" >nul 2>nul
-call :firmar "TechCleanPro_%2.exe"
+del /q "TechClean_%2_anterior.exe" >nul 2>nul
+call :firmar "TechClean_%2.exe"
 exit /b 0
 
 REM ------------------------------------------------------------

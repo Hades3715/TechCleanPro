@@ -1,4 +1,4 @@
-# TechClean Pro — Contexto del proyecto
+# TechClean — Contexto del proyecto
 
 Este documento es para que quien retome el proyecto (incluido yo mismo, en una
 sesión nueva) tenga el contexto completo sin tener que releer meses de
@@ -42,7 +42,7 @@ solo enseña los comandos técnicos que la app ya ejecuta.
 ### El idioma va por build, no por selector
 La edición cliente **no lleva selector de idioma**. El idioma queda fijado
 al compilar, en `build_config.py` (un archivo de dos líneas), y se publican
-dos ejecutables — `TechCleanPro_ES.exe` y `TechCleanPro_EN.exe` — para que
+dos ejecutables — `TechClean_ES.exe` y `TechClean_EN.exe` — para que
 cada quien descargue el suyo por el nombre del archivo.
 
 `build_config.py` está aislado a propósito: `Generar_App_Instalable.bat` lo
@@ -78,7 +78,7 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 
 ## Estado de publicación (a la fecha de este documento)
 
-- **Repositorio**: `Hades3715/TechCleanPro` (público). El buscador de
+- **Repositorio**: `Hades3715/TechClean` (público). El buscador de
   actualizaciones está ACTIVO: `REPO_ACTUALIZACIONES` en `optimizer.py` ya
   apunta ahí. Consulta la API de GitHub Releases y compara `tag_name` (sin
   la "v" inicial) contra `APP_VERSION`. Si el repo no responde o no hay

@@ -1,6 +1,6 @@
 """
 idiomas.py
-Sistema de traducción de TechClean Pro.
+Sistema de traducción de TechClean.
 
 Cómo funciona: cada texto de la interfaz se identifica con una CLAVE fija
 que nunca cambia (por ejemplo "nav_inicio"), y esa clave se traduce según
@@ -53,13 +53,13 @@ TEXTOS = {
         "ajustes_idioma_descripcion": "Cambiar el idioma pide reiniciar la app para aplicarse en toda la "
                                        "interfaz. Por ahora, solo el menú lateral está traducido — el resto "
                                        "de las pantallas se irán traduciendo en próximas actualizaciones.",
-        "ajustes_idioma_reiniciar_aviso": "Se aplicará la próxima vez que abras TechClean Pro. ¿Cerrar la app "
+        "ajustes_idioma_reiniciar_aviso": "Se aplicará la próxima vez que abras TechClean. ¿Cerrar la app "
                                            "ahora para que apliques el cambio?",
         # ---- Inicio (Dashboard) ----
         "dash_titulo": "Resumen del sistema",
         "dash_boton_optimizar_clic": "🚀 Optimización con un clic",
         "dash_boton_vaciar_papelera": "🗑 Vaciar papelera",
-        "dash_resultado_inicial": "Un clic y TechClean Pro se encarga del resto.",
+        "dash_resultado_inicial": "Un clic y TechClean se encarga del resto.",
         "dash_optimizando": "Optimizando, espera un momento...",
         "dash_optimizacion_lista": "Listo ✅\nRAM compactada en {procesos} procesos ({ram} liberados).\n"
                                     "{archivos} archivos temporales eliminados ({disco} recuperados).",
@@ -102,7 +102,7 @@ TEXTOS = {
         "spark_sin_datos": "Sin datos todavía — este equipo puede no reportar este valor",
         # ---- Ajustes (pantalla completa) ----
         "ajustes_titulo": "Ajustes",
-        "ajustes_version": "TechClean Pro — versión {version}",
+        "ajustes_version": "TechClean — versión {version}",
         "ajustes_desarrollado_por": "Desarrollado por {nombre} ({alias})",
         "ajustes_descripcion_app": "Panel de optimización, diagnóstico y privacidad para Windows.",
         "ajustes_donar_titulo": "☕ Apoyar el proyecto",
@@ -111,13 +111,13 @@ TEXTOS = {
         "ajustes_donar_log_error": "No se pudo abrir.",
         "ajustes_donar_nota": "Lo desarrolla una sola persona, estudiante, en su tiempo libre.",
         "ajustes_donar_boton": "Apoyar en Ko-fi",
-        "ajustes_donar_desc": "TechClean Pro es gratis y seguirá siéndolo — esto es solo si quieres invitarme "
+        "ajustes_donar_desc": "TechClean es gratis y seguirá siéndolo — esto es solo si quieres invitarme "
                                "un café, nunca un requisito.",
         "ajustes_donar_no_configurado_titulo": "Todavía sin configurar",
         "ajustes_donar_no_configurado_msg": "El desarrollador todavía no configuró un link de donación en "
                                              "esta versión.",
         "ajustes_buscar_actualizaciones": "🔄 Buscar actualizaciones",
-        "ajustes_inicio_windows_titulo": "Iniciar TechClean Pro con Windows",
+        "ajustes_inicio_windows_titulo": "Iniciar TechClean con Windows",
         "ajustes_inicio_windows_desc": "Así queda disponible en la bandeja del sistema desde que enciendes el "
                                         "equipo, sin abrir la ventana automáticamente.",
         "ajustes_inicio_arreglar": "Arreglar",
@@ -134,10 +134,10 @@ TEXTOS = {
         "ajustes_modo_ligero_titulo": "🪶 Modo Ligero (para equipos de bajo rendimiento)",
         "ajustes_modo_ligero_desc": "Espacia las actualizaciones en pantalla de la propia app (widget, "
                                      "Componentes, ícono de bandeja) para consumir menos CPU — ninguna función "
-                                     "se pierde, solo se actualizan un poco menos seguido. TechClean Pro te lo "
+                                     "se pierde, solo se actualizan un poco menos seguido. TechClean te lo "
                                      "sugiere solo una vez, al primer arranque, si detecta un equipo modesto.",
         "ajustes_umbral_ram_titulo": "🧠 Liberar RAM automáticamente al llegar a",
-        "ajustes_umbral_ram_desc": "Cuando el uso de RAM llegue a este porcentaje, TechClean Pro libera memoria "
+        "ajustes_umbral_ram_desc": "Cuando el uso de RAM llegue a este porcentaje, TechClean libera memoria "
                                     "sola en segundo plano, sin que tengas que hacer nada. Bájalo en equipos que "
                                     "ya andan justos de RAM desde que encienden — no hace falta esperar a que "
                                     "llegue tan alto para que valga la pena liberar espacio.",
@@ -175,17 +175,17 @@ TEXTOS = {
         "ajustes_widget_metrica_red": "Red (↑↓)",
         "ajustes_widget_metricas_desc": "Se aplica la próxima vez que actives el widget (desactívalo y vuelve "
                                          "a activarlo).",
-        "ajustes_config_titulo": "⚙ Configuración de TechClean Pro",
+        "ajustes_config_titulo": "⚙ Configuración de TechClean",
         "ajustes_exportar": "📤 Exportar",
         "ajustes_importar": "📥 Importar",
         "ajustes_restablecer": "♻ Restablecer todo",
-        "ajustes_historial_nota": "TechClean Pro siempre te muestra en el Historial qué acciones realizó.",
+        "ajustes_historial_nota": "TechClean siempre te muestra en el Historial qué acciones realizó.",
         "ajustes_exportar_dialogo_titulo": "Exportar configuración",
         "ajustes_exportar_exito": "Configuración exportada a:\n{destino}",
         "ajustes_exportar_error": "No se pudo exportar: {error}",
         "ajustes_importar_dialogo_titulo": "Importar configuración",
         "ajustes_importar_formato_invalido": "El archivo no tiene el formato esperado.",
-        "ajustes_importar_exito": "Configuración importada. Cierra y vuelve a abrir TechClean Pro para que "
+        "ajustes_importar_exito": "Configuración importada. Cierra y vuelve a abrir TechClean para que "
                                    "todo se aplique.",
         "ajustes_importar_error": "No se pudo importar: {error}",
         "ajustes_restablecer_confirmar": "¿Restablecer TODA la configuración a valores de fábrica?\n\nEsto no "
@@ -193,7 +193,7 @@ TEXTOS = {
                                           "preferencias guardadas (perfil de energía, alertas, widget, etc.).",
         "ajustes_cancelar": "Cancelar",
         "ajustes_restablecer_boton": "Restablecer",
-        "ajustes_restablecer_exito": "Configuración restablecida. Cierra y vuelve a abrir TechClean Pro para "
+        "ajustes_restablecer_exito": "Configuración restablecida. Cierra y vuelve a abrir TechClean para "
                                       "que todo se aplique.",
         "ajustes_buscando": "Buscando...",
         "ajustes_hay_version_nueva": "🎉 Hay una versión nueva: {version} (tienes {actual})",
@@ -232,7 +232,7 @@ TEXTOS = {
         "cmd_ajustes": "Abre Ajustes",
         "cmd_salir": "Vuelve a Inicio",
         "cmd_help": "Muestra esta lista de comandos",
-        "consola_lista": "$ TechClean Pro — consola lista. Escribe /help para ver los comandos.",
+        "consola_lista": "$ TechClean — consola lista. Escribe /help para ver los comandos.",
         "consola_placeholder": "Escribe un comando (/help para ver la lista) y presiona Enter...",
         "consola_ejecutar": "Ejecutar",
         "consola_accion": "ACCIÓN",
@@ -272,7 +272,7 @@ TEXTOS = {
         "disco_btn_papelera_uno": "🗑 A la papelera",
         # ---- Terminar proceso ----
         "proc_protegido_titulo": "Proceso protegido",
-        "proc_protegido_msg": "\"{nombre}\" es un proceso crítico del sistema y TechClean Pro no permite terminarlo desde aquí.\n\n{motivo}",
+        "proc_protegido_msg": "\"{nombre}\" es un proceso crítico del sistema y TechClean no permite terminarlo desde aquí.\n\n{motivo}",
         "proc_conf_titulo": "¿Terminar \"{nombre}\" (PID {pid})?",
         "proc_aviso_riesgo": "⚠ {motivo}",
         "proc_aviso_normal": "Si es un programa que tienes abierto con trabajo sin guardar (un navegador, un editor, un juego), vas a perder ese trabajo — igual que si lo cerraras de golpe sin guardar. Si no reconoces el nombre y no es un proceso de Windows, normalmente es seguro cerrarlo.",
@@ -308,12 +308,12 @@ TEXTOS = {
         # ---- Modo Ligero, alertas y batería ----
         "ligero_titulo_ventana": "Sugerencia",
         "ligero_titulo": "🪶 Modo Ligero",
-        "ligero_texto": "Tu equipo parece de gama modesta. TechClean Pro puede espaciar sus propias actualizaciones en pantalla (widget, Componentes, ícono de bandeja) para consumir menos mientras sigue vigilando igual — nada de funciones se pierde, solo se actualizan un poco menos seguido. ¿Lo activo?",
+        "ligero_texto": "Tu equipo parece de gama modesta. TechClean puede espaciar sus propias actualizaciones en pantalla (widget, Componentes, ícono de bandeja) para consumir menos mientras sigue vigilando igual — nada de funciones se pierde, solo se actualizan un poco menos seguido. ¿Lo activo?",
         "ligero_no": "No, gracias",
         "ligero_si": "Sí, activarlo",
-        "alerta_temp_titulo": "TechClean Pro — Temperatura alta",
+        "alerta_temp_titulo": "TechClean — Temperatura alta",
         "alerta_temp_msg": "La CPU está en {temp}°C (tu umbral es {umbral}°C).",
-        "bateria_titulo": "TechClean Pro — Batería baja",
+        "bateria_titulo": "TechClean — Batería baja",
         "bateria_msg": "Batería al {pct}% — se activó el plan Silencioso para ahorrar.",
         "bateria_log_on": "Ahorro de batería automático",
         "bateria_log_off": "Ahorro de batería automático desactivado",
@@ -349,7 +349,7 @@ TEXTOS = {
         "ajustes_no_abrir_carpeta": "No se pudo abrir la carpeta: {error}",
         # ---- Aviso de actualización ----
         "upd_titulo_ventana": "Actualización disponible",
-        "upd_disponible": "🎉 TechClean Pro {version} ya está disponible",
+        "upd_disponible": "🎉 TechClean {version} ya está disponible",
         "upd_instalada": "Tienes instalada la versión {version}.",
         "upd_ahora_no": "Ahora no",
         "upd_descargar": "Abrir página de descarga",
@@ -407,7 +407,7 @@ TEXTOS = {
         "diag_ejecutando": "Ejecutando... puede tardar 1-3 minutos (algunas de estas consultas son pesadas). No cierres esta ventana.",
         "diag_iniciando": "Iniciando...",
         "diag_listo": "Listo — {exitos} de {total} funciones OK, {fallos} con error.",
-        "diag_encabezado": "=== Diagnóstico completo — TechClean Pro ===",
+        "diag_encabezado": "=== Diagnóstico completo — TechClean ===",
         "diag_fecha": "Fecha: {fecha}",
         "diag_version": "Versión: {version}  ·  Edición: {edicion}",
         "diag_ok_elementos": "OK, {cantidad} elemento(s)",
@@ -423,7 +423,7 @@ TEXTOS = {
         "rend_desc": "Junta en un solo texto todo lo relacionado a qué tan rápido va tu equipo — CPU, RAM, disco, temperatura, arranques recientes, apps de inicio y servicios que más consumen — listo para copiar y compartir con quien te esté ayudando a diagnosticar algo, sin tener que ir pantalla por pantalla contándole uno por uno.",
         "rend_btn_generar": "📋 Generar reporte de rendimiento",
         "rend_reuniendo": "Reuniendo datos...",
-        "rend_encabezado": "=== Reporte de rendimiento — TechClean Pro ===",
+        "rend_encabezado": "=== Reporte de rendimiento — TechClean ===",
         "rend_version": "Versión: {version}",
         "rend_sec_cpu": "--- CPU ---",
         "rend_uso_total": "Uso total: {pct}%",
@@ -481,7 +481,7 @@ TEXTOS = {
         "tray_abrir_panel": "Abrir panel completo",
         "tray_toggle_widget": "Mostrar/Ocultar widget",
         "tray_modo_juego": "Modo Juego (ON/OFF)",
-        "tray_salir": "Salir de TechClean Pro",
+        "tray_salir": "Salir de TechClean",
         # ---- Motivos de riesgo (servicios y procesos) ----
         "riesgo_srv_rpcss": "Llamadas a procedimiento remoto (RPC) — casi todo Windows depende de esto para que sus propias partes se comuniquen entre sí. Detenerlo puede dejar el sistema sin responder de inmediato.",
         "riesgo_srv_dcomlaunch": "Inicia procesos DCOM que usan muchos programas y el propio Windows — trabaja junto con RPC, detenerlo tiene el mismo riesgo.",
@@ -548,7 +548,7 @@ TEXTOS = {
         "rep_log_idx_pausada": "Indexación de búsqueda pausada",
         "rep_switch_punto": "🛟 Crear punto de restauración antes de reparar archivos/imagen del sistema",
         "rep_punto_desc": "Recomendado: si algo sale mal, puedes deshacer los cambios desde 'Restaurar sistema' de Windows. Necesita que la Protección del sistema esté activada.",
-        "rep_punto_nombre": "TechClean Pro - antes de reparar",
+        "rep_punto_nombre": "TechClean - antes de reparar",
         "rep_punto_ok": "Punto de restauración creado.",
         "rep_punto_error": "No se pudo crear el punto de restauración (¿Protección del sistema desactivada?). Continuando de todas formas.",
         "rep_log_punto": "Crear punto de restauración",
@@ -604,7 +604,7 @@ TEXTOS = {
         # ---- Drivers ----
         "drv_volver": "← Volver a Componentes",
         "drv_titulo": "Drivers",
-        "drv_intro": "Solo canales oficiales: Windows Update para detectar actualizaciones, y la página de soporte del propio fabricante para descargarlas. TechClean Pro no reemplaza drivers por su cuenta — instalar el equivocado puede dejar hardware sin funcionar.",
+        "drv_intro": "Solo canales oficiales: Windows Update para detectar actualizaciones, y la página de soporte del propio fabricante para descargarlas. TechClean no reemplaza drivers por su cuenta — instalar el equivocado puede dejar hardware sin funcionar.",
         "drv_leyendo_fabricante": "Leyendo fabricante del equipo...",
         "drv_btn_admin_disp": "🛠 Administrador de dispositivos",
         "drv_fabricante_modelo": "{fabricante} — {modelo}",
@@ -765,7 +765,7 @@ TEXTOS = {
         "comp_log_speedtest": "Probar velocidad de internet",
         "comp_st_resumen": "Latencia: {latencia} ms · Bajada: {bajada} Mbps · Subida: {subida} Mbps",
         # ---- Reporte de hardware exportado ----
-        "comp_hw_titulo": "REPORTE DE HARDWARE — TechClean Pro",
+        "comp_hw_titulo": "REPORTE DE HARDWARE — TechClean",
         "comp_hw_generado": "Generado: {fecha}",
         "comp_hw_sec_sistema": "-- Sistema --",
         "comp_hw_equipo": "Equipo: {valor}",
@@ -837,7 +837,7 @@ TEXTOS = {
         "apps_btn_detener": "Detener",
         "apps_btn_iniciar": "Iniciar",
         "apps_serv_protegido_titulo": "Servicio protegido",
-        "apps_serv_protegido_msg": "\"{nombre}\" es un servicio crítico del sistema y TechClean Pro no permite detenerlo desde aquí.\n\n{motivo}",
+        "apps_serv_protegido_msg": "\"{nombre}\" es un servicio crítico del sistema y TechClean no permite detenerlo desde aquí.\n\n{motivo}",
         "apps_conf_serv_titulo": "Confirmar cambio de servicio",
         "apps_conf_serv_detener": "¿Detener el servicio\n\"{nombre}\"?",
         "apps_conf_serv_iniciar": "¿Iniciar el servicio\n\"{nombre}\"?",
@@ -861,7 +861,7 @@ TEXTOS = {
         "apps_winget_error": "No se pudo consultar winget en este momento.",
         "apps_winget_al_dia": "Todo actualizado — no hay nada pendiente.",
         "apps_winget_nota": "Lectura aproximada de la tabla de winget (el formato puede variar un poco según la versión). Para actualizar, copia el Id y usa el botón, o hazlo desde una terminal con 'winget upgrade --id <Id>'.",
-        "apps_tareas_intro": "Todo lo que Windows ejecuta solo, programado por otros programas que instalaste — informativo, TechClean Pro no las modifica.",
+        "apps_tareas_intro": "Todo lo que Windows ejecuta solo, programado por otros programas que instalaste — informativo, TechClean no las modifica.",
         "apps_leyendo_tareas": "Leyendo tareas programadas...",
         "apps_sin_tareas": "No se encontraron tareas programadas de terceros.",
         "apps_tarea_detalle": "{nombre}  ({ruta})",
@@ -902,7 +902,7 @@ TEXTOS = {
         "seg_permiso_permitido": "Permitido",
         "seg_permiso_bloqueado": "Bloqueado",
         "seg_permiso_desconocido": "Desconocido",
-        "seg_permisos_nota": "Para cambiar un permiso, hazlo desde Configuración > Privacidad y seguridad de Windows — aquí solo se muestra, TechClean Pro no lo modifica directamente.",
+        "seg_permisos_nota": "Para cambiar un permiso, hazlo desde Configuración > Privacidad y seguridad de Windows — aquí solo se muestra, TechClean no lo modifica directamente.",
         "seg_firewall_intro": "Bloquea la conexión a internet de un programa puntual, o revisa qué reglas de bloqueo ya tienes activas.",
         "seg_btn_bloquear": "🚫 Bloquear un programa...",
         "seg_leyendo_reglas": "Leyendo reglas de bloqueo...",
@@ -1056,7 +1056,7 @@ TEXTOS = {
         "opt_log_cerrar_ventana": "Cerrar ventana \"{titulo}\"",
         # ---- Historial de actividad ----
         "hist_titulo": "Historial de actividad",
-        "hist_subtitulo": "Aquí puedes ver cada acción que TechClean Pro ha realizado en esta sesión (manual o automática).",
+        "hist_subtitulo": "Aquí puedes ver cada acción que TechClean ha realizado en esta sesión (manual o automática).",
         "hist_resumen": "Acciones ejecutadas: {total}   |   Exitosas: {exitosas}   |   Fallidas: {fallidas}   |   Espacio total liberado: {espacio}",
         "hist_buscar_placeholder": "🔎 Buscar por acción, sección o resultado...",
         "hist_todas_secciones": "Todas las secciones",
@@ -1164,7 +1164,7 @@ TEXTOS = {
         "comun_confirmar_titulo": "Confirmar",
         # ---- Segundo Plano ----
         "segplano_titulo": "Trabajo en segundo plano",
-        "segplano_subtitulo": "Deja que TechClean Pro te ayude mientras usas tu equipo, sin abrir la ventana completa. ¿Buscas Modo Juego, FPS o Enfoque asistido? Se mudaron a 🎮 Gaming.",
+        "segplano_subtitulo": "Deja que TechClean te ayude mientras usas tu equipo, sin abrir la ventana completa. ¿Buscas Modo Juego, FPS o Enfoque asistido? Se mudaron a 🎮 Gaming.",
         "segplano_widget_titulo": "🧩 Widget de rendimiento flotante",
         "segplano_widget_desc": "Una barra pequeña, siempre visible y arrastrable, con CPU/GPU/RAM/Red en vivo. Haz clic en ▾ dentro del widget para expandirlo y ver más detalle.",
         "segplano_limpieza_titulo": "🗓 Limpieza programada automática",
@@ -1203,13 +1203,13 @@ TEXTOS = {
         "ajustes_idioma_descripcion": "Changing the language requires restarting the app to apply everywhere. "
                                        "For now, only the sidebar is translated — the rest of the screens will "
                                        "be translated in future updates.",
-        "ajustes_idioma_reiniciar_aviso": "This will apply the next time you open TechClean Pro. Close the app "
+        "ajustes_idioma_reiniciar_aviso": "This will apply the next time you open TechClean. Close the app "
                                            "now to apply the change?",
         # ---- Home (Dashboard) ----
         "dash_titulo": "System overview",
         "dash_boton_optimizar_clic": "🚀 One-click optimization",
         "dash_boton_vaciar_papelera": "🗑 Empty recycle bin",
-        "dash_resultado_inicial": "One click and TechClean Pro takes care of the rest.",
+        "dash_resultado_inicial": "One click and TechClean takes care of the rest.",
         "dash_optimizando": "Optimizing, please wait...",
         "dash_optimizacion_lista": "Done ✅\nRAM compacted across {procesos} processes ({ram} freed).\n"
                                     "{archivos} temp files deleted ({disco} recovered).",
@@ -1252,7 +1252,7 @@ TEXTOS = {
         "spark_sin_datos": "No data yet — this computer may not report this value",
         # ---- Settings (full screen) ----
         "ajustes_titulo": "Settings",
-        "ajustes_version": "TechClean Pro — version {version}",
+        "ajustes_version": "TechClean — version {version}",
         "ajustes_desarrollado_por": "Developed by {nombre} ({alias})",
         "ajustes_descripcion_app": "Optimization, diagnostics, and privacy panel for Windows.",
         "ajustes_donar_titulo": "☕ Support the project",
@@ -1261,12 +1261,12 @@ TEXTOS = {
         "ajustes_donar_log_error": "Couldn't open it.",
         "ajustes_donar_nota": "Built by one person, a student, in their free time.",
         "ajustes_donar_boton": "Support on Ko-fi",
-        "ajustes_donar_desc": "TechClean Pro is free and will stay that way — this is only if you'd like to "
+        "ajustes_donar_desc": "TechClean is free and will stay that way — this is only if you'd like to "
                                "buy me a coffee, never a requirement.",
         "ajustes_donar_no_configurado_titulo": "Not set up yet",
         "ajustes_donar_no_configurado_msg": "The developer hasn't set up a donation link in this version yet.",
         "ajustes_buscar_actualizaciones": "🔄 Check for updates",
-        "ajustes_inicio_windows_titulo": "Start TechClean Pro with Windows",
+        "ajustes_inicio_windows_titulo": "Start TechClean with Windows",
         "ajustes_inicio_windows_desc": "This makes it available in the system tray as soon as you turn on "
                                         "your computer, without opening the window automatically.",
         "ajustes_inicio_arreglar": "Fix it",
@@ -1282,10 +1282,10 @@ TEXTOS = {
         "ajustes_modo_ligero_titulo": "🪶 Light Mode (for low-performance computers)",
         "ajustes_modo_ligero_desc": "Spaces out the app's own on-screen updates (widget, Components, tray "
                                      "icon) to use less CPU — no feature is lost, they just update a bit less "
-                                     "often. TechClean Pro suggests it only once, on first launch, if it "
+                                     "often. TechClean suggests it only once, on first launch, if it "
                                      "detects a modest computer.",
         "ajustes_umbral_ram_titulo": "🧠 Automatically free RAM when it reaches",
-        "ajustes_umbral_ram_desc": "When RAM usage reaches this percentage, TechClean Pro frees up memory on "
+        "ajustes_umbral_ram_desc": "When RAM usage reaches this percentage, TechClean frees up memory on "
                                     "its own in the background, without you having to do anything. Lower it on "
                                     "computers that already run tight on RAM from the moment they start — no "
                                     "need to wait for it to get that high before it's worth freeing up space.",
@@ -1323,17 +1323,17 @@ TEXTOS = {
         "ajustes_widget_metrica_red": "Network (↑↓)",
         "ajustes_widget_metricas_desc": "Applies the next time you turn on the widget (turn it off and back "
                                          "on).",
-        "ajustes_config_titulo": "⚙ TechClean Pro configuration",
+        "ajustes_config_titulo": "⚙ TechClean configuration",
         "ajustes_exportar": "📤 Export",
         "ajustes_importar": "📥 Import",
         "ajustes_restablecer": "♻ Reset everything",
-        "ajustes_historial_nota": "TechClean Pro always shows you in History which actions it performed.",
+        "ajustes_historial_nota": "TechClean always shows you in History which actions it performed.",
         "ajustes_exportar_dialogo_titulo": "Export configuration",
         "ajustes_exportar_exito": "Configuration exported to:\n{destino}",
         "ajustes_exportar_error": "Couldn't export: {error}",
         "ajustes_importar_dialogo_titulo": "Import configuration",
         "ajustes_importar_formato_invalido": "The file isn't in the expected format.",
-        "ajustes_importar_exito": "Configuration imported. Close and reopen TechClean Pro for everything to "
+        "ajustes_importar_exito": "Configuration imported. Close and reopen TechClean for everything to "
                                    "apply.",
         "ajustes_importar_error": "Couldn't import: {error}",
         "ajustes_restablecer_confirmar": "Reset ALL settings to factory defaults?\n\nThis doesn't erase this "
@@ -1341,7 +1341,7 @@ TEXTOS = {
                                           "plan, alerts, widget, etc.).",
         "ajustes_cancelar": "Cancel",
         "ajustes_restablecer_boton": "Reset",
-        "ajustes_restablecer_exito": "Settings reset. Close and reopen TechClean Pro for everything to apply.",
+        "ajustes_restablecer_exito": "Settings reset. Close and reopen TechClean for everything to apply.",
         "ajustes_buscando": "Checking...",
         "ajustes_hay_version_nueva": "🎉 There's a new version: {version} (you have {actual})",
         "ajustes_version_al_dia": "You already have the latest version ({actual}).",
@@ -1378,7 +1378,7 @@ TEXTOS = {
         "cmd_ajustes": "Opens Settings",
         "cmd_salir": "Back to Home",
         "cmd_help": "Shows this list of commands",
-        "consola_lista": "$ TechClean Pro — console ready. Type /help to see the commands.",
+        "consola_lista": "$ TechClean — console ready. Type /help to see the commands.",
         "consola_placeholder": "Type a command (/help for the list) and press Enter...",
         "consola_ejecutar": "Run",
         "consola_accion": "ACTION",
@@ -1418,7 +1418,7 @@ TEXTOS = {
         "disco_btn_papelera_uno": "🗑 To Recycle Bin",
         # ---- End process ----
         "proc_protegido_titulo": "Protected process",
-        "proc_protegido_msg": "\"{nombre}\" is a critical system process and TechClean Pro doesn't allow ending it from here.\n\n{motivo}",
+        "proc_protegido_msg": "\"{nombre}\" is a critical system process and TechClean doesn't allow ending it from here.\n\n{motivo}",
         "proc_conf_titulo": "End \"{nombre}\" (PID {pid})?",
         "proc_aviso_riesgo": "⚠ {motivo}",
         "proc_aviso_normal": "If it's a program you have open with unsaved work (a browser, an editor, a game), you'll lose that work — just as if you closed it abruptly without saving. If you don't recognize the name and it isn't a Windows process, it's usually safe to close.",
@@ -1454,12 +1454,12 @@ TEXTOS = {
         # ---- Light Mode, alerts and battery ----
         "ligero_titulo_ventana": "Suggestion",
         "ligero_titulo": "🪶 Light Mode",
-        "ligero_texto": "Your computer looks like a modest one. TechClean Pro can space out its own on-screen updates (widget, Components, tray icon) to use less while still watching just the same — no features are lost, they just refresh a little less often. Shall I turn it on?",
+        "ligero_texto": "Your computer looks like a modest one. TechClean can space out its own on-screen updates (widget, Components, tray icon) to use less while still watching just the same — no features are lost, they just refresh a little less often. Shall I turn it on?",
         "ligero_no": "No, thanks",
         "ligero_si": "Yes, turn it on",
-        "alerta_temp_titulo": "TechClean Pro — High temperature",
+        "alerta_temp_titulo": "TechClean — High temperature",
         "alerta_temp_msg": "The CPU is at {temp}°C (your threshold is {umbral}°C).",
-        "bateria_titulo": "TechClean Pro — Low battery",
+        "bateria_titulo": "TechClean — Low battery",
         "bateria_msg": "Battery at {pct}% — the Quiet plan was turned on to save power.",
         "bateria_log_on": "Automatic battery saving",
         "bateria_log_off": "Automatic battery saving turned off",
@@ -1495,7 +1495,7 @@ TEXTOS = {
         "ajustes_no_abrir_carpeta": "The folder couldn't be opened: {error}",
         # ---- Update notice ----
         "upd_titulo_ventana": "Update available",
-        "upd_disponible": "🎉 TechClean Pro {version} is now available",
+        "upd_disponible": "🎉 TechClean {version} is now available",
         "upd_instalada": "You have version {version} installed.",
         "upd_ahora_no": "Not now",
         "upd_descargar": "Open download page",
@@ -1553,7 +1553,7 @@ TEXTOS = {
         "diag_ejecutando": "Running... this can take 1-3 minutes (some of these queries are heavy). Don't close this window.",
         "diag_iniciando": "Starting...",
         "diag_listo": "Done — {exitos} of {total} functions OK, {fallos} with errors.",
-        "diag_encabezado": "=== Full diagnostic — TechClean Pro ===",
+        "diag_encabezado": "=== Full diagnostic — TechClean ===",
         "diag_fecha": "Date: {fecha}",
         "diag_version": "Version: {version}  ·  Edition: {edicion}",
         "diag_ok_elementos": "OK, {cantidad} item(s)",
@@ -1569,7 +1569,7 @@ TEXTOS = {
         "rend_desc": "Gathers into a single text everything about how fast your computer runs — CPU, RAM, disk, temperature, recent startups, startup apps and the services using the most — ready to copy and share with whoever is helping you diagnose something, without having to go screen by screen telling them one by one.",
         "rend_btn_generar": "📋 Generate performance report",
         "rend_reuniendo": "Gathering data...",
-        "rend_encabezado": "=== Performance report — TechClean Pro ===",
+        "rend_encabezado": "=== Performance report — TechClean ===",
         "rend_version": "Version: {version}",
         "rend_sec_cpu": "--- CPU ---",
         "rend_uso_total": "Total usage: {pct}%",
@@ -1627,7 +1627,7 @@ TEXTOS = {
         "tray_abrir_panel": "Open full panel",
         "tray_toggle_widget": "Show/Hide widget",
         "tray_modo_juego": "Game Mode (ON/OFF)",
-        "tray_salir": "Quit TechClean Pro",
+        "tray_salir": "Quit TechClean",
         # ---- Risk reasons (services and processes) ----
         "riesgo_srv_rpcss": "Remote Procedure Call (RPC) — almost all of Windows depends on this for its own parts to talk to each other. Stopping it can make the system stop responding immediately.",
         "riesgo_srv_dcomlaunch": "Starts DCOM processes used by many programs and by Windows itself — it works alongside RPC, and stopping it carries the same risk.",
@@ -1694,7 +1694,7 @@ TEXTOS = {
         "rep_log_idx_pausada": "Search indexing paused",
         "rep_switch_punto": "🛟 Create a restore point before repairing system files/image",
         "rep_punto_desc": "Recommended: if something goes wrong, you can undo the changes from Windows' 'System Restore'. It needs System Protection to be turned on.",
-        "rep_punto_nombre": "TechClean Pro - before repairing",
+        "rep_punto_nombre": "TechClean - before repairing",
         "rep_punto_ok": "Restore point created.",
         "rep_punto_error": "The restore point couldn't be created (System Protection turned off?). Continuing anyway.",
         "rep_log_punto": "Create restore point",
@@ -1750,7 +1750,7 @@ TEXTOS = {
         # ---- Drivers ----
         "drv_volver": "← Back to Components",
         "drv_titulo": "Drivers",
-        "drv_intro": "Official channels only: Windows Update to detect updates, and the manufacturer's own support page to download them. TechClean Pro doesn't replace drivers on its own — installing the wrong one can leave hardware not working.",
+        "drv_intro": "Official channels only: Windows Update to detect updates, and the manufacturer's own support page to download them. TechClean doesn't replace drivers on its own — installing the wrong one can leave hardware not working.",
         "drv_leyendo_fabricante": "Reading the computer's manufacturer...",
         "drv_btn_admin_disp": "🛠 Device Manager",
         "drv_fabricante_modelo": "{fabricante} — {modelo}",
@@ -1911,7 +1911,7 @@ TEXTOS = {
         "comp_log_speedtest": "Test internet speed",
         "comp_st_resumen": "Latency: {latencia} ms · Down: {bajada} Mbps · Up: {subida} Mbps",
         # ---- Exported hardware report ----
-        "comp_hw_titulo": "HARDWARE REPORT — TechClean Pro",
+        "comp_hw_titulo": "HARDWARE REPORT — TechClean",
         "comp_hw_generado": "Generated: {fecha}",
         "comp_hw_sec_sistema": "-- System --",
         "comp_hw_equipo": "Computer: {valor}",
@@ -1983,7 +1983,7 @@ TEXTOS = {
         "apps_btn_detener": "Stop",
         "apps_btn_iniciar": "Start",
         "apps_serv_protegido_titulo": "Protected service",
-        "apps_serv_protegido_msg": "\"{nombre}\" is a critical system service and TechClean Pro doesn't allow stopping it from here.\n\n{motivo}",
+        "apps_serv_protegido_msg": "\"{nombre}\" is a critical system service and TechClean doesn't allow stopping it from here.\n\n{motivo}",
         "apps_conf_serv_titulo": "Confirm service change",
         "apps_conf_serv_detener": "Stop the service\n\"{nombre}\"?",
         "apps_conf_serv_iniciar": "Start the service\n\"{nombre}\"?",
@@ -2007,7 +2007,7 @@ TEXTOS = {
         "apps_winget_error": "winget couldn't be queried right now.",
         "apps_winget_al_dia": "Everything is up to date — nothing pending.",
         "apps_winget_nota": "Approximate reading of winget's table (the format can vary a little between versions). To update, copy the Id and use the button, or do it from a terminal with 'winget upgrade --id <Id>'.",
-        "apps_tareas_intro": "Everything Windows runs on its own, scheduled by other programs you installed — informational, TechClean Pro doesn't modify them.",
+        "apps_tareas_intro": "Everything Windows runs on its own, scheduled by other programs you installed — informational, TechClean doesn't modify them.",
         "apps_leyendo_tareas": "Reading scheduled tasks...",
         "apps_sin_tareas": "No third-party scheduled tasks were found.",
         "apps_tarea_detalle": "{nombre}  ({ruta})",
@@ -2048,7 +2048,7 @@ TEXTOS = {
         "seg_permiso_permitido": "Allowed",
         "seg_permiso_bloqueado": "Blocked",
         "seg_permiso_desconocido": "Unknown",
-        "seg_permisos_nota": "To change a permission, do it from Windows Settings > Privacy & security — this only displays it, TechClean Pro doesn't modify it directly.",
+        "seg_permisos_nota": "To change a permission, do it from Windows Settings > Privacy & security — this only displays it, TechClean doesn't modify it directly.",
         "seg_firewall_intro": "Block a specific program's internet connection, or review which blocking rules you already have active.",
         "seg_btn_bloquear": "🚫 Block a program...",
         "seg_leyendo_reglas": "Reading blocking rules...",
@@ -2202,7 +2202,7 @@ TEXTOS = {
         "opt_log_cerrar_ventana": "Close window \"{titulo}\"",
         # ---- Activity history ----
         "hist_titulo": "Activity history",
-        "hist_subtitulo": "Here you can see every action TechClean Pro has performed in this session (manual or automatic).",
+        "hist_subtitulo": "Here you can see every action TechClean has performed in this session (manual or automatic).",
         "hist_resumen": "Actions performed: {total}   |   Successful: {exitosas}   |   Failed: {fallidas}   |   Total space freed: {espacio}",
         "hist_buscar_placeholder": "🔎 Search by action, section or result...",
         "hist_todas_secciones": "All sections",
@@ -2310,7 +2310,7 @@ TEXTOS = {
         "comun_confirmar_titulo": "Confirm",
         # ---- Background ----
         "segplano_titulo": "Background work",
-        "segplano_subtitulo": "Let TechClean Pro help you while you use your computer, without opening the full window. Looking for Game Mode, FPS or Focus assist? They moved to 🎮 Gaming.",
+        "segplano_subtitulo": "Let TechClean help you while you use your computer, without opening the full window. Looking for Game Mode, FPS or Focus assist? They moved to 🎮 Gaming.",
         "segplano_widget_titulo": "🧩 Floating performance widget",
         "segplano_widget_desc": "A small bar, always visible and draggable, with live CPU/GPU/RAM/Network. Click ▾ inside the widget to expand it and see more detail.",
         "segplano_limpieza_titulo": "🗓 Scheduled automatic cleanup",

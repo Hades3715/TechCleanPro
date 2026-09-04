@@ -41,7 +41,7 @@ import time
 
 perfil = tempfile.mkdtemp(prefix="tcp_hilos_")
 os.environ["APPDATA"] = perfil
-carpeta = os.path.join(perfil, "TechCleanPro")
+carpeta = os.path.join(perfil, "TechClean")
 os.makedirs(carpeta, exist_ok=True)
 json.dump({"idioma": "es", "idioma_preguntado": True},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))

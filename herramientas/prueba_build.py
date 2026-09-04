@@ -4,7 +4,7 @@ import os, sys, json, tempfile
 
 perfil = tempfile.mkdtemp(prefix="tcp_build_")
 os.environ["APPDATA"] = perfil
-carpeta = os.path.join(perfil, "TechCleanPro")
+carpeta = os.path.join(perfil, "TechClean")
 os.makedirs(carpeta, exist_ok=True)
 # preferencia GUARDADA en el idioma CONTRARIO, a proposito: el cliente
 # debe ignorarla y usar el de la build; el admin debe respetarla.

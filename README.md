@@ -1,4 +1,4 @@
-# TechClean Pro — Panel de Optimización de Sistema
+# TechClean — Panel de Optimización de Sistema
 
 App de escritorio para **Windows 10 y Windows 11**: monitoreo real de CPU/RAM/
 GPU/disco/red/batería, lectura extendida de componentes (por núcleo, por
@@ -30,8 +30,8 @@ doble clic en:
 Ese archivo hace todo el trabajo una sola vez (instala lo necesario y
 compila la app) y al final te deja **dos** archivos en la misma carpeta:
 
-- **`TechCleanPro_ES.exe`** — la app en español
-- **`TechCleanPro_EN.exe`** — la app en inglés
+- **`TechClean_ES.exe`** — la app en español
+- **`TechClean_EN.exe`** — la app en inglés
 
 Quédate con el que quieras usar (o reparte los dos). Ese `.exe` sí lo puedes
 mover a tu Escritorio y abrir con doble clic para siempre — no necesitas
@@ -71,14 +71,14 @@ técnico de cada sección, por si lo necesitas.
 
 ## 1. Dos ediciones: Cliente y Administrador
 
-TechClean Pro se genera en **dos aplicaciones separadas**, a partir del
+TechClean se genera en **dos aplicaciones separadas**, a partir del
 mismo código:
 
 | | Edición Cliente | Edición Administrador |
 |---|---|---|
 | Archivo fuente | `main.py` | `main_admin.py` |
 | Script para generar el `.exe` | `Generar_App_Instalable.bat` | `Generar_App_Admin.bat` |
-| `.exe` resultante | `TechCleanPro_ES.exe` y `TechCleanPro_EN.exe` | `TechCleanPro_Admin.exe` |
+| `.exe` resultante | `TechClean_ES.exe` y `TechClean_EN.exe` | `TechClean_Admin.exe` |
 | Idioma | Fijo, según el `.exe` que descargues | Selector en Ajustes (ES/EN) |
 | Consola Dev en el menú | No existe | Siempre visible |
 | Comando técnico exacto en el Historial | Oculto | Siempre visible |
@@ -102,13 +102,13 @@ y sirve para revisar cómo queda todo en ambos idiomas sin recompilar.
 ## 2. Instalación (paso a paso, sin perderte)
 
 ### Paso 1 — Extrae el ZIP
-Descarga el archivo `TechCleanPro.zip` y **extráelo completo** (clic derecho →
+Descarga el archivo `TechClean.zip` y **extráelo completo** (clic derecho →
 "Extraer todo...") en una carpeta fácil de recordar, por ejemplo tu Escritorio.
 
 ```
-TechCleanPro/
-├── Generar_App_Instalable.bat   ← doble clic: genera TechCleanPro_ES.exe y _EN.exe
-├── Generar_App_Admin.bat        ← doble clic: genera TechCleanPro_Admin.exe
+TechClean/
+├── Generar_App_Instalable.bat   ← doble clic: genera TechClean_ES.exe y _EN.exe
+├── Generar_App_Admin.bat        ← doble clic: genera TechClean_Admin.exe
 ├── Iniciar_Rapido.bat           ← doble clic: prueba la edición cliente sin compilar
 ├── Iniciar_Rapido_Admin.bat     ← doble clic: prueba la edición admin sin compilar
 ├── main.py                      ← app + edición cliente
@@ -134,14 +134,14 @@ comprimido. Tiene que quedar la carpeta completa con TODOS los archivos.
 Python to PATH"** durante la instalación.
 
 ### Paso 3 — Abre una terminal EN esa carpeta
-Abre la carpeta `TechCleanPro` en el Explorador, clic en la barra de
+Abre la carpeta `TechClean` en el Explorador, clic en la barra de
 direcciones, escribe `powershell`, Enter.
 
 Para varias funciones (papelera, RAM, reparación, BIOS) es mejor abrirla como
 administrador: clic derecho sobre PowerShell en el menú inicio → "Ejecutar
 como administrador", y moverte con `cd` hasta la carpeta:
 ```
-cd $HOME\Desktop\TechCleanPro
+cd $HOME\Desktop\TechClean
 ```
 
 ### Paso 4 — Instala las dependencias
@@ -230,7 +230,7 @@ temporales **sin abrir ninguna ventana** — usa la bandera interna
 `--limpieza-programada`, que hace el trabajo y termina al instante.
 
 ### Reparar
-Todo con herramientas oficiales de Windows — TechClean Pro no reemplaza
+Todo con herramientas oficiales de Windows — TechClean no reemplaza
 nada, solo les da un botón:
 - **sfc /scannow** — repara archivos protegidos del sistema dañados.
 - **DISM /RestoreHealth** — repara el almacén de componentes de Windows.
@@ -247,7 +247,7 @@ corren, pero es mejor esperar antes de cerrarla.
   nada — solo deja de abrirse sola; se puede reactivar cuando quieras.
 - **Desinstalar programas**: lee la misma lista que "Programas y
   características" de Windows y ejecuta el desinstalador **oficial** de
-  cada programa — TechClean Pro nunca borra archivos de otros programas a mano.
+  cada programa — TechClean nunca borra archivos de otros programas a mano.
 
 ### Sobre Componentes — límites honestos
 - La **temperatura de CPU** no tiene una API pública y universal en Windows.
@@ -274,7 +274,7 @@ ahí: abrir el panel, mostrar/ocultar el widget, activar/desactivar Modo
 Juego, o salir de verdad.
 
 ### Inicio automático con Windows
-En **Ajustes**, activa "Iniciar TechClean Pro con Windows" — se abre solo,
+En **Ajustes**, activa "Iniciar TechClean con Windows" — se abre solo,
 minimizada, cada vez que enciendas el equipo. Usa `HKCU\...\Run`; no
 requiere administrador. Funciona igual en código fuente y en el `.exe`.
 
@@ -304,10 +304,10 @@ pip install pyinstaller
 
 REM Edición cliente — el idioma sale de build_config.py, así que hay que
 REM cambiarlo entre una compilación y la otra (IDIOMA = "es" / "en").
-pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_ES" --add-data "assets;assets" main.py
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_ES" --add-data "assets;assets" main.py
 
 REM Edición administrador
-pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_Admin" --add-data "assets;assets" main_admin.py
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" main_admin.py
 ```
 
 ---
@@ -328,7 +328,7 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
   vez de fingir que funcionó.
 - Borrar historial de navegador es **irreversible**; exige cerrarlo antes.
 - Desinstalar un programa abre su desinstalador oficial — completar el
-  proceso depende de esa ventana, TechClean Pro no controla lo que pasa
+  proceso depende de esa ventana, TechClean no controla lo que pasa
   dentro de ella.
 
 ---
@@ -457,7 +457,7 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 - Preferencias que persisten entre sesiones (`preferences.py`): widget
   flotante visible, último perfil de energía, alerta de temperatura y si
   crear punto de restauración antes de reparar — todo en un JSON local en
-  `%APPDATA%\TechCleanPro\preferencias.json`.
+  `%APPDATA%\TechClean\preferencias.json`.
 - Widget flotante ampliado: ahora también muestra temperatura de CPU/GPU
   (cuando el equipo la expone) y tiempo encendido.
 - Alertas de temperatura de CPU configurables en Ajustes, con notificación
@@ -560,7 +560,7 @@ cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 
 ## 12. Licencia y autoría
 
-TechClean Pro es **gratis** pero **no** es de dominio público ni de código
+TechClean es **gratis** pero **no** es de dominio público ni de código
 abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los
 derechos reservados.
 

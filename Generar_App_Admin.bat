@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro - Generador de la Edicion Administrador
+title TechClean - Generador de la Edicion Administrador
 echo ============================================================
-echo   TechClean Pro - Edicion ADMINISTRADOR
+echo   TechClean - Edicion ADMINISTRADOR
 echo ============================================================
 echo.
 echo Esta version muestra la Consola Dev y los comandos tecnicos
@@ -48,14 +48,14 @@ echo.
 echo Limpiando restos de compilaciones anteriores (para evitar usar codigo viejo por error)...
 rmdir /s /q build >nul 2>nul
 rmdir /s /q dist >nul 2>nul
-del /q "TechCleanPro_Admin.spec" >nul 2>nul
+del /q "TechClean_Admin.spec" >nul 2>nul
 if exist "__pycache__" rmdir /s /q "__pycache__" >nul 2>nul
 
 echo.
 echo [2/5] Compilando la Edicion Administrador...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechCleanPro_Admin" --add-data "assets;assets" main_admin.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" main_admin.py
 
-if not exist "dist\TechCleanPro_Admin.exe" (
+if not exist "dist\TechClean_Admin.exe" (
     echo.
     echo [ERROR] Algo fallo durante la compilacion. Revisa los mensajes de arriba.
     pause
@@ -64,7 +64,7 @@ if not exist "dist\TechCleanPro_Admin.exe" (
 
 echo.
 echo [3/5] Copiando el resultado a esta misma carpeta...
-copy /Y "dist\TechCleanPro_Admin.exe" "TechCleanPro_Admin.exe" >nul
+copy /Y "dist\TechClean_Admin.exe" "TechClean_Admin.exe" >nul
 
 echo.
 echo [4/5] Firma digital...
@@ -79,7 +79,7 @@ if "%CERT_THUMBPRINT%"=="" (
         echo ^(componente "Windows SDK Signing Tools"^) - https://developer.microsoft.com/windows/downloads/windows-sdk/
         echo El .exe quedo SIN firmar por esta vez.
     ) else (
-        signtool sign /sha1 %CERT_THUMBPRINT% /fd SHA256 /tr %TIMESTAMP_URL% /td SHA256 "TechCleanPro_Admin.exe"
+        signtool sign /sha1 %CERT_THUMBPRINT% /fd SHA256 /tr %TIMESTAMP_URL% /td SHA256 "TechClean_Admin.exe"
         if errorlevel 1 (
             echo [AVISO] La firma fallo - revisa que el token este conectado y CERT_THUMBPRINT sea correcto.
         ) else (
@@ -91,11 +91,11 @@ if "%CERT_THUMBPRINT%"=="" (
 echo.
 echo [5/5] Limpiando archivos temporales de la compilacion...
 rmdir /s /q build >nul 2>nul
-del /q "TechCleanPro_Admin.spec" >nul 2>nul
+del /q "TechClean_Admin.spec" >nul 2>nul
 
 echo.
 echo ============================================================
-echo   Listo. TechCleanPro_Admin.exe ya esta en esta carpeta.
+echo   Listo. TechClean_Admin.exe ya esta en esta carpeta.
 echo ============================================================
 echo.
 pause

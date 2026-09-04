@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro - Verificacion
+title TechClean - Verificacion
 cd /d "%~dp0.."
 
 echo ==========================================================
-echo   VERIFICACION COMPLETA - TechClean Pro
+echo   VERIFICACION COMPLETA - TechClean
 echo ==========================================================
 echo.
 echo Esta ventana NO se cierra sola: al terminar espera a que

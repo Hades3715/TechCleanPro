@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro - Edicion Administrador
-echo Iniciando TechClean Pro (Edicion Administrador)...
+title TechClean - Edicion Administrador
+echo Iniciando TechClean (Edicion Administrador)...
 
 where python >nul 2>nul
 if errorlevel 1 (

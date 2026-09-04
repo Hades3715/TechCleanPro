@@ -1,4 +1,4 @@
-# Licencia de TechClean Pro
+# Licencia de TechClean
 
 **Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los derechos reservados.**
 
@@ -8,7 +8,7 @@
 
 ## Español
 
-TechClean Pro es software **gratuito**, pero **no** es de dominio público ni
+TechClean es software **gratuito**, pero **no** es de dominio público ni
 de código abierto. El autor conserva todos los derechos sobre el código y
 sobre la aplicación.
 
@@ -53,7 +53,7 @@ la ejecuta.
 
 ## English
 
-TechClean Pro is **free** software, but it is **not** public domain and it is
+TechClean is **free** software, but it is **not** public domain and it is
 **not** open source. The author retains all rights over the code and the
 application.
 

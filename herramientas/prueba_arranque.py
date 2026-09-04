@@ -6,7 +6,7 @@ import os, sys, json, tempfile, traceback
 
 perfil = tempfile.mkdtemp(prefix="tcp_smoke_")
 os.environ["APPDATA"] = perfil
-carpeta = os.path.join(perfil, "TechCleanPro")
+carpeta = os.path.join(perfil, "TechClean")
 os.makedirs(carpeta, exist_ok=True)
 
 IDIOMA = sys.argv[1] if len(sys.argv) > 1 else "es"

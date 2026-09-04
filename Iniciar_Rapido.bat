@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
-title TechClean Pro
-echo Iniciando TechClean Pro...
+title TechClean
+echo Iniciando TechClean...
 
 where python >nul 2>nul
 if errorlevel 1 (

@@ -45,7 +45,7 @@ class SessionReport:
 
     def export_txt(self, path, incluir_comando=True):
         with open(path, "w", encoding="utf-8") as f:
-            f.write("REPORTE DE SESION - TechClean Pro\n")
+            f.write("REPORTE DE SESION - TechClean\n")
             f.write("=" * 60 + "\n")
             f.write(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Acciones totales: {self.total_acciones()}  "

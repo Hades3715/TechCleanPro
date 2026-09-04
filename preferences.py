@@ -48,10 +48,47 @@ _DEFAULTS = {
 # Carpetas cuya creación ya se intentó en esta ejecución.
 _carpetas_listas = set()
 
+# La app se llamaba "TechClean Pro" y guardaba en %APPDATA%\TechCleanPro.
+# Al pasar a llamarse "TechClean" hay que traerse lo que había: si no, todo
+# el mundo que ya la usaba perdería sus preferencias de golpe al actualizar
+# —widget, perfil de energía, umbrales, idioma— sin ningún aviso y sin
+# entender por qué.
+NOMBRE_CARPETA = "TechClean"
+NOMBRE_CARPETA_ANTERIOR = "TechCleanPro"
+
+
+def _traer_datos_de_la_carpeta_anterior(base, carpeta_nueva):
+    """Copia lo que hubiera en la carpeta del nombre viejo.
+
+    Se COPIA, no se mueve: si algo saliera mal a mitad, la carpeta
+    original sigue intacta y no se pierde nada. Solo se hace la primera
+    vez — en cuanto existe el preferencias.json nuevo, no se vuelve a
+    tocar, así que si el usuario cambia algo ya no se le pisa con lo viejo.
+    """
+    vieja = os.path.join(base, NOMBRE_CARPETA_ANTERIOR)
+    if not os.path.isdir(vieja) or os.path.exists(os.path.join(carpeta_nueva, "preferencias.json")):
+        return
+    import shutil
+    try:
+        for nombre in os.listdir(vieja):
+            origen = os.path.join(vieja, nombre)
+            destino = os.path.join(carpeta_nueva, nombre)
+            if os.path.exists(destino):
+                continue
+            try:
+                if os.path.isdir(origen):
+                    shutil.copytree(origen, destino)
+                else:
+                    shutil.copy2(origen, destino)
+            except Exception:
+                continue
+    except OSError:
+        pass
+
 
 def carpeta_datos():
     """
-    Carpeta persistente por usuario (%APPDATA%\\TechCleanPro) — a diferencia
+    Carpeta persistente por usuario (%APPDATA%\\TechClean) — a diferencia
     de la carpeta de la app, esta SÍ sobrevive entre ejecuciones incluso en
     la versión compilada (.exe): la carpeta de la app compilada es una
     carpeta temporal que Windows borra al cerrarla. Se usa para
@@ -68,10 +105,11 @@ def carpeta_datos():
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
     else:
         base = os.path.expanduser("~")
-    carpeta = os.path.join(base, "TechCleanPro")
+    carpeta = os.path.join(base, NOMBRE_CARPETA)
     if carpeta not in _carpetas_listas:
         try:
             os.makedirs(carpeta, exist_ok=True)
+            _traer_datos_de_la_carpeta_anterior(base, carpeta)
         except Exception:
             pass
         _carpetas_listas.add(carpeta)
