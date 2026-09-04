@@ -452,8 +452,15 @@ def _startup_registry_path():
     return r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
+def _ruta_ejecutable_actual():
+    """Con qué hay que arrancar esta app: el .exe si está compilada, o
+    python + el script si se está ejecutando desde el código."""
+    if getattr(sys, "frozen", False):
+        return sys.executable, ""
+    return sys.executable, os.path.abspath(sys.argv[0])
+
+
 def is_startup_enabled():
-    comando = f'schtasks /query /tn "{NOMBRE_TAREA_INICIO}"'
     if not IS_WINDOWS:
         return False
     try:
@@ -463,6 +470,45 @@ def is_startup_enabled():
         return r.returncode == 0
     except Exception:
         return False
+
+
+def diagnostico_inicio_automatico():
+    """Estado real de la tarea de inicio. Devuelve una CLAVE de idiomas.
+
+    Que la tarea exista no significa que vaya a arrancar. Hay dos formas
+    de tener una tarea que se ve perfecta y no hace nada:
+
+      * "config_vieja": creada por una versión anterior de la app, con el
+        bloqueo por batería que ponía `schtasks /create` por su cuenta. En
+        un portátil sin enchufar, no arranca nunca.
+
+      * "ruta_vieja": la tarea guarda una ruta absoluta. Si después mueves
+        la carpeta de la app —de Descargas al Escritorio, por ejemplo— la
+        tarea sigue ahí, el interruptor se sigue viendo encendido, y al
+        encender el equipo no pasa nada: apunta a un archivo que ya no
+        existe. Imposible de adivinar sin que alguien lo diga.
+
+    Devuelve None si no hay tarea (que no es un problema: es que está
+    apagado), o una de: "inicio_ok", "inicio_config_vieja",
+    "inicio_ruta_vieja".
+    """
+    if not IS_WINDOWS:
+        return None
+    try:
+        r = subprocess.run(["schtasks", "/query", "/tn", NOMBRE_TAREA_INICIO, "/xml"],
+                            capture_output=True, text=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+        if r.returncode != 0 or not r.stdout:
+            return None
+        xml = r.stdout.replace(" ", "").replace("\n", "").replace("\r", "")
+        if "<DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>" in xml:
+            return "inicio_config_vieja"
+        exe, _script = _ruta_ejecutable_actual()
+        if os.path.normcase(exe) not in os.path.normcase(r.stdout):
+            return "inicio_ruta_vieja"
+        return "inicio_ok"
+    except Exception:
+        return None
 
 
 def set_startup(habilitar):
@@ -487,20 +533,109 @@ def set_startup(habilitar):
         except Exception:
             return False, comando
 
-    if getattr(sys, "frozen", False):
-        ruta_exe = sys.executable
-    else:
-        ruta_exe = f'{sys.executable} "{os.path.abspath(sys.argv[0])}"'
-    comando = (f'schtasks /create /tn "{NOMBRE_TAREA_INICIO}" /tr "{ruta_exe} --minimizado" '
-               f'/sc onlogon /rl highest /f')
+    # BUG GORDO corregido: "activo el interruptor pero la app no arranca
+    # con Windows".
+    #
+    # La tarea SÍ se creaba, y se veía habilitada. El problema es lo que
+    # `schtasks /create` pone por su cuenta, sin avisar, y que desde la
+    # línea de comandos no se puede cambiar:
+    #
+    #     <DisallowStartIfOnBatteries>true</DisallowStartIfOnBatteries>
+    #     <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
+    #
+    # O sea: **en un portátil con batería, la tarea no arranca**. Y si ya
+    # estaba corriendo y desenchufas, Windows la mata. Para un estudiante
+    # que casi siempre trabaja sin cargador, eso es "nunca funciona" — sin
+    # ningún error, sin ninguna pista.
+    #
+    # Ese ajuste solo se puede tocar definiendo la tarea por XML, así que
+    # eso se hace ahora. De paso se arreglan tres cosas más:
+    #
+    #   * Un retraso de 30 s tras iniciar sesión. Arrancar a la vez que el
+    #     escritorio es pelearse con Windows por el disco justo en el peor
+    #     momento, y encima se nota.
+    #   * Sin límite de tiempo de ejecución. Por defecto Windows mata la
+    #     tarea a los 3 días, y esta app está pensada para vivir en la
+    #     bandeja.
+    #   * La ruta va en su propio campo XML, así que una carpeta con
+    #     espacios (C:\Program Files\...) deja de ser un problema de
+    #     comillas.
+    exe, script = _ruta_ejecutable_actual()
+    argumentos = (f'"{script}" --minimizado' if script else "--minimizado")
+    usuario = os.environ.get("USERNAME", "")
+    dominio = os.environ.get("USERDOMAIN", "")
+    id_usuario = f"{dominio}\\{usuario}" if dominio and usuario else usuario
+    carpeta_trabajo = os.path.dirname(exe)
+
+    comando = f'schtasks /create /tn "{NOMBRE_TAREA_INICIO}" /xml <definicion> /f'
+
+    xml = f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Inicia TechClean Pro minimizado en la bandeja al iniciar sesion.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>{id_usuario}</UserId>
+      <Delay>PT30S</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{id_usuario}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{exe}</Command>
+      <Arguments>{argumentos}</Arguments>
+      <WorkingDirectory>{carpeta_trabajo}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"""
+    ruta_xml = None
     try:
+        # El Programador de tareas exige UTF-16 con marca de orden de bytes:
+        # con UTF-8 rechaza el archivo sin dar una razón entendible.
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False,
+                                          encoding="utf-16") as f:
+            f.write(xml)
+            ruta_xml = f.name
         r = subprocess.run(
-            ["schtasks", "/create", "/tn", NOMBRE_TAREA_INICIO,
-             "/tr", f'{ruta_exe} --minimizado', "/sc", "onlogon", "/rl", "highest", "/f"],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+            ["schtasks", "/create", "/tn", NOMBRE_TAREA_INICIO, "/xml", ruta_xml, "/f"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         return r.returncode == 0, comando
     except Exception:
         return False, comando
+    finally:
+        if ruta_xml:
+            try:
+                os.remove(ruta_xml)
+            except OSError:
+                pass
 
 
 # ---------------- Perfiles de energía (Silencioso / Equilibrado / Rendimiento) ----------------

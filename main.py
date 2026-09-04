@@ -5417,11 +5417,30 @@ class TechCleanApp(ctk.CTk):
                      font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
         self.switch_inicio = ctk.CTkSwitch(fila_inicio, text="", command=self._toggle_inicio_automatico)
         self.switch_inicio.pack(side="right")
-        if opt.is_startup_enabled():
-            self.switch_inicio.select()
         ctk.CTkLabel(panel, text=t("ajustes_inicio_windows_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
-            padx=20, pady=(0, 20), anchor="w")
+            padx=20, pady=(0, 4), anchor="w")
+
+        # Aviso para una tarea que existe pero no va a arrancar — ver
+        # opt.diagnostico_inicio_automatico(). Nace oculto y solo aparece
+        # si de verdad hay algo que decir.
+        self.fila_aviso_inicio = ctk.CTkFrame(panel, fg_color="transparent")
+        self.lbl_aviso_inicio = ctk.CTkLabel(self.fila_aviso_inicio, text="",
+                                              font=ctk.CTkFont(size=11), text_color=COLOR_WARN,
+                                              wraplength=620, justify="left")
+        self.lbl_aviso_inicio.pack(side="left", padx=(0, 10))
+        self.btn_arreglar_inicio = ctk.CTkButton(self.fila_aviso_inicio, width=110,
+                                                  text=t("ajustes_inicio_arreglar"),
+                                                  command=self._arreglar_inicio_automatico)
+        self.btn_arreglar_inicio.pack(side="left")
+
+        # is_startup_enabled() y el diagnóstico llaman a schtasks: hasta 10 s
+        # de subproceso. En el hilo principal congelaban Ajustes al abrirlo.
+        def worker_estado_inicio():
+            activo = opt.is_startup_enabled()
+            estado = opt.diagnostico_inicio_automatico() if activo else None
+            self.after(0, lambda: self._pintar_estado_inicio(activo, estado))
+        threading.Thread(target=worker_estado_inicio, daemon=True).start()
 
         sep2 = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
         sep2.pack(fill="x", padx=20, pady=10)
@@ -6185,6 +6204,52 @@ class TechCleanApp(ctk.CTk):
         prefs.guardar({"alerta_temp_cpu": valor})
         self._mostrar_popup_info(t("ajustes_alerta_guardada_titulo"),
                                   t("ajustes_alerta_guardada_msg", valor=f"{valor:.0f}"))
+
+    def _pintar_estado_inicio(self, activo, estado):
+        """Pone el interruptor donde toca y avisa si la tarea no va a servir."""
+        if not (hasattr(self, "switch_inicio") and self.switch_inicio.winfo_exists()):
+            return
+        if activo:
+            self.switch_inicio.select()
+        else:
+            self.switch_inicio.deselect()
+
+        if not (hasattr(self, "fila_aviso_inicio") and self.fila_aviso_inicio.winfo_exists()):
+            return
+        # Las claves se nombran enteras a propósito, sin construirlas
+        # pegando trozos: verificar_idiomas.py no puede seguir una clave
+        # armada al vuelo, y avisaría de que están sin usar.
+        avisos = {
+            "inicio_config_vieja": "ajustes_inicio_config_vieja",
+            "inicio_ruta_vieja": "ajustes_inicio_ruta_vieja",
+        }
+        if estado in avisos:
+            self.lbl_aviso_inicio.configure(text=t(avisos[estado]))
+            self.fila_aviso_inicio.pack(fill="x", padx=20, pady=(0, 16), anchor="w")
+        else:
+            self.fila_aviso_inicio.pack_forget()
+
+    def _arreglar_inicio_automatico(self):
+        """Vuelve a crear la tarea con la definición buena. Es lo mismo que
+        apagar y encender el interruptor, pero sin que el usuario tenga que
+        adivinar que eso era la solución."""
+        self.btn_arreglar_inicio.configure(state="disabled")
+
+        def worker():
+            exito, comando = opt.set_startup(True)
+            estado = opt.diagnostico_inicio_automatico() if exito else None
+            msg = t("ajustes_inicio_agregado") if exito else t("ajustes_inicio_error")
+            self._log_dev(t("ajustes_log_inicio_auto"), comando, msg,
+                          seccion=t("seccion_ajustes"), exito=exito)
+
+            def despues():
+                if hasattr(self, "btn_arreglar_inicio") and self.btn_arreglar_inicio.winfo_exists():
+                    self.btn_arreglar_inicio.configure(state="normal")
+                self._pintar_estado_inicio(True, estado)
+                if not exito:
+                    self._mostrar_popup_info(t("ajustes_inicio_windows_titulo"), msg)
+            self.after(0, despues)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _toggle_inicio_automatico(self):
         # opt.set_startup() crea/borra una tarea programada con schtasks:

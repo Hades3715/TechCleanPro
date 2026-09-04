@@ -120,6 +120,12 @@ TEXTOS = {
         "ajustes_inicio_windows_titulo": "Iniciar TechClean Pro con Windows",
         "ajustes_inicio_windows_desc": "Así queda disponible en la bandeja del sistema desde que enciendes el "
                                         "equipo, sin abrir la ventana automáticamente.",
+        "ajustes_inicio_arreglar": "Arreglar",
+        "ajustes_inicio_config_vieja": "⚠ La tarea de inicio existe, pero la creó una versión anterior de la app "
+                                        "y Windows tiene marcado \"no iniciar si el equipo va con batería\". En un "
+                                        "portátil sin enchufar no arranca nunca. Pulsa Arreglar para crearla bien.",
+        "ajustes_inicio_ruta_vieja": "⚠ La tarea de inicio apunta a otra carpeta — seguramente moviste la aplicación "
+                                      "después de activarla. Pulsa Arreglar para que apunte aquí.",
         "ajustes_alerta_temp_titulo": "🌡 Avisarme si la CPU pasa de (°C)",
         "ajustes_guardar": "Guardar",
         "ajustes_alerta_temp_desc": "Deja el campo vacío y presiona Guardar para desactivar la alerta. Solo "
@@ -1263,6 +1269,12 @@ TEXTOS = {
         "ajustes_inicio_windows_titulo": "Start TechClean Pro with Windows",
         "ajustes_inicio_windows_desc": "This makes it available in the system tray as soon as you turn on "
                                         "your computer, without opening the window automatically.",
+        "ajustes_inicio_arreglar": "Fix it",
+        "ajustes_inicio_config_vieja": "⚠ The startup task exists, but an older version of the app created it and "
+                                        "Windows has \"don't start if the computer is on battery\" ticked. On an "
+                                        "unplugged laptop it never starts. Press Fix it to recreate it properly.",
+        "ajustes_inicio_ruta_vieja": "⚠ The startup task points to a different folder — you probably moved the app "
+                                      "after turning this on. Press Fix it to point it here.",
         "ajustes_alerta_temp_titulo": "🌡 Alert me if CPU goes above (°C)",
         "ajustes_guardar": "Save",
         "ajustes_alerta_temp_desc": "Leave the field empty and press Save to turn off the alert. Only works "
