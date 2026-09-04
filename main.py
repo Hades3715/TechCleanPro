@@ -904,7 +904,12 @@ class TechCleanApp(ctk.CTk):
 
         self.modo_desarrollador = tk.BooleanVar(value=False)
         self.dev_console = None
-        self.reporte = rep.SessionReport()
+        # El historial ahora sobrevive al cierre de la app: se guarda en
+        # %APPDATA%\TechClean. Se recorta al arrancar para que el archivo no
+        # engorde sin freno en la carpeta del usuario — un archivo que crece
+        # solo es justo lo que esta app le critica a otros programas.
+        self.reporte = rep.SessionReport(carpeta_datos=prefs.carpeta_datos())
+        threading.Thread(target=self.reporte.recortar_historial, daemon=True).start()
 
         self._easter_clicks = 0
         self._easter_last_click = 0
@@ -4872,38 +4877,111 @@ class TechCleanApp(ctk.CTk):
                      font=ctk.CTkFont(size=12), text_color="gray60").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
+        # Elegir entre lo de ahora y todo lo guardado. Antes solo existía lo
+        # de la sesión, porque al cerrar la app se perdía todo.
+        self.ambito_historial = ctk.CTkSegmentedButton(
+            self.contenido, values=[t("hist_ambito_sesion"), t("hist_ambito_todo")],
+            command=lambda v: self._cambiar_ambito_historial())
+        self.ambito_historial.set(t("hist_ambito_sesion"))
+        self.ambito_historial.grid(row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 8))
+
         resumen = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
-        resumen.grid(row=2, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
-        texto_resumen = t("hist_resumen",
-                          total=self.reporte.total_acciones(),
-                          exitosas=self.reporte.total_exitosas(),
-                          fallidas=self.reporte.total_fallidas(),
-                          espacio=opt.format_bytes(self.reporte.total_bytes_liberados()))
-        ctk.CTkLabel(resumen, text=texto_resumen, font=ctk.CTkFont(size=13, weight="bold")).pack(
-            padx=16, pady=12, anchor="w")
+        resumen.grid(row=3, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
+        self.lbl_resumen_historial = ctk.CTkLabel(resumen, text="",
+                                                   font=ctk.CTkFont(size=13, weight="bold"),
+                                                   wraplength=900, justify="left")
+        self.lbl_resumen_historial.pack(padx=16, pady=12, anchor="w")
 
         fila_busqueda = ctk.CTkFrame(self.contenido, fg_color="transparent")
-        fila_busqueda.grid(row=3, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 6))
+        fila_busqueda.grid(row=4, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 6))
         self.entry_buscar_historial = ctk.CTkEntry(
             fila_busqueda, placeholder_text=t("hist_buscar_placeholder"))
         self.entry_buscar_historial.pack(side="left", fill="x", expand=True, padx=(0, 8))
         self.entry_buscar_historial.bind("<KeyRelease>", lambda e: self._filtrar_historial())
 
-        secciones = sorted({e["seccion"] for e in self.reporte.entries}) or []
         self.combo_seccion_historial = ctk.CTkOptionMenu(
-            fila_busqueda, values=[t("hist_todas_secciones")] + secciones, width=180,
+            fila_busqueda, values=[t("hist_todas_secciones")], width=180,
             command=lambda v: self._filtrar_historial())
         self.combo_seccion_historial.set(t("hist_todas_secciones"))
         self.combo_seccion_historial.pack(side="left")
 
-        self.contenido.grid_rowconfigure(4, weight=1)
+        self.contenido.grid_rowconfigure(5, weight=1)
         self.lista_historial = ctk.CTkScrollableFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
-        self.lista_historial.grid(row=4, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
+        self.lista_historial.grid(row=5, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
 
-        self._filtrar_historial()
+        self._cambiar_ambito_historial()
 
-        ctk.CTkButton(self.contenido, text=t("hist_exportar"),
-                      command=self._exportar_reporte).grid(row=5, column=0, sticky="w", padx=8, pady=8)
+        fila_botones_hist = ctk.CTkFrame(self.contenido, fg_color="transparent")
+        fila_botones_hist.grid(row=6, column=0, columnspan=3, sticky="w", padx=8, pady=8)
+        ctk.CTkButton(fila_botones_hist, text=t("hist_exportar"),
+                      command=self._exportar_reporte).pack(side="left", padx=(0, 8))
+        self.btn_borrar_historial = ctk.CTkButton(
+            fila_botones_hist, text=t("hist_borrar"), fg_color="#2a2d36", hover_color="#3a3e4a",
+            command=self._confirmar_borrar_historial)
+        self.btn_borrar_historial.pack(side="left")
+
+    def _viendo_historial_completo(self):
+        return (hasattr(self, "ambito_historial") and self.ambito_historial.winfo_exists()
+                and self.ambito_historial.get() == t("hist_ambito_todo"))
+
+    def _entradas_del_ambito(self):
+        """Las entradas que toca mostrar según lo elegido arriba."""
+        if self._viendo_historial_completo():
+            return self.reporte.historial_completo()
+        return self.reporte.entradas_recientes_primero()
+
+    def _cambiar_ambito_historial(self):
+        """Rehace el resumen y la lista de secciones al cambiar de ámbito.
+
+        Leer el historial completo toca el disco, así que va en un hilo: con
+        3000 acciones guardadas se notaría el tirón al pulsar."""
+        completo = self._viendo_historial_completo()
+
+        def worker():
+            if completo:
+                resumen = self.reporte.resumen_historial()
+                entradas = self.reporte.historial_completo()
+                texto = t("hist_resumen_todo",
+                          total=resumen["acciones"], sesiones=resumen["sesiones"],
+                          espacio=opt.format_bytes(resumen["bytes"]),
+                          desde=resumen["desde"] or t("hist_sin_fecha"))
+            else:
+                entradas = self.reporte.entradas_recientes_primero()
+                texto = t("hist_resumen",
+                          total=self.reporte.total_acciones(),
+                          exitosas=self.reporte.total_exitosas(),
+                          fallidas=self.reporte.total_fallidas(),
+                          espacio=opt.format_bytes(self.reporte.total_bytes_liberados()))
+            secciones = sorted({e.get("seccion", "") for e in entradas if e.get("seccion")})
+
+            def pintar():
+                if not (hasattr(self, "lbl_resumen_historial")
+                        and self.lbl_resumen_historial.winfo_exists()):
+                    return
+                self.lbl_resumen_historial.configure(text=texto)
+                elegida = self.combo_seccion_historial.get()
+                self.combo_seccion_historial.configure(
+                    values=[t("hist_todas_secciones")] + secciones)
+                # Si la sección que estaba elegida ya no existe en este
+                # ámbito, se vuelve a "todas" en vez de dejar una selección
+                # que no filtra nada y deja la lista vacía sin explicación.
+                if elegida not in secciones:
+                    self.combo_seccion_historial.set(t("hist_todas_secciones"))
+                self._filtrar_historial()
+            self.after(0, pintar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _confirmar_borrar_historial(self):
+        self._pedir_confirmacion(
+            t("hist_borrar_titulo"), t("hist_borrar_mensaje"), t("hist_borrar"),
+            self._borrar_historial)
+
+    def _borrar_historial(self):
+        exito = self.reporte.borrar_historial()
+        self._log_dev(t("hist_log_borrar"), "historial.jsonl",
+                      t("hist_borrado") if exito else t("hist_borrar_error"),
+                      seccion=t("seccion_historial"), exito=exito)
+        self._cambiar_ambito_historial()
 
     def _filtrar_historial(self):
         if not (hasattr(self, "lista_historial") and self.lista_historial.winfo_exists()):
@@ -4914,18 +4992,22 @@ class TechCleanApp(ctk.CTk):
         termino = self.entry_buscar_historial.get().strip().lower() if hasattr(self, "entry_buscar_historial") else ""
         seccion_elegida = (self.combo_seccion_historial.get()
                            if hasattr(self, "combo_seccion_historial") else t("hist_todas_secciones"))
-        entradas = self.reporte.entradas_recientes_primero()
+        entradas = self._entradas_del_ambito()
         if termino:
-            entradas = [e for e in entradas if termino in e["accion"].lower()
-                        or termino in e["seccion"].lower()
-                        or termino in e["resultado"].lower()]
+            entradas = [e for e in entradas
+                        if termino in (e.get("accion") or "").lower()
+                        or termino in (e.get("seccion") or "").lower()
+                        or termino in (e.get("resultado") or "").lower()]
         if seccion_elegida and seccion_elegida != t("hist_todas_secciones"):
-            entradas = [e for e in entradas if e["seccion"] == seccion_elegida]
+            entradas = [e for e in entradas if e.get("seccion") == seccion_elegida]
 
         if not entradas:
-            texto = (t("hist_vacio")
-                     if not termino and seccion_elegida == t("hist_todas_secciones")
-                     else t("hist_sin_resultados"))
+            sin_filtros = not termino and seccion_elegida == t("hist_todas_secciones")
+            if not sin_filtros:
+                texto = t("hist_sin_resultados")
+            else:
+                texto = (t("hist_vacio_historial") if self._viendo_historial_completo()
+                         else t("hist_vacio"))
             ctk.CTkLabel(self.lista_historial, text=texto, text_color="gray60").pack(padx=16, pady=16)
         else:
             for e in entradas:
@@ -4954,14 +5036,26 @@ class TechCleanApp(ctk.CTk):
                      anchor="w", wraplength=900, justify="left").pack(fill="x", padx=12, pady=(1, 10))
 
     def _exportar_reporte(self):
+        """Exporta lo que se está viendo: la sesión o el historial entero."""
+        completo = self._viendo_historial_completo()
+        nombre = "historial_techclean.txt" if completo else "reporte_techclean.txt"
         carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
-        destino = os.path.join(carpeta, "reporte_techclean.txt")
         incluir_comando = (EDICION == "admin")
         try:
-            ruta = self.reporte.export_txt(destino, incluir_comando=incluir_comando)
+            ruta = self.reporte.export_txt(os.path.join(carpeta, nombre),
+                                            incluir_comando=incluir_comando,
+                                            incluir_historial=completo)
         except Exception:
-            ruta = self.reporte.export_txt(os.path.join(prefs.carpeta_datos(), "reporte_techclean.txt"),
-                                            incluir_comando=incluir_comando)
+            # El Escritorio puede no ser escribible (carpeta redirigida,
+            # permisos, OneDrive sin sesión): se cae a la carpeta de datos,
+            # que es nuestra y siempre existe.
+            try:
+                ruta = self.reporte.export_txt(os.path.join(prefs.carpeta_datos(), nombre),
+                                                incluir_comando=incluir_comando,
+                                                incluir_historial=completo)
+            except Exception:
+                self._mostrar_popup_info(t("hist_exportado_titulo"), t("hist_export_error"))
+                return
         self._mostrar_popup_info(t("hist_exportado_titulo"), t("hist_exportado_msg", ruta=ruta))
 
     def _mostrar_popup_info(self, titulo, mensaje):
@@ -5263,24 +5357,27 @@ class TechCleanApp(ctk.CTk):
         ctk.CTkLabel(panel, text="", font=ctk.CTkFont(size=1)).pack(pady=6)
 
     def _confirmar_apagar(self):
-        self._confirmar_accion_energia(
+        self._pedir_confirmacion(
             t("energia_conf_apagar_tit"), t("energia_conf_apagar_msg"),
             t("energia_conf_apagar_btn"),
             lambda: self._ejecutar_accion_energia(opt.apagar_equipo, t("energia_log_apagar")))
 
     def _confirmar_reiniciar(self):
-        self._confirmar_accion_energia(
+        self._pedir_confirmacion(
             t("energia_conf_reiniciar_tit"), t("energia_conf_reiniciar_msg"),
             t("energia_conf_reiniciar_btn"),
             lambda: self._ejecutar_accion_energia(opt.reiniciar_equipo, t("energia_log_reiniciar")))
 
     def _confirmar_reinicio_bios(self):
-        self._confirmar_accion_energia(
+        self._pedir_confirmacion(
             t("energia_conf_bios_tit"), t("energia_conf_bios_msg"),
             t("energia_conf_bios_btn"),
             lambda: self._ejecutar_accion_energia(opt.restart_to_uefi, t("energia_log_bios")))
 
-    def _confirmar_accion_energia(self, titulo, mensaje, texto_boton, accion_confirmada):
+    def _pedir_confirmacion(self, titulo, mensaje, texto_boton, accion_confirmada):
+        """Ventana de "¿seguro?" reutilizable. Nacio para Energia (de ahi el
+        nombre viejo, _confirmar_accion_energia) pero no tiene nada de
+        Energia: la usa cualquier accion que convenga confirmar."""
         dialogo = ctk.CTkToplevel(self)
         dialogo.title(t("comun_confirmar_titulo"))
         dialogo.geometry("420x200")

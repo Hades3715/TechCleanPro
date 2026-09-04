@@ -52,19 +52,27 @@ python herramientas\prueba_ediciones.py cliente
 python herramientas\prueba_ediciones.py admin
 echo.
 
-echo ---------- 8. Limpieza de temporales (no borrar la propia app) ----------
+echo ---------- 8. Historial que sobrevive al cierre ----------
+python herramientas\prueba_historial.py
+echo.
+
+echo ---------- 9. Hilos e interfaz (el error de main thread) ----------
+python herramientas\prueba_hilos_interfaz.py
+echo.
+
+echo ---------- 10. Limpieza de temporales (no borrar la propia app) ----------
 python herramientas\prueba_limpieza_temp.py
 echo.
 
-echo ---------- 9. Arranque real en espanol ----------
+echo ---------- 11. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 10. Arranque real en ingles ----------
+echo ---------- 12. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
-echo ---------- 11. Velocidad de internet (necesita conexion) ----------
+echo ---------- 13. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause
