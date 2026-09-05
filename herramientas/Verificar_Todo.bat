@@ -84,15 +84,23 @@ echo ---------- 15. Todas las pantallas y pestanas (en) ----------
 python herramientasevisar_pantallas.py en
 echo.
 
-echo ---------- 16. Arranque real en espanol ----------
+echo ---------- 16. Ajustes: surten efecto sin reiniciar ----------
+python herramientasevisar_ajustes.py
+echo.
+
+echo ---------- 17. Bucles de refresco no se duplican ----------
+python herramientas\prueba_bucles.py
+echo.
+
+echo ---------- 18. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 17. Arranque real en ingles ----------
+echo ---------- 19. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
-echo ---------- 18. Velocidad de internet (necesita conexion) ----------
+echo ---------- 20. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause

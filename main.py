@@ -1730,7 +1730,31 @@ class TechCleanApp(ctk.CTk):
         etiqueta.pack(fill="x", padx=14, pady=(0, 14))
         return etiqueta
 
-    def _refrescar_componentes(self):
+    def _refrescar_componentes(self, generacion=None):
+        """Bucle de refresco de la pantalla Componentes.
+
+        BUG corregido: se detenía comprobando si panel_cpu seguía vivo, y
+        eso casi siempre basta... pero deja una ventana de unos segundos.
+        Al salir de Componentes el bucle viejo tiene un tic ya programado;
+        si el usuario VUELVE a entrar antes de que ese tic salte, se
+        encuentra un panel_cpu nuevo, da la comprobación por buena y sigue
+        vivo — sumándose al bucle que acaba de arrancar la pantalla.
+
+        Entrar y salir de Componentes un par de veces seguidas es de lo
+        más normal, y cada ida y vuelta rápida dejaba un bucle más
+        corriendo para siempre, cada uno lanzando consultas WMI cada pocos
+        segundos. En una app cuyo trabajo es aligerar el equipo, que se
+        vaya cargando sola con el uso es de lo peor que puede pasar.
+
+        Ahora cada visita a la pantalla estrena número: los tics de una
+        visita anterior se dan cuenta de que ya no les toca y se apagan.
+        """
+        if generacion is None:
+            self._generacion_componentes = getattr(self, "_generacion_componentes", 0) + 1
+            generacion = self._generacion_componentes
+        elif generacion != getattr(self, "_generacion_componentes", 0):
+            return                      # tic de una visita anterior: se descarta
+
         if not (hasattr(self, "panel_cpu") and self.panel_cpu.winfo_exists()):
             return
 
@@ -1787,7 +1811,9 @@ class TechCleanApp(ctk.CTk):
                     self._pintar_componentes(datos)
                 elif hasattr(self, "panel_cpu") and self.panel_cpu.winfo_exists():
                     self.panel_cpu.configure(text=t("comp_reintentando", error=error))
-                self.after(self._intervalo(3000), self._refrescar_componentes)
+                # Se pasa el número de esta visita: si para cuando salte el
+                # tic ya hay una visita más nueva, este bucle se apaga solo.
+                self.after(self._intervalo(3000), self._refrescar_componentes, generacion)
             self.after(0, _terminar)
 
         threading.Thread(target=worker, daemon=True).start()

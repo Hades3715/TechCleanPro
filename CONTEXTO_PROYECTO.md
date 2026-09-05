@@ -501,6 +501,21 @@ Vale documentarlo para no volver a revisarlo desde cero:
   ya se llaman todas desde un hilo.
 - Los 21 comandos del panel oculto están implementados y anunciados, y la
   entrada rara (vacía, 5000 caracteres, símbolos, acentos) no rompe nada.
+- Los 19 guardados de preferencias actualizan también la copia en memoria
+  (`self.prefs`), así que ningún ajuste necesita reiniciar para aplicarse.
+
+### Lo único que salió de la revisión de bucles
+
+`_refrescar_componentes` se paraba comprobando si su panel seguía vivo, y
+eso casi siempre basta — pero al salir de la pantalla queda un tic ya
+programado. Si el usuario volvía a entrar antes de que saltara, ese tic se
+encontraba un panel nuevo, daba la comprobación por buena y seguía vivo,
+sumándose al bucle recién arrancado. Cada ida y vuelta rápida dejaba un
+bucle más, cada uno consultando WMI cada pocos segundos, para siempre.
+
+**Lección para cualquier bucle nuevo:** comprobar que el widget siga vivo
+NO alcanza para pararlo. Hace falta un número de generación, como el que
+ya usaban la prueba de velocidad y el autopiloto.
 
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
@@ -527,6 +542,8 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
 | `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
+| `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar (que se actualice `self.prefs`, no solo el disco) |
+| `prueba_bucles.py` | Que entrar y salir de Componentes deprisa no deje bucles de refresco acumulados |
 
 Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
 a una carpeta temporal.
