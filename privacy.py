@@ -163,16 +163,35 @@ def clear_browser_cache(nombre):
     if not os.path.isdir(cache_path):
         return True, 0, t("privmod_sin_cache", navegador=nombre)
 
-    liberado = 0
-    for root, _, files in os.walk(cache_path):
-        for f in files:
-            fp = os.path.join(root, f)
-            try:
-                liberado += os.path.getsize(fp)
-            except OSError:
-                pass
+    def _tamano_de(ruta):
+        total = 0
+        for carpeta, _sub, archivos in os.walk(ruta):
+            for a in archivos:
+                try:
+                    total += os.path.getsize(os.path.join(carpeta, a))
+                except OSError:
+                    pass
+        return total
+
+    # BUG corregido: se medía el tamaño ANTES de borrar y se informaba ese
+    # número como "espacio liberado", pasara lo que pasara después. Y
+    # rmtree va con ignore_errors=True, que significa que NUNCA lanza
+    # excepción: el except de abajo era código muerto y la función devolvía
+    # siempre éxito.
+    #
+    # En la práctica un navegador deja archivos bloqueados aunque parezca
+    # cerrado (Chrome se queda con procesos en segundo plano), así que se
+    # borraba una parte y la app anunciaba haber liberado el total. Ahora
+    # se vuelve a medir después y se informa lo que se liberó DE VERDAD.
+    tamano_antes = _tamano_de(cache_path)
     try:
         shutil.rmtree(cache_path, ignore_errors=True)
-        return True, liberado, t("privmod_cache_ok", navegador=nombre, ruta=cache_path)
     except Exception as e:
         return False, 0, t("privmod_cache_error", navegador=nombre, error=e)
+
+    tamano_despues = _tamano_de(cache_path) if os.path.isdir(cache_path) else 0
+    liberado = max(0, tamano_antes - tamano_despues)
+    if tamano_despues == 0 or liberado > 0:
+        return True, liberado, t("privmod_cache_ok", navegador=nombre, ruta=cache_path)
+    # No se pudo borrar nada: casi siempre es el navegador todavía vivo.
+    return False, 0, t("privmod_cache_bloqueada", navegador=nombre)

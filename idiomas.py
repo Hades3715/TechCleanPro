@@ -1117,6 +1117,7 @@ TEXTOS = {
         "privmod_sin_ruta": "{navegador} no tiene ruta de caché configurada en esta versión.",
         "privmod_sin_cache": "{navegador} no tenía caché acumulado.",
         "privmod_cache_ok": "Caché de {navegador} eliminado ({ruta})",
+        "privmod_cache_bloqueada": "No se pudo borrar el caché de {navegador}: los archivos siguen bloqueados. Ciérralo del todo (mira que no queden procesos suyos en segundo plano) y vuelve a intentarlo.",
         "privmod_cache_error": "Error al limpiar caché de {navegador}: {error}",
         # ---- Acciones rápidas del Dashboard (historial) ----
         "dash_log_optimizacion": "Optimización rápida",
@@ -2276,6 +2277,7 @@ TEXTOS = {
         "privmod_sin_ruta": "{navegador} has no cache path configured in this version.",
         "privmod_sin_cache": "{navegador} had no cache built up.",
         "privmod_cache_ok": "{navegador} cache removed ({ruta})",
+        "privmod_cache_bloqueada": "{navegador}'s cache couldn't be deleted: the files are still locked. Close it completely (check it has no background processes left) and try again.",
         "privmod_cache_error": "Error clearing {navegador} cache: {error}",
         # ---- Dashboard quick actions (history) ----
         "dash_log_optimizacion": "Quick optimization",

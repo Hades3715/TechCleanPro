@@ -324,13 +324,17 @@ def empty_recycle_bin():
 
 
 def flush_dns():
+    """BUG corregido: no se miraba el resultado, así que la app decía
+    "caché DNS limpiada ✅" aunque ipconfig hubiera fallado (pasa si hace
+    falta elevación). Y sin timeout se podía quedar esperando para siempre
+    si el servicio de DNS no responde."""
     comando = "ipconfig /flushdns"
     if not IS_WINDOWS:
         return False, comando
     try:
-        subprocess.run(["ipconfig", "/flushdns"], capture_output=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-        return True, comando
+        r = subprocess.run(["ipconfig", "/flushdns"], capture_output=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=20)
+        return r.returncode == 0, comando
     except Exception:
         return False, comando
 
@@ -344,9 +348,16 @@ def restart_to_uefi():
     comando = "shutdown /r /fw /t 5"
     if not IS_WINDOWS:
         return False, comando
+    # BUG corregido: estas tres eran las UNICAS llamadas a shutdown.exe sin
+    # capture_output ni CREATE_NO_WINDOW (comparar con
+    # cancelar_apagado_programado, unas lineas mas abajo, que si los lleva).
+    # En la app compilada con --windowed no hay consola, asi que al apagar,
+    # reiniciar o entrar a la BIOS se veia asomar una ventana negra justo
+    # antes de que la pantalla se fuera. Ademas no llevaban timeout.
     try:
-        subprocess.run(["shutdown", "/r", "/fw", "/t", "5"], check=True)
-        return True, comando
+        r = subprocess.run(["shutdown", "/r", "/fw", "/t", "5"], capture_output=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        return r.returncode == 0, comando
     except Exception:
         return False, comando
 
@@ -357,8 +368,9 @@ def apagar_equipo(segundos_espera=5):
     if not IS_WINDOWS:
         return False, comando
     try:
-        subprocess.run(["shutdown", "/s", "/t", str(segundos_espera)], check=True)
-        return True, comando
+        r = subprocess.run(["shutdown", "/s", "/t", str(segundos_espera)], capture_output=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        return r.returncode == 0, comando
     except Exception:
         return False, comando
 
@@ -369,8 +381,9 @@ def reiniciar_equipo(segundos_espera=5):
     if not IS_WINDOWS:
         return False, comando
     try:
-        subprocess.run(["shutdown", "/r", "/t", str(segundos_espera)], check=True)
-        return True, comando
+        r = subprocess.run(["shutdown", "/r", "/t", str(segundos_espera)], capture_output=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        return r.returncode == 0, comando
     except Exception:
         return False, comando
 
@@ -930,11 +943,20 @@ def quitar_limpieza_programada():
     comando = f'schtasks /delete /tn "{SCHEDULED_TASK_NAME}" /f'
     if not IS_WINDOWS:
         return False, comando
+    # BUG corregido: devolvía True pasara lo que pasara. Si el borrado
+    # fallaba, el interruptor de la pantalla se apagaba igual y la limpieza
+    # automática seguía ejecutándose sola cada día, sin nada que lo
+    # explicara. Es el mismo fallo que tenía el inicio automático.
     try:
-        subprocess.run(["schtasks", "/delete", "/tn", SCHEDULED_TASK_NAME, "/f"],
-                        capture_output=True, text=True,
-                        creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
-        return True, comando
+        r = subprocess.run(["schtasks", "/delete", "/tn", SCHEDULED_TASK_NAME, "/f"],
+                            capture_output=True, text=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+        if r.returncode == 0:
+            return True, comando
+        # schtasks también da error cuando la tarea no existía. En ese caso
+        # el objetivo —que no quede ninguna— ya está cumplido, así que se
+        # comprueba el resultado real en vez de fiarse del código de salida.
+        return (not limpieza_programada_activa()), comando
     except Exception:
         return False, comando
 
@@ -1116,10 +1138,16 @@ $textos.Item(1).AppendChild($xml.CreateTextNode("{mensaje_seguro}")) | Out-Null
 $toast = [Windows.UI.Notifications.ToastNotification]::new($xml)
 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("TechClean").Show($toast)
 '''
+    # BUG corregido: no se miraba el resultado, así que la app daba por
+    # mostrada una notificación que podía no haber salido nunca (equipo con
+    # notificaciones desactivadas, PowerShell restringido por directiva...).
+    # Importa porque de esto dependen las alertas de temperatura de CPU: el
+    # usuario las configura, cree que están funcionando, y no le avisan.
     try:
-        subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                        capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
-        return True
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+                            capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                            timeout=10)
+        return r.returncode == 0
     except Exception:
         return False
 
@@ -2966,7 +2994,21 @@ def abrir_mezclador_volumen():
 # a paso). Mientras REPO_ACTUALIZACIONES no apunte a un repo real, esta
 # función simplemente no encuentra nada — no rompe nada, solo no hace nada.
 
-REPO_ACTUALIZACIONES = "Hades3715/TechCleanPro"
+# Se prueban en orden. Hay DOS porque la app pasó de llamarse "TechClean
+# Pro" a "TechClean" y el repositorio de GitHub puede o no haberse
+# renombrado todavía. Poner solo el nombre nuevo rompería el buscador de
+# actualizaciones hoy mismo (da 404); poner solo el viejo obligaría a tocar
+# el código el día que se renombre, y para entonces ya habrá copias
+# repartidas por ahí que nunca se enterarían. Con los dos funciona antes y
+# después, sin que nadie tenga que acordarse de nada.
+#
+# GitHub redirige del nombre viejo al nuevo al renombrar, pero solo
+# mientras nadie registre un repo con el nombre que quedó libre — por eso
+# no se confía en esa redirección.
+REPOS_ACTUALIZACIONES = ("Hades3715/TechClean", "Hades3715/TechCleanPro")
+
+# Se conserva porque la pantalla de Ajustes lo muestra como texto.
+REPO_ACTUALIZACIONES = REPOS_ACTUALIZACIONES[-1]
 
 
 # ---------------- Carpetas conocidas de Windows ----------------
@@ -3062,25 +3104,28 @@ def buscar_actualizacion_app(version_actual):
     import urllib.request
     import json as _json
     resultado = {"hay_nueva": False, "version": None, "url": None, "notas": None}
-    if REPO_ACTUALIZACIONES == "TU_USUARIO/TU_REPO":
-        return resultado
-    try:
-        url = f"https://api.github.com/repos/{REPO_ACTUALIZACIONES}/releases/latest"
-        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                     "User-Agent": "TechClean"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            datos = _json.loads(resp.read().decode("utf-8"))
+
+    for repo in REPOS_ACTUALIZACIONES:
+        try:
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
+            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                                        "User-Agent": "TechClean"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                datos = _json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            continue          # ese nombre de repo no existe (todavía): se prueba el siguiente
+
         version_remota = (datos.get("tag_name") or "").lstrip("vV")
         if not version_remota:
             return resultado
         if _version_es_mayor(version_remota, version_actual):
             resultado["hay_nueva"] = True
             resultado["version"] = version_remota
-            resultado["url"] = datos.get("html_url") or f"https://github.com/{REPO_ACTUALIZACIONES}/releases/latest"
+            resultado["url"] = datos.get("html_url") or f"https://github.com/{repo}/releases/latest"
             resultado["notas"] = (datos.get("body") or "").strip()[:500]
         return resultado
-    except Exception:
-        return resultado
+
+    return resultado
 
 
 # ---------------- Reparar (más profundo): Explorador, efectos visuales, indexación ----------------
@@ -3096,12 +3141,40 @@ def reiniciar_explorador():
     comando = "taskkill /f /im explorer.exe && start explorer.exe"
     if not IS_WINDOWS:
         return False, comando
+    def _explorador_vivo():
+        try:
+            for p in psutil.process_iter(["name"]):
+                if (p.info.get("name") or "").lower() == "explorer.exe":
+                    return True
+        except Exception:
+            pass
+        return False
+
+    # BUG corregido, y este era feo: se mataba explorer.exe, se lanzaba de
+    # nuevo, y se devolvía True SIN COMPROBAR NADA. Si el arranque fallaba,
+    # el usuario se quedaba sin barra de tareas, sin menú Inicio y sin
+    # iconos del escritorio — mientras la app le decía que todo había ido
+    # bien. Justo la situación en la que menos se puede uno permitir
+    # mentir, porque para salir de ahí a mano hay que saber abrir el
+    # Administrador de tareas con Ctrl+Shift+Esc y lanzar explorer desde
+    # dentro, y quien usa esta app no tiene por qué saber eso.
     try:
         subprocess.run(["taskkill", "/f", "/im", "explorer.exe"], capture_output=True,
                         creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
         time.sleep(1)
-        subprocess.Popen(["explorer.exe"])
-        return True, comando
+        for _intento in range(2):
+            try:
+                subprocess.Popen(["explorer.exe"],
+                                  creationflags=subprocess.CREATE_NO_WINDOW)
+            except Exception:
+                pass
+            # Windows tarda un momento en levantarlo: se espera a verlo de
+            # verdad en la lista de procesos antes de cantar victoria.
+            for _ in range(10):
+                time.sleep(0.4)
+                if _explorador_vivo():
+                    return True, comando
+        return False, comando
     except Exception:
         return False, comando
 
@@ -3396,17 +3469,26 @@ def reducir_animaciones_ahora(activar_reduccion=True):
     comando = "SystemParametersInfo(SPI_SETDRAGFULLWINDOWS / SPI_SETANIMATION)"
     if not IS_WINDOWS:
         return False, comando
+    # BUG corregido: SystemParametersInfoW devuelve un valor que dice si
+    # funcionó (0 = no), y no se miraba. La app daba por aplicado el cambio
+    # aunque Windows lo hubiera rechazado, y el usuario se quedaba mirando
+    # unas animaciones que seguían exactamente igual que antes.
     try:
         flags = SPIF_UPDATEINIFILE | SPIF_SENDCHANGE
         valor_arrastre = 0 if activar_reduccion else 1
-        ctypes.windll.user32.SystemParametersInfoW(SPI_SETDRAGFULLWINDOWS, valor_arrastre, None, flags)
+        ok_arrastre = ctypes.windll.user32.SystemParametersInfoW(
+            SPI_SETDRAGFULLWINDOWS, valor_arrastre, None, flags)
 
         info = _AnimationInfo()
         info.cbSize = ctypes.sizeof(_AnimationInfo)
         info.iMinAnimate = 0 if activar_reduccion else 1
-        ctypes.windll.user32.SystemParametersInfoW(SPI_SETANIMATION, ctypes.sizeof(_AnimationInfo),
-                                                     ctypes.byref(info), flags)
-        return True, comando
+        ok_animacion = ctypes.windll.user32.SystemParametersInfoW(
+            SPI_SETANIMATION, ctypes.sizeof(_AnimationInfo), ctypes.byref(info), flags)
+
+        # Basta con que UNA de las dos haya entrado para que se note algo;
+        # decir que no se pudo cuando la mitad sí se aplicó también sería
+        # mentir, solo que en el otro sentido.
+        return bool(ok_arrastre or ok_animacion), comando
     except Exception:
         return False, comando
 
