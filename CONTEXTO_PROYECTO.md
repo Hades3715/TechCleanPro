@@ -446,6 +446,62 @@ un PowerShell y cuesta ~0.9 s. Probar siempre las dos, sabiendo ya cuál
 contesta, era pagar el doble en una función que el widget llama cada
 4 segundos.
 
+## Inspección completa (la pasada de "no dejes nada sin mirar")
+
+Se revisó la app entera a propósito, no buscando un fallo concreto. Salió
+una tanda entera del MISMO patrón, que a estas alturas es claramente el
+punto débil del proyecto:
+
+> **Una función que no da error no es una función que funcione.** Cuando
+> el resultado ocurre FUERA del programa —un sonido, una ventana, un
+> archivo borrado, un proceso que arranca— hay que comprobarlo, no
+> suponerlo.
+
+Ya había pasado con el tono de audio, la papelera y el Game Bar. En esta
+pasada aparecieron seis más:
+
+- **Reiniciar el Explorador** mataba explorer.exe, lo lanzaba de nuevo y
+  devolvía True sin comprobar nada. Si el arranque fallaba, el usuario se
+  quedaba sin barra de tareas, sin menú Inicio y sin iconos del
+  escritorio, con la app diciéndole que todo fue bien. Ahora espera a ver
+  el proceso vivo y reintenta una vez.
+
+- **Limpiar la caché del navegador** medía el tamaño ANTES de borrar e
+  informaba ese número como espacio liberado. Y `rmtree` iba con
+  `ignore_errors=True`, que nunca lanza: el `except` era código muerto.
+  Un navegador deja archivos bloqueados aunque parezca cerrado, así que se
+  borraba una parte y se anunciaba el total.
+
+- **Quitar la limpieza programada** apagaba el interruptor aunque la tarea
+  siguiera ahí ejecutándose sola cada día.
+
+- **Reducir animaciones** no miraba lo que devuelve `SystemParametersInfo`.
+
+- **`flush_dns`** no miraba el código de salida de ipconfig.
+
+- **Las notificaciones** daban por mostrada una que podía no salir nunca —
+  y de eso dependen las alertas de temperatura.
+
+Aparte: apagar, reiniciar y entrar a la BIOS eran las únicas llamadas a
+`shutdown.exe` sin `CREATE_NO_WINDOW`, así que asomaba una consola negra
+justo antes de que la pantalla se fuera; y ninguna de las cuatro llevaba
+timeout.
+
+### Lo que la inspección confirmó que SÍ está bien
+
+Vale documentarlo para no volver a revisarlo desde cero:
+
+- Ningún `except:` pelado, ningún `open()` sin `with`, ninguna función
+  duplicada, ninguna clave de diccionario repetida, ningún `is` con
+  literales, ningún nombre pisando `t()` ni un builtin.
+- Las 130 lecturas con corchetes de la interfaz están cubiertas:
+  `revisar_claves.py` comprueba que toda clave que se lee la escribe
+  alguien. No hace falta reescribirlas a `.get()`.
+- Las funciones lentas (`get_system_info` 4 s, `get_cpu_details` 1.3 s)
+  ya se llaman todas desde un hilo.
+- Los 21 comandos del panel oculto están implementados y anunciados, y la
+  entrada rara (vacía, 5000 caracteres, símbolos, acentos) no rompe nada.
+
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
@@ -465,6 +521,12 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `prueba_modo_juego.py` | Que el escritorio, la barra de tareas y una ventana maximizada NO se tomen por un juego |
 | `prueba_limpieza_temp.py` | Que limpiar temporales no borre la propia app descomprimida en `%TEMP%\_MEIxxxxx` |
 | `prueba_velocidad.py` | Que la prueba de internet devuelva latencia, bajada **y** subida (usa ~60 MB de datos reales) |
+| `prueba_historial.py` | Que el historial sobreviva al cierre, aguante una línea corrupta y se recorte solo |
+| `prueba_hilos_interfaz.py` | El puente hilo→interfaz, antes de `mainloop()` y después de cerrar |
+| `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
+| `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
+| `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 
 Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
 a una carpeta temporal.

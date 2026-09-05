@@ -3556,15 +3556,24 @@ class TechCleanApp(ctk.CTk):
                          text_color="gray60").pack(padx=16, pady=16)
             return
         for u in usuarios:
+            # Con .get() y no con corchetes: esta lista sale de parsear la
+            # salida de Get-LocalUser, y una cuenta sin nombre —o con la
+            # forma distinta que puede traer otra edición de Windows— haría
+            # saltar un KeyError que se lleva por delante toda la pestaña.
+            # Mejor mostrar la fila incompleta que no mostrar ninguna.
+            nombre = u.get("nombre")
+            if not nombre:
+                continue
             fila = ctk.CTkFrame(self.lista_usuarios, fg_color="#141720", corner_radius=10)
             fila.pack(fill="x", padx=8, pady=3)
-            nombre_mostrado = u["nombre"] + (t("seg_usuario_tu") if u["es_actual"] else "")
+            nombre_mostrado = nombre + (t("seg_usuario_tu") if u.get("es_actual") else "")
             ctk.CTkLabel(fila, text=nombre_mostrado, font=ctk.CTkFont(size=13, weight="bold"), anchor="w").pack(
                 side="left", padx=12, pady=10, fill="x", expand=True)
+            habilitada = u.get("habilitada", True)
             etiquetas = []
-            etiquetas.append(t("seg_admin") if u["es_admin"] else t("seg_estandar"))
-            etiquetas.append(t("seg_habilitada") if u["habilitada"] else t("seg_deshabilitada"))
-            color_estado = COLOR_OK if u["habilitada"] else "gray50"
+            etiquetas.append(t("seg_admin") if u.get("es_admin") else t("seg_estandar"))
+            etiquetas.append(t("seg_habilitada") if habilitada else t("seg_deshabilitada"))
+            color_estado = COLOR_OK if habilitada else "gray50"
             ctk.CTkLabel(fila, text="  ·  ".join(etiquetas), font=ctk.CTkFont(size=11),
                          text_color=color_estado).pack(side="right", padx=12, pady=10)
 
@@ -5317,7 +5326,10 @@ class TechCleanApp(ctk.CTk):
             consola.imprimir(t("consola_fps_ok") if exito else t("consola_fps_error"))
             return
 
-        consola.imprimir(t("consola_no_reconocido", comando=texto))
+        # Se recorta lo que se devuelve: si alguien pega media pagina en la
+        # consola, no tiene sentido volcarsela entera de vuelta.
+        eco = texto if len(texto) <= 60 else texto[:60] + "..."
+        consola.imprimir(t("consola_no_reconocido", comando=eco))
 
     # ---------------- BIOS / UEFI ----------------
     def mostrar_bios(self):

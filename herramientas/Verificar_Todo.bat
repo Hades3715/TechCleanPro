@@ -64,15 +64,35 @@ echo ---------- 10. Limpieza de temporales (no borrar la propia app) ----------
 python herramientas\prueba_limpieza_temp.py
 echo.
 
-echo ---------- 11. Arranque real en espanol ----------
+echo ---------- 11. Datos: lo que lee la interfaz existe ----------
+python herramientasevisar_claves.py
+echo.
+
+echo ---------- 12. Lecturas reales del sistema ----------
+python herramientasevisar_lecturas.py
+echo.
+
+echo ---------- 13. Panel de comandos oculto ----------
+python herramientasevisar_comandos.py
+echo.
+
+echo ---------- 14. Todas las pantallas y pestanas (es) ----------
+python herramientasevisar_pantallas.py es
+echo.
+
+echo ---------- 15. Todas las pantallas y pestanas (en) ----------
+python herramientasevisar_pantallas.py en
+echo.
+
+echo ---------- 16. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 12. Arranque real en ingles ----------
+echo ---------- 17. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
-echo ---------- 13. Velocidad de internet (necesita conexion) ----------
+echo ---------- 18. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause
