@@ -33,6 +33,7 @@ import privacy as priv
 import idiomas
 from idiomas import t
 import report as rep
+import deshacer as desh
 import widget as widget_mod
 import tray as tray_mod
 import autopilot as autopilot_mod
@@ -909,6 +910,10 @@ class TechCleanApp(ctk.CTk):
         # engorde sin freno en la carpeta del usuario — un archivo que crece
         # solo es justo lo que esta app le critica a otros programas.
         self.reporte = rep.SessionReport(carpeta_datos=prefs.carpeta_datos())
+        # Registro de cambios que se pueden deshacer. Guarda el estado
+        # ANTERIOR de cada cosa que la app toca, para poder volver atrás.
+        self.deshacer = desh.RegistroDeshacer(carpeta_datos=prefs.carpeta_datos())
+        threading.Thread(target=self.deshacer.recortar, daemon=True).start()
         threading.Thread(target=self.reporte.recortar_historial, daemon=True).start()
 
         self._easter_clicks = 0
@@ -2590,6 +2595,9 @@ class TechCleanApp(ctk.CTk):
         # the 'silencioso' profile...". Ahora se muestra el nombre traducido
         # y la clave se usa solo para hablar con powercfg y guardar prefs.
         nombre = nombre or clave
+        # Se lee ANTES de cambiar nada: una vez aplicado el plan nuevo ya no
+        # hay forma de saber de dónde se venía, y sin eso no hay deshacer.
+        anterior = self.prefs.get("perfil_energia")
         self.lbl_resultado_opt.configure(text=t("opt_cambiando_perfil", perfil=nombre))
 
         def worker():
@@ -2600,6 +2608,11 @@ class TechCleanApp(ctk.CTk):
             self._log_dev(t("opt_log_perfil", perfil=nombre), comando, msg,
                           seccion=t("seccion_optimizador"), exito=exito)
             if exito:
+                # Se anota el plan que estaba ANTES, no el nuevo: sin saber
+                # de donde se venia no hay vuelta atras posible.
+                self.deshacer.anotar("perfil_energia",
+                                      {"anterior": anterior, "nuevo": clave},
+                                      t("desh_desc_perfil", perfil=nombre))
                 self.prefs["perfil_energia"] = clave
                 prefs.guardar({"perfil_energia": clave})
             self.after(0, self._actualizar_lbl_perfil_actual)
@@ -3923,6 +3936,13 @@ class TechCleanApp(ctk.CTk):
         con esto en el hilo principal ese tiempo lo pagaba nuestra ventana."""
         def worker():
             exito, comando = opt.reducir_animaciones_ahora(activar_reduccion=True)
+            if exito:
+                # No hay forma fiable de leer el estado previo de estos dos
+                # ajustes, asi que se asume lo normal: estaban activadas.
+                # Deshacer las vuelve a activar, que es lo que quiere quien
+                # pulsa deshacer aunque ya estuvieran reducidas.
+                self.deshacer.anotar("animaciones", {"estaban_reducidas": False},
+                                      t("desh_desc_animaciones"))
             msg = t("rep_animaciones_ok") if exito else t("rep_animaciones_error")
             self.after(0, lambda: self._actualizar_resultado_reparar(msg))
             self._log_dev(t("rep_log_animaciones"), comando, msg,
@@ -4080,6 +4100,11 @@ class TechCleanApp(ctk.CTk):
 
         def worker():
             exito = opt.set_app_inicio_activa(app["nombre"], app["comando"], activar)
+            if exito:
+                self.deshacer.anotar("app_inicio",
+                                      {"nombre": app["nombre"], "comando": app["comando"],
+                                       "estaba_activa": app["activo"]},
+                                      t("desh_desc_app_inicio", nombre=app["nombre"]))
             msg = (t("apps_inicio_cambiado", nombre=app["nombre"],
                      estado=t("apps_activado") if activar else t("apps_desactivado"))
                    if exito else t("apps_inicio_error", nombre=app["nombre"]))
@@ -4326,6 +4351,10 @@ class TechCleanApp(ctk.CTk):
 
             def worker():
                 exito, comando = opt.set_servicio_windows(servicio["nombre"], accion)
+                if exito:
+                    self.deshacer.anotar("servicio",
+                                          {"nombre": servicio["nombre"], "accion": accion},
+                                          t("desh_desc_servicio", nombre=nombre_mostrar))
                 # "accion" es la clave interna que entiende opt.set_servicio_windows;
                 # antes se interpolaba tal cual en el mensaje de error, asi que la
                 # build en ingles habria dicho: No se pudo detener -> "detener".
@@ -4915,7 +4944,8 @@ class TechCleanApp(ctk.CTk):
         # Elegir entre lo de ahora y todo lo guardado. Antes solo existía lo
         # de la sesión, porque al cerrar la app se perdía todo.
         self.ambito_historial = ctk.CTkSegmentedButton(
-            self.contenido, values=[t("hist_ambito_sesion"), t("hist_ambito_todo")],
+            self.contenido, values=[t("hist_ambito_sesion"), t("hist_ambito_todo"),
+                                     t("hist_ambito_deshacer")],
             command=lambda v: self._cambiar_ambito_historial())
         self.ambito_historial.set(t("hist_ambito_sesion"))
         self.ambito_historial.grid(row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 8))
@@ -4955,9 +4985,19 @@ class TechCleanApp(ctk.CTk):
             command=self._confirmar_borrar_historial)
         self.btn_borrar_historial.pack(side="left")
 
+    def _ambito_historial_actual(self):
+        """Cuál de las tres vistas está elegida: "sesion", "todo" o "deshacer"."""
+        if not (hasattr(self, "ambito_historial") and self.ambito_historial.winfo_exists()):
+            return "sesion"
+        valor = self.ambito_historial.get()
+        if valor == t("hist_ambito_todo"):
+            return "todo"
+        if valor == t("hist_ambito_deshacer"):
+            return "deshacer"
+        return "sesion"
+
     def _viendo_historial_completo(self):
-        return (hasattr(self, "ambito_historial") and self.ambito_historial.winfo_exists()
-                and self.ambito_historial.get() == t("hist_ambito_todo"))
+        return self._ambito_historial_actual() == "todo"
 
     def _entradas_del_ambito(self):
         """Las entradas que toca mostrar según lo elegido arriba."""
@@ -4970,10 +5010,25 @@ class TechCleanApp(ctk.CTk):
 
         Leer el historial completo toca el disco, así que va en un hilo: con
         3000 acciones guardadas se notaría el tirón al pulsar."""
-        completo = self._viendo_historial_completo()
+        ambito = self._ambito_historial_actual()
 
         def worker():
-            if completo:
+            if ambito == "deshacer":
+                pendientes = self.deshacer.pendientes()
+                texto = t("hist_resumen_deshacer", total=len(pendientes))
+                entradas, secciones = [], []
+                def pintar_deshacer():
+                    if not (hasattr(self, "lbl_resumen_historial")
+                            and self.lbl_resumen_historial.winfo_exists()):
+                        return
+                    self.lbl_resumen_historial.configure(text=texto)
+                    self.combo_seccion_historial.configure(values=[t("hist_todas_secciones")])
+                    self.combo_seccion_historial.set(t("hist_todas_secciones"))
+                    self._pintar_lista_deshacer(pendientes)
+                self.after(0, pintar_deshacer)
+                return
+
+            if ambito == "todo":
                 resumen = self.reporte.resumen_historial()
                 entradas = self.reporte.historial_completo()
                 texto = t("hist_resumen_todo",
@@ -5004,6 +5059,79 @@ class TechCleanApp(ctk.CTk):
                     self.combo_seccion_historial.set(t("hist_todas_secciones"))
                 self._filtrar_historial()
             self.after(0, pintar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_lista_deshacer(self, pendientes):
+        """La lista de cambios que todavía se pueden revertir.
+
+        Arriba de todo va el aviso de lo que NO se puede deshacer. Eso es
+        más importante que la propia lista: un botón de "Deshacer" que a
+        veces no funciona es peor que no tenerlo, porque la gente acaba
+        contando con él para cosas que no cubre.
+        """
+        if not (hasattr(self, "lista_historial") and self.lista_historial.winfo_exists()):
+            return
+        for w in self.lista_historial.winfo_children():
+            w.destroy()
+
+        aviso = ctk.CTkFrame(self.lista_historial, fg_color="#241f18", corner_radius=10)
+        aviso.pack(fill="x", padx=8, pady=(8, 10))
+        ctk.CTkLabel(aviso, text=t("desh_aviso_titulo"),
+                     font=ctk.CTkFont(size=12, weight="bold"), text_color=COLOR_WARN,
+                     anchor="w").pack(fill="x", padx=12, pady=(10, 2))
+        ctk.CTkLabel(aviso, text=t("desh_aviso_texto"), font=ctk.CTkFont(size=11),
+                     text_color="gray65", wraplength=820, justify="left", anchor="w").pack(
+            fill="x", padx=12, pady=(0, 10))
+
+        if not pendientes:
+            ctk.CTkLabel(self.lista_historial, text=t("desh_vacio"),
+                         text_color="gray60", wraplength=800, justify="left").pack(
+                padx=16, pady=16)
+            return
+
+        for entrada in pendientes:
+            fila = ctk.CTkFrame(self.lista_historial, fg_color="#141720", corner_radius=10)
+            fila.pack(fill="x", padx=8, pady=3)
+            columna = ctk.CTkFrame(fila, fg_color="transparent")
+            columna.pack(side="left", fill="x", expand=True, padx=12, pady=10)
+            titulo = entrada.get("descripcion") or t(
+                desh.TIPOS.get(entrada.get("tipo"), "desh_tipo_desconocido"))
+            ctk.CTkLabel(columna, text=titulo, font=ctk.CTkFont(size=13, weight="bold"),
+                         anchor="w", wraplength=620, justify="left").pack(fill="x", anchor="w")
+            ctk.CTkLabel(columna, text=entrada.get("timestamp", ""),
+                         font=ctk.CTkFont(size=11), text_color="gray55", anchor="w").pack(
+                fill="x", anchor="w")
+            ctk.CTkButton(fila, text=t("desh_boton"), width=110,
+                          fg_color="#2a2d36", hover_color="#3a3e4a",
+                          command=lambda e=entrada: self._confirmar_deshacer(e)).pack(
+                side="right", padx=12, pady=10)
+
+    def _confirmar_deshacer(self, entrada):
+        descripcion = entrada.get("descripcion") or t("desh_este_cambio")
+        self._pedir_confirmacion(
+            t("desh_confirmar_titulo"),
+            t("desh_confirmar_mensaje", cambio=descripcion),
+            t("desh_boton"),
+            lambda: self._ejecutar_deshacer(entrada))
+
+    def _ejecutar_deshacer(self, entrada):
+        """Revertir toca el sistema (powercfg, servicios, registro): va en un
+        hilo, como todo lo demás que puede tardar."""
+        CLAVES = ("desh_ok", "desh_fallo", "desh_no_encontrado", "desh_tipo_desconocido")
+
+        def worker():
+            exito, clave, comando = self.deshacer.deshacer(entrada.get("id"), opt)
+            msg = t(clave) if clave in CLAVES else t("desh_fallo")
+            self._log_dev(t("desh_log", cambio=entrada.get("descripcion") or ""),
+                          comando or "N/A", msg,
+                          seccion=t("seccion_historial"), exito=exito)
+
+            def despues():
+                self._mostrar_popup_info(t("desh_confirmar_titulo"), msg)
+                # Se repinta la lista: lo deshecho ya no debe seguir ahí.
+                if self._ambito_historial_actual() == "deshacer":
+                    self._cambiar_ambito_historial()
+            self.after(0, despues)
         threading.Thread(target=worker, daemon=True).start()
 
     def _confirmar_borrar_historial(self):
