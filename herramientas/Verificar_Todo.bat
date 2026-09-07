@@ -92,23 +92,27 @@ echo ---------- 17. Herramientas de tecnico (edicion admin) ----------
 python herramientas\prueba_tecnico.py
 echo.
 
-echo ---------- 18. Ajustes: surten efecto sin reiniciar ----------
+echo ---------- 18. Script del instalador ----------
+python herramientasevisar_instalador.py
+echo.
+
+echo ---------- 19. Ajustes: surten efecto sin reiniciar ----------
 python herramientasevisar_ajustes.py
 echo.
 
-echo ---------- 19. Bucles de refresco no se duplican ----------
+echo ---------- 20. Bucles de refresco no se duplican ----------
 python herramientas\prueba_bucles.py
 echo.
 
-echo ---------- 20. Arranque real en espanol ----------
+echo ---------- 21. Arranque real en espanol ----------
 python herramientas\prueba_arranque.py es
 echo.
 
-echo ---------- 21. Arranque real en ingles ----------
+echo ---------- 22. Arranque real en ingles ----------
 python herramientas\prueba_arranque.py en
 echo.
 
-echo ---------- 22. Velocidad de internet (necesita conexion) ----------
+echo ---------- 23. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause

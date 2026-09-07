@@ -32,7 +32,7 @@ import sys
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRODUCTORES = ["optimizer.py", "system_monitor.py", "privacy.py", "report.py",
-               "preferences.py"]
+               "preferences.py", "deshacer.py", "tecnico.py"]
 CONSUMIDOR = "main.py"
 
 
