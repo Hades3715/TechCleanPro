@@ -34,6 +34,7 @@ import idiomas
 from idiomas import t
 import report as rep
 import deshacer as desh
+import tecnico as tec
 import widget as widget_mod
 import tray as tray_mod
 import autopilot as autopilot_mod
@@ -913,6 +914,10 @@ class TechCleanApp(ctk.CTk):
         # Registro de cambios que se pueden deshacer. Guarda el estado
         # ANTERIOR de cada cosa que la app toca, para poder volver atrás.
         self.deshacer = desh.RegistroDeshacer(carpeta_datos=prefs.carpeta_datos())
+        # Grabador de metricas de la edicion admin: vive en la app y no en la
+        # pantalla, para que siga grabando aunque el tecnico se vaya a mirar
+        # otra cosa mientras tanto.
+        self._grabador = None
         threading.Thread(target=self.deshacer.recortar, daemon=True).start()
         threading.Thread(target=self.reporte.recortar_historial, daemon=True).start()
 
@@ -1047,6 +1052,7 @@ class TechCleanApp(ctk.CTk):
             (t("nav_energia"), self.mostrar_bios),
         ]
         if EDICION == "admin":
+            botones.append((t("nav_tecnico"), self.mostrar_tecnico))
             botones.append((t("nav_consola_dev"), self.mostrar_consola))
         elif self.modo_desarrollador.get():
             botones.append((t("nav_panel_oculto"), self.mostrar_panel_oculto))
@@ -5484,6 +5490,265 @@ class TechCleanApp(ctk.CTk):
         # consola, no tiene sentido volcarsela entera de vuelta.
         eco = texto if len(texto) <= 60 else texto[:60] + "..."
         consola.imprimir(t("consola_no_reconocido", comando=eco))
+
+    # ---------------- Herramientas de técnico (solo Edición Administrador) ----------------
+    def mostrar_tecnico(self):
+        """Pantalla exclusiva del admin: foto antes/después, inspector de
+        arranque y grabación de métricas a CSV.
+
+        No son "las mismas funciones con otro color": son cosas que solo
+        tienen sentido si arreglás computadoras ajenas. El código es
+        público, así que cualquiera puede compilar esta edición — esconder
+        funciones no es posible y fingir que sí sería engañarse. Lo que sí
+        se puede es que esta edición sea de verdad otra cosa.
+        """
+        if EDICION != "admin":
+            self.mostrar_dashboard()
+            return
+        self._limpiar_contenido()
+
+        ctk.CTkLabel(self.contenido, text=t("tec_titulo"),
+                     font=ctk.CTkFont(size=22, weight="bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        ctk.CTkLabel(self.contenido, text=t("tec_subtitulo"), font=ctk.CTkFont(size=12),
+                     text_color="gray60", wraplength=900, justify="left").grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        self.pestana_tecnico = ctk.CTkSegmentedButton(
+            self.contenido,
+            values=[t("tec_tab_foto"), t("tec_tab_arranque"), t("tec_tab_grabar")],
+            command=self._cambiar_pestana_tecnico)
+        self.pestana_tecnico.set(t("tec_tab_foto"))
+        self.pestana_tecnico.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 12))
+
+        self.contenido.grid_rowconfigure(3, weight=1)
+        self.contenedor_tecnico = ctk.CTkFrame(self.contenido, fg_color="transparent")
+        self.contenedor_tecnico.grid(row=3, column=0, columnspan=3, sticky="nswe")
+        self.contenedor_tecnico.grid_columnconfigure(0, weight=1)
+        self.contenedor_tecnico.grid_rowconfigure(0, weight=1)
+
+        self._mostrar_foto_sistema()
+
+    def _cambiar_pestana_tecnico(self, valor):
+        if valor == t("tec_tab_arranque"):
+            self._mostrar_inspector_arranque()
+        elif valor == t("tec_tab_grabar"):
+            self._mostrar_grabador_metricas()
+        else:
+            self._mostrar_foto_sistema()
+
+    def _limpiar_contenedor_tecnico(self):
+        for w in self.contenedor_tecnico.winfo_children():
+            w.destroy()
+
+    # ---- Pestaña 1: foto del sistema (antes / después) ----
+    def _mostrar_foto_sistema(self):
+        self._limpiar_contenedor_tecnico()
+        fila = ctk.CTkFrame(self.contenedor_tecnico, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 10))
+        ctk.CTkButton(fila, text=t("tec_btn_tomar_foto"),
+                      command=self._accion_tomar_foto).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(fila, text=t("tec_btn_comparar"), fg_color="#2a2d36",
+                      hover_color="#3a3e4a",
+                      command=self._accion_comparar_foto).pack(side="left")
+
+        ctk.CTkLabel(self.contenedor_tecnico, text=t("tec_foto_como_se_usa"),
+                     font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=880, justify="left").pack(anchor="w", pady=(0, 8))
+
+        self.lista_tecnico = ctk.CTkScrollableFrame(self.contenedor_tecnico,
+                                                     fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_tecnico.pack(fill="both", expand=True)
+
+        guardada = tec.cargar_foto(prefs.carpeta_datos())
+        texto = (t("tec_foto_existente", momento=guardada.get("momento"))
+                 if guardada else t("tec_foto_ninguna"))
+        ctk.CTkLabel(self.lista_tecnico, text=texto, text_color="gray60",
+                     wraplength=820, justify="left").pack(padx=16, pady=16)
+
+    def _accion_tomar_foto(self):
+        def worker():
+            foto = tec.tomar_foto(sysmon, opt)
+            ruta = tec.guardar_foto(prefs.carpeta_datos(), foto)
+            msg = (t("tec_foto_guardada", momento=foto["momento"]) if ruta
+                   else t("tec_foto_error"))
+            self._log_dev(t("tec_log_foto"), "N/A", msg,
+                          seccion=t("seccion_tecnico"), exito=bool(ruta))
+            self.after(0, lambda: self._pintar_aviso_tecnico(msg))
+        self._pintar_aviso_tecnico(t("tec_tomando_foto"))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _accion_comparar_foto(self):
+        antes = tec.cargar_foto(prefs.carpeta_datos())
+        if not antes:
+            self._pintar_aviso_tecnico(t("tec_foto_ninguna"))
+            return
+
+        def worker():
+            despues = tec.tomar_foto(sysmon, opt)
+            filas = tec.comparar_fotos(antes, despues)
+            self._log_dev(t("tec_log_comparar"), "N/A",
+                          t("tec_comparacion_hecha", campos=len(filas)),
+                          seccion=t("seccion_tecnico"), exito=True)
+            self.after(0, lambda: self._pintar_comparacion(antes, despues, filas))
+        self._pintar_aviso_tecnico(t("tec_comparando"))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_aviso_tecnico(self, texto):
+        if not (hasattr(self, "lista_tecnico") and self.lista_tecnico.winfo_exists()):
+            return
+        for w in self.lista_tecnico.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self.lista_tecnico, text=texto, text_color="gray60",
+                     wraplength=820, justify="left").pack(padx=16, pady=16)
+
+    def _pintar_comparacion(self, antes, despues, filas):
+        if not (hasattr(self, "lista_tecnico") and self.lista_tecnico.winfo_exists()):
+            return
+        for w in self.lista_tecnico.winfo_children():
+            w.destroy()
+
+        ctk.CTkLabel(self.lista_tecnico,
+                     text=t("tec_comparacion_titulo", antes=antes.get("momento"),
+                            despues=despues.get("momento")),
+                     font=ctk.CTkFont(size=13, weight="bold"), anchor="w",
+                     wraplength=820, justify="left").pack(fill="x", padx=16, pady=(14, 8))
+
+        if not filas:
+            ctk.CTkLabel(self.lista_tecnico, text=t("tec_comparacion_vacia"),
+                         text_color="gray60").pack(padx=16, pady=16)
+            return
+
+        for f in filas:
+            fila = ctk.CTkFrame(self.lista_tecnico, fg_color="#141720", corner_radius=10)
+            fila.pack(fill="x", padx=8, pady=3)
+            ctk.CTkLabel(fila, text=t(f["clave"]), font=ctk.CTkFont(size=12), anchor="w",
+                         width=210).pack(side="left", padx=12, pady=9)
+            ctk.CTkLabel(fila, text=f'{f["antes"]}{f["unidad"]}  →  {f["despues"]}{f["unidad"]}',
+                         font=ctk.CTkFont(size=12), text_color="gray70", anchor="w",
+                         width=220).pack(side="left", pady=9)
+            color = {"mejor": COLOR_OK, "peor": COLOR_CRIT}.get(f["sentido"], "gray55")
+            signo = "+" if f["diferencia"] > 0 else ""
+            ctk.CTkLabel(fila, text=f'{signo}{f["diferencia"]}{f["unidad"]}',
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color=color).pack(side="right", padx=12, pady=9)
+
+    # ---- Pestaña 2: inspector de arranque ----
+    def _mostrar_inspector_arranque(self):
+        self._limpiar_contenedor_tecnico()
+        fila = ctk.CTkFrame(self.contenedor_tecnico, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 10))
+        ctk.CTkButton(fila, text=t("tec_btn_inspeccionar"),
+                      command=self._accion_inspeccionar_arranque).pack(side="left")
+        ctk.CTkLabel(self.contenedor_tecnico, text=t("tec_arranque_explicacion"),
+                     font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=880, justify="left").pack(anchor="w", pady=(0, 8))
+
+        self.lista_tecnico = ctk.CTkScrollableFrame(self.contenedor_tecnico,
+                                                     fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_tecnico.pack(fill="both", expand=True)
+        ctk.CTkLabel(self.lista_tecnico, text=t("tec_arranque_pulsa"),
+                     text_color="gray60").pack(padx=16, pady=16)
+
+    def _accion_inspeccionar_arranque(self):
+        self._pintar_aviso_tecnico(t("tec_arranque_buscando"))
+
+        def worker():
+            entradas = tec.inspeccionar_arranque()
+            self._log_dev(t("tec_log_arranque"), "N/A",
+                          t("tec_arranque_encontradas", total=len(entradas)),
+                          seccion=t("seccion_tecnico"), exito=True)
+            self.after(0, lambda: self._pintar_inspector_arranque(entradas))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_inspector_arranque(self, entradas):
+        if not (hasattr(self, "lista_tecnico") and self.lista_tecnico.winfo_exists()):
+            return
+        for w in self.lista_tecnico.winfo_children():
+            w.destroy()
+        if not entradas:
+            ctk.CTkLabel(self.lista_tecnico, text=t("tec_arranque_vacio"),
+                         text_color="gray60", wraplength=820).pack(padx=16, pady=16)
+            return
+
+        origen_actual = None
+        for e in entradas:
+            origen = e.get("origen") or ""
+            if origen != origen_actual:
+                origen_actual = origen
+                ctk.CTkLabel(self.lista_tecnico, text=origen,
+                             font=ctk.CTkFont(size=12, weight="bold"),
+                             text_color=COLOR_ACCENT, anchor="w").pack(
+                    fill="x", padx=14, pady=(12, 4))
+            fila = ctk.CTkFrame(self.lista_tecnico, fg_color="#141720", corner_radius=10)
+            fila.pack(fill="x", padx=8, pady=2)
+            ctk.CTkLabel(fila, text=e.get("nombre") or "?", anchor="w",
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         wraplength=280, justify="left", width=290).pack(
+                side="left", padx=12, pady=8)
+            ctk.CTkLabel(fila, text=e.get("comando") or "", anchor="w",
+                         font=ctk.CTkFont(family="Consolas", size=11), text_color="gray60",
+                         wraplength=520, justify="left").pack(
+                side="left", padx=(0, 12), pady=8, fill="x", expand=True)
+
+    # ---- Pestaña 3: grabar métricas a CSV ----
+    def _mostrar_grabador_metricas(self):
+        self._limpiar_contenedor_tecnico()
+        fila = ctk.CTkFrame(self.contenedor_tecnico, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 10))
+        self.btn_grabar_metricas = ctk.CTkButton(
+            fila, text=t("tec_btn_grabar"), command=self._toggle_grabar_metricas)
+        self.btn_grabar_metricas.pack(side="left", padx=(0, 8))
+        ctk.CTkLabel(fila, text=t("tec_grabar_intervalo"), font=ctk.CTkFont(size=12),
+                     text_color="gray60").pack(side="left", padx=(0, 6))
+        self.combo_intervalo_metricas = ctk.CTkOptionMenu(
+            fila, values=["2", "5", "10", "30"], width=80)
+        self.combo_intervalo_metricas.set("5")
+        self.combo_intervalo_metricas.pack(side="left")
+
+        ctk.CTkLabel(self.contenedor_tecnico, text=t("tec_grabar_explicacion"),
+                     font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=880, justify="left").pack(anchor="w", pady=(0, 8))
+
+        self.lista_tecnico = ctk.CTkScrollableFrame(self.contenedor_tecnico,
+                                                     fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_tecnico.pack(fill="both", expand=True)
+        activo = self._grabador is not None and self._grabador.activo
+        self._pintar_estado_grabador(
+            t("tec_grabando", muestras=self._grabador.muestras) if activo
+            else t("tec_grabar_parado"))
+        if activo:
+            self.btn_grabar_metricas.configure(text=t("tec_btn_parar"))
+
+    def _pintar_estado_grabador(self, texto):
+        self._pintar_aviso_tecnico(texto)
+
+    def _toggle_grabar_metricas(self):
+        if self._grabador is not None and self._grabador.activo:
+            muestras = self._grabador.detener()
+            ruta = self._grabador.ruta
+            self.btn_grabar_metricas.configure(text=t("tec_btn_grabar"))
+            self._pintar_estado_grabador(t("tec_grabar_terminado", muestras=muestras, ruta=ruta))
+            self._log_dev(t("tec_log_grabar_fin"), ruta,
+                          t("tec_grabar_terminado", muestras=muestras, ruta=ruta),
+                          seccion=t("seccion_tecnico"), exito=True)
+            return
+
+        try:
+            intervalo = int(self.combo_intervalo_metricas.get())
+        except ValueError:
+            intervalo = 5
+        carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
+        nombre = f"techclean_metricas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        self._grabador = tec.GrabadorMetricas(os.path.join(carpeta, nombre), sysmon,
+                                               intervalo_seg=intervalo)
+        self._grabador.iniciar()
+        self.btn_grabar_metricas.configure(text=t("tec_btn_parar"))
+        self._pintar_estado_grabador(t("tec_grabar_iniciado", ruta=self._grabador.ruta,
+                                        intervalo=intervalo))
+        self._log_dev(t("tec_log_grabar_inicio"), self._grabador.ruta,
+                      t("tec_grabar_iniciado", ruta=self._grabador.ruta, intervalo=intervalo),
+                      seccion=t("seccion_tecnico"), exito=True)
 
     # ---------------- BIOS / UEFI ----------------
     def mostrar_bios(self):
