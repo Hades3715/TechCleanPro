@@ -60,6 +60,18 @@ listos para repartir).
 Para usarla a diario en tu propio equipo, esa es la buena. El `.exe` único
 sigue existiendo porque es más cómodo de descargar y de pasarle a alguien.
 
+### ¿Y un instalador normal?
+
+También hay uno. `instalador\Compilar_Instalador.bat` genera un instalador
+de los de toda la vida: se instala en Archivos de programa, aparece en
+"Agregar o quitar programas", crea accesos directos y se desinstala limpio
+(incluidas las tareas programadas que la app deja, para que no queden
+huérfanas).
+
+Necesita [Inno Setup](https://jrsoftware.org/isdl.php) instalado, que es
+gratis. **No reemplaza la firma digital**: Windows va a seguir avisando la
+primera vez, solo que menos.
+
 ### Windows va a mostrarte una advertencia la primera vez
 
 Al abrir el `.exe` verás una pantalla azul que dice **"Windows protegió tu
@@ -114,6 +126,32 @@ y sirve para revisar cómo queda todo en ambos idiomas sin recompilar.
 
 ---
 
+### Qué trae la Edición Administrador que no trae la de cliente
+
+Una pestaña **🧰 Técnico** con tres herramientas pensadas para quien arregla
+computadoras ajenas:
+
+- **📸 Antes y después** — guarda cómo está el equipo, optimizas, y te
+  muestra la diferencia campo por campo. Para enseñarle a quien te pidió el
+  favor qué cambió, en vez de decir "quedó mejor".
+- **🚀 Arranque completo** — todo lo que se inicia con Windows en una lista:
+  el registro del usuario y el de la máquina (incluida la clave de 32 bits,
+  que casi nadie revisa), las dos carpetas Inicio, y las tareas programadas.
+  La pantalla de Aplicaciones solo mira uno de esos cuatro sitios.
+- **📈 Grabar métricas** — apunta CPU, RAM, disco y temperatura a un CSV cada
+  pocos segundos. Para el caso de "a veces se pone lento y no sé por qué":
+  lo dejas grabando, usas el equipo, y después buscas el pico en Excel.
+
+Además: el comando exacto de cada acción en el Historial, la Consola de
+Desarrollador y el selector de idioma dentro de la app.
+
+**Una aclaración honesta:** el código de esta app es público, así que
+cualquiera puede compilar la Edición Administrador. Esconder funciones no es
+posible y fingir que sí sería engañarte. Estas herramientas están ahí porque
+son útiles para un técnico, no como una cerradura.
+
+---
+
 ## 2. Instalación (paso a paso, sin perderte)
 
 ### Paso 1 — Extrae el ZIP
@@ -130,6 +168,9 @@ TechClean/
 ├── main.py                      ← app + edición cliente
 ├── main_admin.py                ← lanzador de la edición administrador
 ├── idiomas.py                   ← todos los textos, en español e inglés
+├── deshacer.py                  ← registro de cambios reversibles
+├── tecnico.py                   ← herramientas de la edición administrador
+├── instalador/                  ← script del instalador (necesita Inno Setup)
 ├── build_config.py              ← idioma de esta compilación (lo reescribe el .bat)
 ├── system_monitor.py
 ├── optimizer.py
@@ -355,6 +396,23 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 ---
 
 ## 8. Novedades y correcciones de la versión 1.5.0
+
+**Nuevo en esta versión, lo más grande:**
+
+- **↩ Deshacer.** La app ahora guarda cómo estaba cada cosa ANTES de tocarla,
+  y en el Historial hay una pestaña para revertir: perfil de energía, apps de
+  inicio, servicios, efectos visuales, Inicio rápido, arranque automático y
+  limpieza programada. Y dice bien claro, arriba de la lista, **lo que no se
+  puede deshacer** — los temporales borrados no vuelven, ni la papelera, ni
+  el caché del navegador. Un botón que a veces no funciona es peor que no
+  tenerlo.
+- **🧰 Herramientas de técnico** en la Edición Administrador: foto del sistema
+  antes/después, inspector del arranque completo y grabación de métricas a
+  CSV. Ver la sección 1.
+- **Instalador de verdad** (necesita Inno Setup, gratis): Archivos de
+  programa, Agregar o quitar programas, y desinstalación limpia.
+
+---
 
 **Cambio de nombre:** la app pasa de llamarse *TechClean Pro* a **TechClean**.
 Al actualizar, tus preferencias se traen solas de la carpeta anterior (widget,
@@ -631,6 +689,9 @@ y espera una tecla al final para que puedas leer los resultados.
 | `prueba_modo_juego.py` | Que el escritorio y una ventana maximizada NO se tomen por un juego |
 | `prueba_limpieza_temp.py` | Que limpiar temporales no borre la propia app |
 | `prueba_velocidad.py` | Que la prueba de internet devuelva latencia, bajada **y** subida |
+| `prueba_deshacer.py` | Que deshacer llame a la función inversa correcta, y que algo ya deshecho no se pueda deshacer dos veces |
+| `prueba_tecnico.py` | Foto antes/después (que sepa que subir no siempre es mejor), inspector de arranque y grabación a CSV |
+| `revisar_instalador.py` | Que el script del instalador no mienta: archivos, versión y nombres de las tareas que borra |
 
 Los `.py` sueltos también se pueden correr desde una terminal
 (`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se

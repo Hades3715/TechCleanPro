@@ -517,6 +517,25 @@ bucle más, cada uno consultando WMI cada pocos segundos, para siempre.
 NO alcanza para pararlo. Hace falta un número de generación, como el que
 ya usaban la prueba de velocidad y el autopiloto.
 
+## Módulos nuevos de la 1.5.0
+
+**`deshacer.py`** — registro de cambios reversibles. La regla que gobierna
+todo el módulo: se guarda el estado **ANTERIOR**, nunca el nuevo. Sin saber
+de dónde se venía no hay vuelta atrás, y es el error fácil de cometer (el
+perfil de energía hay que leerlo ANTES de aplicar el nuevo). Lo que no se
+puede deshacer se dice en la propia pantalla, arriba de la lista.
+
+**`tecnico.py`** — las tres herramientas de la Edición Administrador. Ojo
+con `comparar_fotos`: cada campo lleva escrito si SUBIR es bueno o malo. Sin
+eso la tabla del antes/después diría que subir la RAM usada es una mejora,
+y esa tabla es justo la que un técnico le enseña a un cliente.
+
+**`instalador/TechClean.iss`** — script de Inno Setup. El desinstalador
+borra las tareas programadas que la app crea; si un nombre no coincide, la
+tarea queda huérfana intentando ejecutar un archivo borrado. `revisar_instalador.py`
+compara esos nombres contra las constantes reales de `optimizer.py`, y ya
+pilló un error así.
+
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
@@ -542,6 +561,9 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
 | `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
+| `prueba_deshacer.py` | Que deshacer llame a la función inversa correcta, con un optimizer de mentira |
+| `prueba_tecnico.py` | Foto antes/después, inspector de arranque y grabación a CSV |
+| `revisar_instalador.py` | Que el script del instalador no mienta sobre archivos, versión ni tareas |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar (que se actualice `self.prefs`, no solo el disco) |
 | `prueba_bucles.py` | Que entrar y salir de Componentes deprisa no deje bucles de refresco acumulados |
 

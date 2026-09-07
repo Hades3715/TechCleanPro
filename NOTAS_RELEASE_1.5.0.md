@@ -26,6 +26,52 @@ Descargá **uno solo**, el que te sirva. No hace falta instalar nada más.
 
 ## Novedades
 
+### ↩ Deshacer lo que la app cambió
+
+Esta es la grande, y no la tiene ninguna app gratis de limpieza.
+
+TechClean se descarga como un `.exe` sin firma, hecho por alguien que no
+conoces, y toca cosas de tu sistema. Pedirte que confíes a ciegas es mucho
+pedir. Ahora la app guarda **cómo estaba cada cosa antes de tocarla**, y en
+el Historial hay una pestaña **↩ Se puede deshacer** para volver atrás:
+
+- el perfil de energía
+- las apps de inicio que desactivaste
+- los servicios que paraste o iniciaste
+- los efectos visuales
+- el Inicio rápido de Windows
+- el arranque automático y la limpieza programada
+
+**Y dice claro lo que NO se puede deshacer**, arriba de la lista, antes que
+nada: los archivos temporales borrados no vuelven, ni la papelera vaciada,
+ni el caché del navegador, ni un proceso que cerraste. Un botón de
+"Deshacer" que a veces no funciona es peor que no tenerlo, porque acabas
+contando con él para cosas que no cubre. (Los archivos que enviaste a la
+papelera sí se recuperan, pero desde la papelera de Windows.)
+
+### 🧰 Herramientas de técnico (Edición Administrador)
+
+Para quien arregla computadoras ajenas:
+
+- **📸 Antes y después** — guarda cómo está el equipo, optimizas, y te
+  muestra la diferencia campo por campo. Para enseñarle a la persona qué
+  cambió, en vez de decir "quedó mejor".
+- **🚀 Arranque completo** — todo lo que se inicia con Windows en una sola
+  lista: registro del usuario y de la máquina (incluida la clave de 32 bits,
+  que casi nadie revisa), las dos carpetas Inicio y las tareas programadas.
+  La pantalla de Aplicaciones solo mira uno de esos cuatro sitios.
+- **📈 Grabar métricas** — apunta CPU, RAM, disco y temperatura a un CSV.
+  Para el caso de "a veces se pone lento y no sé por qué": lo dejas
+  grabando, usas el equipo, y después buscas el pico en Excel.
+
+### 📦 Instalador
+
+Ya hay un instalador normal, de los de toda la vida: se instala en Archivos
+de programa, aparece en "Agregar o quitar programas" y se desinstala limpio
+—incluidas las tareas programadas que la app deja, para que no queden
+huérfanas apuntando a un archivo borrado.
+
+
 ### El historial ya no se pierde al cerrar la app
 
 Antes todo lo que hacías se borraba al salir. Ahora se guarda, y la pantalla

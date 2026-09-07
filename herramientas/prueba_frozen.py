@@ -61,6 +61,21 @@ else:
         anotar(f"FALLO generando el tono: {type(e).__name__}: {e}")
         tono_ok = False
 
+    # Los modulos nuevos: si PyInstaller no los empaquetara, la pantalla que
+    # los usa reventaria solo en el .exe repartido, nunca en el codigo.
+    try:
+        import deshacer, tecnico
+        reg = deshacer.RegistroDeshacer()
+        reg.anotar("animaciones", {"estaban_reducidas": True}, "prueba en el exe")
+        filas = tecnico.comparar_fotos({"ram_pct": 80}, {"ram_pct": 60})
+        entradas = tecnico.inspeccionar_arranque()
+        anotar(f"deshacer y tecnico en el .exe: OK "
+               f"({len(filas)} campo(s) comparados, {len(entradas)} entradas de arranque)")
+        modulos_ok = len(filas) == 1
+    except Exception as e:
+        anotar(f"FALLO con los modulos nuevos: {type(e).__name__}: {e}")
+        modulos_ok = False
+
     # La prueba de fuego: un import tardio, como el que reventaba antes.
     try:
         import ssl
@@ -74,7 +89,7 @@ else:
         ok = False
 
     anotar("")
-    anotar("RESULTADO: " + ("ARREGLADO" if ok and tono_ok and os.path.isdir(mei) else "SIGUE ROTO"))
+    anotar("RESULTADO: " + ("ARREGLADO" if ok and tono_ok and modulos_ok and os.path.isdir(mei) else "SIGUE ROTO"))
 
 with open(destino, "w", encoding="utf-8") as f:
     f.write("\n".join(lineas))
