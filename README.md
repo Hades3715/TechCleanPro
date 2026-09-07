@@ -45,6 +45,21 @@ vez (marca "Add Python to PATH" al instalarlo). Es solo para generar el
 Si mientras seguimos ajustando la app prefieres probar cambios rápido sin
 recompilar el `.exe` cada vez, usa `Iniciar_Rapido.bat` en su lugar.
 
+### ¿Y si quieres que abra más rápido?
+
+El `.exe` de un solo archivo lleva la app comprimida dentro, y Windows tiene
+que descomprimir 22 MB en una carpeta temporal **cada vez** que lo abres,
+antes de que aparezca nada. Medido en el equipo de desarrollo: **3.7
+segundos**.
+
+`Generar_App_Rapida.bat` compila la misma app en modo carpeta, sin nada que
+descomprimir: **0.5 segundos**. El costo es que en vez de un archivo suelto
+es una carpeta con muchos archivos dentro (el script deja también los `.zip`
+listos para repartir).
+
+Para usarla a diario en tu propio equipo, esa es la buena. El `.exe` único
+sigue existiendo porque es más cómodo de descargar y de pasarle a alguien.
+
 ### Windows va a mostrarte una advertencia la primera vez
 
 Al abrir el `.exe` verás una pantalla azul que dice **"Windows protegió tu
@@ -108,13 +123,17 @@ Descarga el archivo `TechClean.zip` y **extráelo completo** (clic derecho →
 ```
 TechClean/
 ├── Generar_App_Instalable.bat   ← doble clic: genera TechClean_ES.exe y _EN.exe
+├── Generar_App_Rapida.bat       ← doble clic: la misma app, pero abre en medio segundo
 ├── Generar_App_Admin.bat        ← doble clic: genera TechClean_Admin.exe
 ├── Iniciar_Rapido.bat           ← doble clic: prueba la edición cliente sin compilar
 ├── Iniciar_Rapido_Admin.bat     ← doble clic: prueba la edición admin sin compilar
 ├── main.py                      ← app + edición cliente
 ├── main_admin.py                ← lanzador de la edición administrador
+├── idiomas.py                   ← todos los textos, en español e inglés
+├── build_config.py              ← idioma de esta compilación (lo reescribe el .bat)
 ├── system_monitor.py
 ├── optimizer.py
+├── preferences.py
 ├── privacy.py
 ├── report.py
 ├── autopilot.py
@@ -122,6 +141,8 @@ TechClean/
 ├── widget.py
 ├── requirements.txt
 ├── README.md
+├── LICENSE.md
+├── herramientas/                ← el banco de comprobaciones (ver sección 11)
 └── assets/
     └── honk.wav
 ```
@@ -335,6 +356,53 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ## 8. Novedades y correcciones de la versión 1.5.0
 
+**Cambio de nombre:** la app pasa de llamarse *TechClean Pro* a **TechClean**.
+Al actualizar, tus preferencias se traen solas de la carpeta anterior (widget,
+perfil de energía, umbrales, idioma) y la tarea de inicio automático se
+reemplaza sin dejar la vieja suelta.
+
+**También en la 1.5.0 — tercera pasada, inspección completa:**
+
+**Nuevo:**
+- **El historial ya no se pierde al cerrar la app.** Se guarda en
+  `%APPDATA%\TechClean` y la pantalla de Historial tiene un selector entre
+  "Esta sesión" y "Todo el historial", con su propio resumen: cuántas
+  acciones, en cuántas sesiones, cuánto espacio liberado y desde cuándo. Hay
+  botón para borrarlo, y se recorta solo a las 3000 acciones más recientes.
+- **Versión que arranca en medio segundo** (`Generar_App_Rapida.bat`) — ver
+  la sección 0.
+
+**Corregido:**
+- **La app no arrancaba con Windows.** La tarea se creaba y se veía
+  habilitada, pero `schtasks` le ponía por su cuenta "no iniciar si el equipo
+  va con batería": en un portátil sin enchufar no arrancaba nunca, sin ningún
+  error. Ahora la tarea se define por XML, con 30 s de retraso tras iniciar
+  sesión y sin límite de ejecución. Si ya tenías una tarea creada por la
+  versión anterior, Ajustes lo detecta y te ofrece un botón para rehacerla.
+- **El overlay de FPS mandaba a la Microsoft Store.** Usaba un protocolo que
+  las versiones nuevas de Xbox Game Bar ya no registran — y `os.startfile`
+  con un protocolo sin registrar no da error: Windows da la llamada por buena
+  y abre la tienda. Ahora se mira el registro antes de abrir nada.
+- **`RuntimeError: main thread is not in main loop`** al abrir la app. Había
+  89 sitios que podían provocarlo. Corregido en un solo punto, no en los 89.
+- **Reiniciar el Explorador** podía dejarte sin barra de tareas y decirte que
+  todo había ido bien. Ahora comprueba que el proceso vuelva de verdad.
+- **Limpiar la caché del navegador** informaba como "espacio liberado" el
+  tamaño medido ANTES de borrar, pasara lo que pasara después. Ahora se mide
+  después y se informa lo que se liberó de verdad.
+- Quitar la limpieza programada apagaba el interruptor aunque la tarea
+  siguiera ejecutándose sola cada día.
+- Reducir animaciones, vaciar la caché DNS y las notificaciones daban por
+  hecho el éxito sin comprobarlo — y de las notificaciones dependen las
+  alertas de temperatura de CPU.
+- Apagar, reiniciar y entrar a la BIOS asomaban una consola negra justo antes
+  de que la pantalla se fuera.
+- **Entrar y salir de Componentes deprisa dejaba bucles de refresco
+  acumulados**, cada uno consultando el sistema cada pocos segundos, para
+  siempre.
+
+---
+
 **También en la 1.5.0 — segunda pasada de revisión:**
 
 **Nuevo:**
@@ -540,16 +608,29 @@ herramientas/                                              → verificaciones (v
 ### Herramientas de verificación
 
 Antes de dar un cambio por terminado, doble clic en
-**`herramientas\Verificar_Todo.bat`**: corre las cinco comprobaciones
-seguidas y espera una tecla al final para que puedas leer los resultados.
+**`herramientas\Verificar_Todo.bat`**: corre las 20 comprobaciones seguidas
+y espera una tecla al final para que puedas leer los resultados.
 
 | Herramienta | Qué comprueba |
 |---|---|
 | `auditoria.py` | Métodos duplicados y referencias rotas entre módulos |
 | `verificar_idiomas.py` | Que español e inglés tengan las mismas claves y los mismos `{campos}` |
+| `revisar_hilos.py` | Que nadie toque la interfaz desde un hilo de fondo sin pasar por `after(0, ...)` |
+| `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
+| `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar la app |
+| `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
+| `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 | `prueba_arranque.py` | Que la app abra y que las 16 pantallas se pinten, en el idioma que le pases |
 | `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
-| `prueba_animacion.py` | Que las barras animen y no revienten al destruirlas a media animación |
+| `prueba_animacion.py` | Que las barras, gráficas, aguja y tarjetas animen sin reventar |
+| `prueba_widget.py` | Widget flotante: arrastre, límites de pantalla, tooltips, colores, no trabajar oculto |
+| `prueba_bucles.py` | Que entrar y salir de una pantalla deprisa no deje bucles de refresco acumulados |
+| `prueba_hilos_interfaz.py` | El puente hilo→interfaz, antes de que arranque la app y después de cerrarla |
+| `prueba_historial.py` | Que el historial sobreviva al cierre y aguante una línea corrupta |
+| `prueba_modo_juego.py` | Que el escritorio y una ventana maximizada NO se tomen por un juego |
+| `prueba_limpieza_temp.py` | Que limpiar temporales no borre la propia app |
+| `prueba_velocidad.py` | Que la prueba de internet devuelva latencia, bajada **y** subida |
 
 Los `.py` sueltos también se pueden correr desde una terminal
 (`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se
