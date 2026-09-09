@@ -539,7 +539,7 @@ pilló un error así.
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
-corre las cinco comprobaciones seguidas y espera una tecla al final. Los
+corre las 26 comprobaciones seguidas y espera una tecla al final. Los
 `.py` sueltos imprimen y salen, así que al hacerles doble clic la ventana se
 cierra antes de poder leer nada — para eso está el `.bat`.
 
@@ -559,11 +559,13 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `prueba_hilos_interfaz.py` | El puente hilo→interfaz, antes de `mainloop()` y después de cerrar |
 | `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
-| `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_comandos.py` | Que los 25 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `prueba_consola.py` | La consola entera: historial con flechas, Tab, tope de líneas, color por tipo de línea, y con `ast` que no quede ni una frase escrita a mano sin traducir |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 | `prueba_deshacer.py` | Que deshacer llame a la función inversa correcta, con un optimizer de mentira |
 | `prueba_tecnico.py` | Foto antes/después, inspector de arranque y grabación a CSV |
 | `revisar_instalador.py` | Que el script del instalador no mienta sobre archivos, versión ni tareas |
+| `revisar_empaquetado.py` | Que los `.exe` ya compilados lleven dentro todo lo que la app importa (abre el CArchive, el PYZ y `base_library.zip`). No destructiva: se puede correr siempre |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar (que se actualice `self.prefs`, no solo el disco) |
 | `prueba_bucles.py` | Que entrar y salir de Componentes deprisa no deje bucles de refresco acumulados |
 
@@ -575,6 +577,115 @@ Sigue valiendo, y ninguna herramienta lo cubre:
   conviene tenerlo presente).
 - Si se agrega una ventana `Toplevel`: confirmar que tiene `grab_set()`, o
   una razón documentada para no tenerlo (como la ventana de error).
+
+## Pasada de consola y widget (repaso de acabado)
+
+### Lo que se hizo en la consola
+
+Las dos consolas (Consola Dev del admin y Panel de comandos del cliente) eran
+dos clases separadas haciendo casi lo mismo, y eso ya había producido un bug:
+el botón de la del cliente decía `"Enviar"` **escrito a mano en el código**,
+así que en la build en inglés salía en español. Ahora las dos salen de
+`_ConsolaBase` y solo eligen color y título.
+
+Lo que se le añadió: historial con ↑/↓ (con recuperación del borrador al
+bajar hasta el final), completar con Tab, fichas clicables, hora y color por
+tipo de línea, tope de 400 líneas con recorte por arriba, sugerencia del
+comando parecido con `difflib`, y copiar / limpiar / guardar el registro.
+
+Cuatro comandos nuevos: `/estado`, `/version`, `/limpiar`, `/guardar`.
+
+**Cuidado al tocar `_ejecutar_comando`:** `revisar_comandos.py` y
+`prueba_consola.py` le pasan una consola de mentira. Si cambia lo que se le
+pide a una consola (por ejemplo cuando `imprimir` empezó a recibir un `tipo`),
+hay que actualizar esas clases falsas o el banco falla con `TypeError` en
+todos los comandos — un fallo del banco, no de la app.
+
+### Lo que se hizo en el widget
+
+- **Esquinas redondeadas de verdad**, con `-transparentcolor` y un lienzo de
+  fondo que dibuja un polígono suavizado. El color clave (`#ff00fe`) NO puede
+  aparecer en ningún otro widget: donde aparezca, Windows abre un agujero en
+  la ventana. Hay una comprobación que recorre el fondo de todos los widgets
+  del contenido para verificarlo.
+- El orden importa: `-transparentcolor` **antes** de `-alpha`. Las dos se
+  apoyan en la misma ventana en capas de Windows y al revés la primera se
+  queda sin efecto.
+- **`Canvas.lower()` no es el de apilar ventanas**, es `tag_lower()`, que baja
+  un dibujo dentro del lienzo y pide su nombre. Llamarlo sin argumentos
+  revienta con `wrong # args` y el widget no abre. El de apilar es
+  `tk.Misc.lower(w)`.
+- **La barra compacta temblaba.** Sin `width`, una etiqueta de Tk se mide por
+  su texto: de "CPU 9%" a "CPU 10%" crecía un carácter y empujaba a las de su
+  derecha. Ancho fijo en caracteres **y** tipografía de ancho fijo.
+- Minigráfica con las últimas 40 muestras por métrica. La historia se apunta
+  con el valor **medido**, no con los pasos intermedios de la animación: si no,
+  la gráfica dibuja la animación en vez de lo que hizo el sistema.
+- Hover en los atajos, menos en el de Modo Juego: su fondo ya dice si el modo
+  está encendido, y pintarlo al apuntarlo haría dudar de si está activo.
+
+**Al probar el widget con `event_generate`:** Tk no reparte eventos de cruce a
+un widget que no está mostrado. Los atajos viven dentro del panel plegado, así
+que hay que llamar a `_toggle_expandir()` antes o el hover parece roto
+estándolo. Y el fondo se lee **inmediatamente** después del `<Enter>`, sin
+pasar por `update()`: al procesar la cola aparece el globo del tooltip, que es
+una ventana nueva encima, y el gestor de ventanas manda entonces un `<Leave>`
+de verdad porque el ratón de carne y hueso no está ahí.
+
+### La lección de esta pasada: el banco de pruebas también es código
+
+`Verificar_Todo.bat` llevaba **ocho** rutas mal escritas. Se habían escrito
+como `herramientas\revisar_algo.py` y esa barra invertida seguida de `r`
+acabó convertida en un retorno de carro de verdad dentro del archivo — el
+mismo tipo de destrozo que ya había pasado con `\n` en `idiomas.py` al usar
+heredocs del shell.
+
+Lo grave no es el error, es que **no se notaba**: cmd leía
+`python herramientas` (que falla) y `evisar_algo.py` como otro comando, y un
+`.bat` sigue con la línea siguiente cuando una falla. El banco imprimía los
+23 títulos, no imprimía ningún FALLO, y parecía estar pasando entero. En
+realidad corrían 15.
+
+Tres cosas cambiaron por esto:
+
+1. **Las rutas del `.bat` van con barra normal** (`herramientas/x.py`). cmd y
+   Python la aceptan igual, y sin barras invertidas no hay nada que se pueda
+   convertir en otra cosa.
+2. **Cada comprobación pasa por `:comprobar`**, que mira el `errorlevel`,
+   cuenta los fallos y avisa cuando una no llega ni a arrancar. Al final dice
+   cuántas pasaron. Y `auditoria.py` ahora **devuelve código de salida** —
+   antes encontraba cosas y el banco la daba por buena.
+3. **Sección 5 de `auditoria.py`**: vigila el propio `.bat`. Busca retornos de
+   carro sueltos, scripts invocados que no existen, y scripts escritos que
+   nadie invoca. Se probó rompiendo el archivo a mano: lo detecta por las tres
+   vías.
+
+> **Corolario de "una función que no da error no es una función que
+> funcione":** una comprobación que no da error no es una comprobación que se
+> esté ejecutando. Cuando se añade un banco de pruebas nuevo, hay que verlo
+> **fallar** al menos una vez a propósito.
+
+### Cómo revisar la consola o el widget a ojo sin capturar la pantalla del usuario
+
+No hace falta abrir la app y hacer una captura de pantalla completa. Se monta
+la pieza sola en una ventana propia, con datos de mentira pero realistas, y se
+recorta la captura al rectángulo exacto de esa ventana
+(`winfo_rootx/rooty/width/height`) con `CopyFromScreen`. Para el widget se
+pone detrás un panel de color plano propio y se deja 16 px de margen, que es
+lo que hace falta para ver si las esquinas quedaron redondeadas. Así en la
+imagen no entra nada de lo que la persona tenga abierto.
+
+Y `SetProcessDpiAwareness(1)` antes de crear la ventana, o en una pantalla
+escalada la captura sale recortada arriba a la izquierda en vez de escalada.
+
+### Cuidado con `prueba_frozen.py`
+
+Esa prueba limpia los temporales **de verdad** (es lo que reproducía su bug),
+así que se lleva por delante cualquier archivo que otro programa tenga abierto
+en `%TEMP%` — incluidos los de la herramienta con la que estés trabajando. Se
+corre a mano y aparte. Para lo que se necesita el 99% de las veces —saber si
+un módulo quedó dentro del `.exe`— está `revisar_empaquetado.py`, que lee el
+binario sin ejecutarlo y sin borrar nada.
 
 ## Ideas ya discutidas y descartadas (para no proponerlas de nuevo sin repensar)
 

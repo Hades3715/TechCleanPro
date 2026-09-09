@@ -76,6 +76,33 @@ else:
         anotar(f"FALLO con los modulos nuevos: {type(e).__name__}: {e}")
         modulos_ok = False
 
+    # La consola trajo un import nuevo (difflib, para sugerir el comando
+    # parecido cuando escribes uno mal). Un modulo de la biblioteca estandar
+    # que PyInstaller no empaquete no da la cara en el codigo: falla solo en
+    # el .exe repartido, y encima solo cuando alguien se equivoca al
+    # escribir, que es cuando menos falta hace otro error.
+    try:
+        import difflib
+        cerca = difflib.get_close_matches("/papelra", ["/papelera", "/dns"], n=1, cutoff=0.6)
+        anotar(f"difflib en el .exe: OK (sugiere {cerca})")
+        consola_ok = cerca == ["/papelera"]
+    except Exception as e:
+        anotar(f"FALLO con difflib: {type(e).__name__}: {e}")
+        consola_ok = False
+
+    # Y las claves de idioma de la consola: si idiomas.py se empaquetara
+    # recortado, los titulos saldrian como la clave en crudo.
+    try:
+        import idiomas
+        idiomas.establecer_idioma("es")
+        titulo = idiomas.t("consola_titulo_dev")
+        pista = idiomas.t("consola_pista")
+        anotar(f"claves de la consola en el .exe: OK ({titulo!r})")
+        consola_ok = consola_ok and "consola_" not in titulo and "consola_" not in pista
+    except Exception as e:
+        anotar(f"FALLO con las claves de la consola: {type(e).__name__}: {e}")
+        consola_ok = False
+
     # La prueba de fuego: un import tardio, como el que reventaba antes.
     try:
         import ssl
@@ -89,7 +116,8 @@ else:
         ok = False
 
     anotar("")
-    anotar("RESULTADO: " + ("ARREGLADO" if ok and tono_ok and modulos_ok and os.path.isdir(mei) else "SIGUE ROTO"))
+    anotar("RESULTADO: " + ("ARREGLADO" if ok and tono_ok and modulos_ok and consola_ok
+                        and os.path.isdir(mei) else "SIGUE ROTO"))
 
 with open(destino, "w", encoding="utf-8") as f:
     f.write("\n".join(lineas))

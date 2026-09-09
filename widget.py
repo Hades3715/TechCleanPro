@@ -11,6 +11,26 @@ Todo en tkinter plano (no customtkinter) a propósito: customtkinter valida
 sus argumentos de forma estricta (aprendido de la mala experiencia con la
 clase Sparkline del panel principal) y este widget no necesita nada de lo
 que customtkinter ofrece — con tk.Frame/tk.Label/tk.Canvas alcanza y sobra.
+
+Lo que se rehízo en el repaso estético:
+
+  * ESQUINAS REDONDEADAS de verdad, no simuladas. Una ventana sin barra de
+    título de Windows es un rectángulo duro, y encima de un juego o del
+    escritorio se notaba como un recorte de cartón pegado a la pantalla.
+    Se consiguen con un color clave transparente: ver
+    _preparar_ventana_redondeada.
+  * LOS NÚMEROS YA NO TIEMBLAN. Las etiquetas de la barra compacta se
+    medían por su texto, así que al pasar de "CPU 9%" a "CPU 10%" la
+    etiqueta crecía un carácter y empujaba a las de su derecha: la barra
+    entera se recolocaba sola cada segundo. Ahora van en ancho fijo y con
+    tipografía de ancho fijo, que es lo que hace falta para que un número
+    que cambia no mueva lo que tiene al lado.
+  * LA RED SE LEE. Iba siempre en K: a 5 MB/s ponía "5120K", cinco cifras
+    que hay que dividir a mano. Ahora escala a M.
+  * MINIGRÁFICA con el último medio minuto de cada métrica. Un número dice
+    dónde estás; la forma dice si vas subiendo o si fue un pico y ya pasó.
+  * RESPUESTA AL RATÓN en los atajos y en los botones del encabezado.
+    Antes no pasaba nada al pasar por encima y no parecían pulsables.
 """
 
 import time
@@ -32,6 +52,18 @@ COLOR_CRIT = "#e74c3c"
 COLOR_ACCENT = "#3d8bfd"
 COLOR_TXT = "#e8e8e8"
 COLOR_TXT_DIM = "#8a8f99"
+
+# Tonos que trajo el repaso estético.
+COLOR_HOVER = "#2d3340"      # atajo bajo el cursor
+COLOR_PISTA = "#2a2d38"      # canal por el que corre la barrita
+COLOR_BORDE = "#262a33"      # separadores finísimos y el filo de la ventana
+
+# Color clave para las esquinas redondeadas: Windows lo trata como "aquí no
+# hay ventana". Tiene que ser un color que NO aparezca en ningún otro sitio
+# del widget, o se abrirían agujeros donde no toca. Este magenta no está en
+# la paleta ni por casualidad.
+COLOR_CLAVE = "#ff00fe"
+RADIO_VENTANA = 12
 
 
 def _color(valor):
@@ -63,27 +95,90 @@ def _color_temp(grados):
     return COLOR_CRIT
 
 
+def _mezclar(color_a, color_b, proporcion):
+    """Mezcla dos colores hex.
+
+    El canvas de Tk no tiene transparencia, así que un relleno "al 30%" se
+    consigue mezclando con el color del fondo — el mismo apaño que
+    mezclar_color() en el panel principal. Si le llega algo que no es un
+    color, devuelve el segundo en vez de reventar: esto se llama dentro del
+    bucle de repintado y una excepción aquí dejaría el widget en blanco."""
+    try:
+        a = [int(color_a[i:i + 2], 16) for i in (1, 3, 5)]
+        b = [int(color_b[i:i + 2], 16) for i in (1, 3, 5)]
+    except (ValueError, IndexError, TypeError):
+        return color_b
+    p = max(0.0, min(1.0, proporcion))
+    return "#" + "".join(f"{int(round(x + (y - x) * p)):02x}" for x, y in zip(a, b))
+
+
+def _formato_red(kbps):
+    """Velocidad de red en cinco caracteres como máximo.
+
+    Antes se imprimía siempre en K, así que una descarga a 5 MB/s ponía
+    "5120K": cinco cifras que hay que dividir a mano para saber qué son, y
+    además ensanchaban la etiqueta y movían la barra entera."""
+    if kbps is None or kbps < 0:
+        return "--"
+    if kbps < 1000:
+        return f"{kbps:.0f}K"
+    if kbps < 10240:
+        return f"{kbps / 1024:.1f}M"
+    return f"{kbps / 1024:.0f}M"
+
+
+def _puntos_redondeados(x1, y1, x2, y2, radio):
+    """Los vértices de un rectángulo de esquinas redondeadas, para
+    pasárselos a create_polygon con smooth=True.
+
+    El canvas de Tk no sabe dibujar un rectángulo redondeado, pero sí un
+    polígono suavizado: repitiendo los puntos de los lados rectos y dejando
+    sueltos los de las esquinas, el suavizado curva solo las esquinas. Es la
+    misma clase de apaño que mezclar_color() — Tk no trae la primitiva, así
+    que se construye."""
+    radio = max(0, min(radio, abs(x2 - x1) / 2, abs(y2 - y1) / 2))
+    return [
+        x1 + radio, y1,  x2 - radio, y1,  x2 - radio, y1,
+        x2, y1,          x2, y1 + radio,  x2, y1 + radio,
+        x2, y2 - radio,  x2, y2 - radio,  x2, y2,
+        x2 - radio, y2,  x2 - radio, y2,  x1 + radio, y2,
+        x1 + radio, y2,  x1, y2,          x1, y2 - radio,
+        x1, y2 - radio,  x1, y1 + radio,  x1, y1 + radio,
+        x1, y1,          x1 + radio, y1,  x1 + radio, y1,
+    ]
+
+
 # main.py lo pone en False cuando Modo Ligero esta activo.
 ANIMAR_BARRAS = True
 
 
 class _MiniBarra(tk.Canvas):
-    """Barrita de progreso horizontal simple, sin dependencias — para que
-    cada métrica de la tarjeta de Rendimiento se vea "viva", no solo texto.
+    """La minigráfica de una métrica: el último medio minuto dibujado como
+    área, y debajo una barrita con el valor actual.
 
-    El relleno se desliza hasta el valor nuevo en vez de saltar: misma
-    interpolacion con ease-out que el medidor de Inicio, pero mas corta
-    porque la barra es chica y un recorrido largo se sentiria lento."""
+    Antes solo estaba la barrita. Una barrita dice lo mismo que el número
+    que tiene encima —dónde estás ahora— y nada más; con la historia detrás
+    se ve si el 70% que estás leyendo viene subiendo o si fue un pico que ya
+    pasó, que es la pregunta que uno se hace de verdad mirando un overlay
+    mientras juega.
+
+    El relleno de la barrita sigue deslizándose hasta el valor nuevo en vez
+    de saltar: misma interpolacion con ease-out que el medidor de Inicio,
+    pero mas corta porque la barra es chica y un recorrido largo se
+    sentiria lento."""
 
     DURACION_MS = 260
     PASO_MS = 20
+    MUESTRAS = 40          # a un tick por segundo, algo más de medio minuto
+    ALTO_BARRA = 4
 
-    def __init__(self, master, ancho=70, alto=6, **kwargs):
+    def __init__(self, master, ancho=70, alto=26, **kwargs):
         super().__init__(master, width=ancho, height=alto, bg=COLOR_CARD,
                           highlightthickness=0, **kwargs)
         self.ancho = ancho
         self.alto = alto
         self._valor_mostrado = 0.0
+        self._historia = []
         self._anim_id = None
         self.set_valor(0)
 
@@ -97,6 +192,11 @@ class _MiniBarra(tk.Canvas):
 
     def set_valor(self, porcentaje, color=None):
         destino = max(0.0, min(100.0, float(porcentaje or 0)))
+        # La historia se apunta con el valor de DESTINO, no con los pasos
+        # intermedios de la animacion: si no, la grafica dibujaria la
+        # animacion en lugar de lo que midio el sistema.
+        self._historia.append(destino)
+        del self._historia[:-self.MUESTRAS]
         self._cancelar_animacion()
 
         if not ANIMAR_BARRAS or abs(destino - self._valor_mostrado) < 0.5:
@@ -124,10 +224,42 @@ class _MiniBarra(tk.Canvas):
     def _dibujar(self, porcentaje, color=None):
         self.delete("all")
         color = color or _color(porcentaje)
-        self.create_rectangle(0, 0, self.ancho, self.alto, fill="#2a2d38", outline="")
+        alto_grafica = max(2, self.alto - self.ALTO_BARRA - 3)
+
+        # ---- El área de historia ----
+        if len(self._historia) >= 2:
+            paso_x = self.ancho / max(1, len(self._historia) - 1)
+            puntos = []
+            for i, valor in enumerate(self._historia):
+                x = i * paso_x
+                y = alto_grafica - (valor / 100.0) * (alto_grafica - 1)
+                puntos.extend((x, y))
+            # Se cierra hacia abajo para poder rellenarlo: una línea de 1 px
+            # en 20 px de alto no se ve a esa escala; el área sí.
+            relleno = puntos + [self.ancho, alto_grafica, 0.0, alto_grafica]
+            self.create_polygon(relleno, fill=_mezclar(color, COLOR_CARD, 0.62),
+                                outline="")
+            self.create_line(puntos, fill=color, width=1)
+        else:
+            self.create_line(0, alto_grafica - 1, self.ancho, alto_grafica - 1,
+                             fill=COLOR_PISTA)
+
+        # ---- La barrita del valor actual ----
+        arriba = self.alto - self.ALTO_BARRA
+        self.create_polygon(
+            _puntos_redondeados(0, arriba, self.ancho, self.alto, self.ALTO_BARRA / 2),
+            fill=COLOR_PISTA, outline="", smooth=True)
         ancho_lleno = self.ancho * (porcentaje / 100)
-        if ancho_lleno > 0:
-            self.create_rectangle(0, 0, ancho_lleno, self.alto, fill=color, outline="")
+        if ancho_lleno > self.ALTO_BARRA:
+            self.create_polygon(
+                _puntos_redondeados(0, arriba, ancho_lleno, self.alto,
+                                    self.ALTO_BARRA / 2),
+                fill=color, outline="", smooth=True)
+        elif ancho_lleno > 0:
+            # Por debajo del diámetro no cabe una punta redonda: se pinta
+            # recto, que se ve mejor que no pintar nada.
+            self.create_rectangle(0, arriba, ancho_lleno, self.alto,
+                                  fill=color, outline="")
 
 
 class PerformanceWidget(tk.Toplevel):
@@ -135,11 +267,6 @@ class PerformanceWidget(tk.Toplevel):
         super().__init__(master)
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        try:
-            self.attributes("-alpha", 0.96)
-        except Exception:
-            pass
-        self.configure(bg=COLOR_BG)
 
         self.on_cerrar = on_cerrar
         self._expandido = False
@@ -152,7 +279,9 @@ class PerformanceWidget(tk.Toplevel):
         self._net_prev_time = time.time()
         self._botones_atajos = {}
         self._barras = {}
+        self._fondo = None
 
+        self._preparar_ventana_redondeada()
         self._construir_ui()
         self._posicionar_esquina()
         self._bind_arrastre()
@@ -161,43 +290,137 @@ class PerformanceWidget(tk.Toplevel):
         self._actualizar_loop()
         threading.Thread(target=self._loop_gpu, daemon=True).start()
 
+    # ---------- Forma de la ventana ----------
+    def _preparar_ventana_redondeada(self):
+        """Esquinas redondeadas en una ventana sin barra de título.
+
+        Windows no redondea una ventana overrideredirect: es un rectángulo
+        duro, y encima del escritorio o de un juego se notaba como un
+        recorte de cartón pegado a la pantalla.
+
+        El truco es "-transparentcolor": Windows deja pasar todo lo que esté
+        pintado de ese color exacto, como si ahí no hubiera ventana. Así que
+        el fondo de la ventana se pone de ese color y encima se dibuja, en
+        un lienzo, un rectángulo redondeado del color de verdad. Lo que
+        queda fuera de la curva —las cuatro esquinas— es color clave, o sea
+        nada.
+
+        Si el sistema no lo admite se vuelve al rectángulo de siempre: es un
+        detalle de presentación y no vale arriesgar que el widget no abra
+        por él.
+        """
+        self._redondeada = False
+        try:
+            self.configure(bg=COLOR_CLAVE)
+            self.wm_attributes("-transparentcolor", COLOR_CLAVE)
+            self._redondeada = True
+        except Exception:
+            self.configure(bg=COLOR_BG)
+        # La transparencia general se pide DESPUÉS del color clave: las dos
+        # se apoyan en la misma ventana en capas de Windows, y pedirlas al
+        # revés deja sin efecto a la primera.
+        try:
+            self.attributes("-alpha", 0.96)
+        except Exception:
+            pass
+
+        if not self._redondeada:
+            return
+
+        self._fondo = tk.Canvas(self, bg=COLOR_CLAVE, highlightthickness=0)
+        self._fondo.place(x=0, y=0, relwidth=1, relheight=1)
+        # place() no contribuye al tamaño pedido por la ventana, así que el
+        # lienzo llena lo que midan las tarjetas sin estirarla.
+        #
+        # Y hay que bajarlo por debajo de lo que se empaquete encima. Ojo con
+        # el metodo: Canvas.lower() NO es el de apilar ventanas, es
+        # tag_lower(), que baja un DIBUJO dentro del lienzo y pide el nombre
+        # de ese dibujo — llamarlo sin argumentos revienta con "wrong # args"
+        # y el widget no abre. El de apilar es el de Misc.
+        tk.Misc.lower(self._fondo)
+        self.bind("<Configure>", self._repintar_fondo, add="+")
+
+    def _repintar_fondo(self, event=None):
+        if self._fondo is None or not self._fondo.winfo_exists():
+            return
+        ancho, alto = self.winfo_width(), self.winfo_height()
+        if ancho <= 1 or alto <= 1:
+            return
+        self._fondo.delete("all")
+        self._fondo.create_polygon(
+            _puntos_redondeados(0, 0, ancho - 1, alto - 1, RADIO_VENTANA),
+            fill=COLOR_BG, outline=COLOR_BORDE, smooth=True)
+
     # ---------- UI ----------
     def _tarjeta(self, master, titulo=None):
         """Contenedor tipo 'card': fondo un tono más claro que la ventana,
         con esquinas rectas pero espaciado generoso — el efecto de tarjeta
         separada viene del contraste de color, no de bordes redondeados
-        (tkinter plano no los soporta sin dependencias extra)."""
+        (tkinter plano no los soporta sin dependencias extra).
+
+        El título lleva delante una marca del color de acento. Sin ella los
+        tres títulos eran tres líneas grises iguales y las tarjetas se leían
+        como una sola lista larga."""
         tarjeta = tk.Frame(master, bg=COLOR_CARD)
-        tarjeta.pack(fill="x", padx=8, pady=(0, 6))
+        tarjeta.pack(fill="x", padx=10, pady=(0, 6))
         if titulo:
-            tk.Label(tarjeta, text=titulo, bg=COLOR_CARD, fg=COLOR_TXT_DIM,
-                      font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=10, pady=(8, 2))
+            fila = tk.Frame(tarjeta, bg=COLOR_CARD)
+            fila.pack(fill="x", padx=10, pady=(9, 3))
+            tk.Frame(fila, bg=COLOR_ACCENT, width=3, height=10).pack(
+                side="left", padx=(0, 6))
+            tk.Label(fila, text=titulo, bg=COLOR_CARD, fg=COLOR_TXT_DIM,
+                      font=("Segoe UI", 8, "bold")).pack(side="left")
         return tarjeta
+
+    def _hover(self, widget, normal, encima):
+        """Cambia el fondo al pasar el ratón. Los atajos eran etiquetas
+        muertas: nada indicaba que se pudieran pulsar."""
+        widget.bind("<Enter>", lambda e: widget.configure(bg=encima), add="+")
+        widget.bind("<Leave>", lambda e: widget.configure(bg=normal), add="+")
 
     def _construir_ui(self):
         # ---- Encabezado: título + arrastre + expandir + cerrar ----
         self.frame_header = tk.Frame(self, bg=COLOR_BG)
-        self.frame_header.pack(fill="x", padx=8, pady=(6, 2))
-        tk.Label(self.frame_header, text="⚙ TechClean", bg=COLOR_BG, fg=COLOR_TXT_DIM,
+        self.frame_header.pack(fill="x", padx=14, pady=(9, 4))
+        tk.Label(self.frame_header, text="⚙", bg=COLOR_BG, fg=COLOR_ACCENT,
+                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
+        tk.Label(self.frame_header, text="TechClean", bg=COLOR_BG, fg=COLOR_TXT_DIM,
                   font=("Segoe UI", 8, "bold")).pack(side="left")
         self.btn_cerrar = tk.Label(self.frame_header, text="✕", bg=COLOR_BG, fg="gray50",
-                                    font=("Segoe UI", 9), cursor="hand2")
+                                    font=("Segoe UI", 9), cursor="hand2", padx=4)
         self.btn_cerrar.pack(side="right")
         self.btn_cerrar.bind("<Button-1>", lambda e: self._cerrar_desde_boton())
+        # El de cerrar se pone rojo al apuntarlo: de los dos botones del
+        # encabezado es el único que hace algo que hay que volver a deshacer,
+        # y conviene que no se confunda con el de plegar.
+        self.btn_cerrar.bind("<Enter>", lambda e: self.btn_cerrar.configure(fg=COLOR_CRIT), add="+")
+        self.btn_cerrar.bind("<Leave>", lambda e: self.btn_cerrar.configure(fg="gray50"), add="+")
         self.btn_expandir = tk.Label(self.frame_header, text="▾", bg=COLOR_BG, fg=COLOR_TXT,
-                                      font=("Segoe UI", 10), cursor="hand2")
-        self.btn_expandir.pack(side="right", padx=(0, 8))
+                                      font=("Segoe UI", 10), cursor="hand2", padx=4)
+        self.btn_expandir.pack(side="right", padx=(0, 6))
         self.btn_expandir.bind("<Button-1>", lambda e: self._toggle_expandir())
+        self.btn_expandir.bind("<Enter>", lambda e: self.btn_expandir.configure(fg=COLOR_ACCENT), add="+")
+        self.btn_expandir.bind("<Leave>", lambda e: self.btn_expandir.configure(fg=COLOR_TXT), add="+")
 
         # ---- Barra compacta (siempre visible) ----
         self.frame_compacto = tk.Frame(self, bg=COLOR_CARD)
-        self.frame_compacto.pack(fill="x", padx=8, pady=(0, 6))
+        self.frame_compacto.pack(fill="x", padx=10, pady=(0, 6))
         metricas = prefs.cargar().get("widget_metricas") or ["cpu", "ram", "red", "gpu"]
+        # El orden en que se crean es el orden en que salen (side="left").
+        # Va CPU, RAM, GPU para que coincida con la tarjeta de Rendimiento:
+        # antes la GPU quedaba en medio de las dos que uno mira juntas.
         self.lbl_cpu = self._crear_metric_label(self.frame_compacto) if "cpu" in metricas else None
-        self.lbl_gpu = self._crear_metric_label(self.frame_compacto) if "gpu" in metricas else None
         self.lbl_ram = self._crear_metric_label(self.frame_compacto) if "ram" in metricas else None
-        self.lbl_net_up = self._crear_metric_label(self.frame_compacto) if "red" in metricas else None
-        self.lbl_net_down = self._crear_metric_label(self.frame_compacto) if "red" in metricas else None
+        self.lbl_gpu = self._crear_metric_label(self.frame_compacto) if "gpu" in metricas else None
+        if "red" in metricas:
+            # Separador antes de la red: la red no es un porcentaje como las
+            # otras tres, y pegada a ellas se leía como si lo fuera.
+            tk.Frame(self.frame_compacto, bg=COLOR_BORDE, width=1).pack(
+                side="left", fill="y", pady=6, padx=4)
+        self.lbl_net_down = (self._crear_metric_label(self.frame_compacto, ancho=6)
+                             if "red" in metricas else None)
+        self.lbl_net_up = (self._crear_metric_label(self.frame_compacto, ancho=6)
+                           if "red" in metricas else None)
 
         # ---- Panel expandido: tarjetas de Rendimiento / Atajos / Sistema ----
         self.frame_expandido = tk.Frame(self, bg=COLOR_BG)
@@ -208,14 +431,16 @@ class PerformanceWidget(tk.Toplevel):
         self._metricas_grandes = {}
         for clave, etiqueta in [("cpu", "CPU"), ("ram", "RAM"), ("gpu", "GPU")]:
             col = tk.Frame(fila_rend, bg=COLOR_CARD)
-            col.pack(side="left", padx=(0, 16))
+            col.pack(side="left", padx=(0, 14))
             tk.Label(col, text=etiqueta, bg=COLOR_CARD, fg=COLOR_TXT_DIM,
                       font=("Segoe UI", 8)).pack(anchor="w")
+            # Ancho fijo y dígitos de ancho fijo: si no, al pasar de 9% a 10%
+            # el número ensancha su columna y las tres se recolocan.
             lbl_num = tk.Label(col, text="--%", bg=COLOR_CARD, fg=COLOR_TXT,
-                                 font=("Segoe UI", 15, "bold"))
+                                 font=("Consolas", 15, "bold"), width=5, anchor="w")
             lbl_num.pack(anchor="w")
-            barra = _MiniBarra(col, ancho=64)
-            barra.pack(anchor="w", pady=(2, 0))
+            barra = _MiniBarra(col, ancho=76, alto=26)
+            barra.pack(anchor="w", pady=(3, 0))
             self._metricas_grandes[clave] = lbl_num
             self._barras[clave] = barra
 
@@ -236,27 +461,40 @@ class PerformanceWidget(tk.Toplevel):
             ("🖥", "panel", t("wid_atajo_panel"), self._abrir_panel_completo),
         ]
         for icono, clave_atajo, tooltip, accion in atajos:
+            # "Segoe UI Emoji" y no "Segoe UI": con la fuente normal Windows
+            # dibuja estos simbolos en blanco y negro y quedaban como un
+            # contorno lavado. Con la de emoji salen en color.
             btn = tk.Label(fila_atajos, text=icono, bg=COLOR_CARD_ALT, fg=COLOR_TXT,
-                            font=("Segoe UI", 13), cursor="hand2", width=3, height=1)
+                            font=("Segoe UI Emoji", 12), cursor="hand2", width=3, height=1)
             btn.pack(side="left", padx=(0, 6))
             btn.bind("<Button-1>", lambda e, fn=accion: fn())
             self._crear_tooltip(btn, tooltip)
             if clave_atajo == "modo_juego":
+                # El de Modo Juego no lleva hover a proposito: su fondo YA
+                # dice si el modo esta encendido, y pintarlo al pasar el
+                # raton haria dudar de si esta activo o solo apuntado.
                 self._botones_atajos["modo_juego"] = btn
+            else:
+                self._hover(btn, COLOR_CARD_ALT, COLOR_HOVER)
 
-        # ---- Sistema: filas con puntito de color + texto ----
+        # ---- Sistema: filas con su propio icono + texto ----
         tarjeta_sistema = self._tarjeta(self.frame_expandido, t("wid_card_sistema"))
         self.filas_sistema = {}
+        # Antes las cuatro filas empezaban con el mismo punto: para saber
+        # cual era cual habia que leerlas enteras. Cada una con su icono se
+        # distingue de un vistazo, que es de lo que va un overlay.
+        iconos = {"disco": "▤", "bateria": "▮", "temp": "▲", "uptime": "◷"}
         for clave in ("disco", "bateria", "temp", "uptime"):
             fila = tk.Frame(tarjeta_sistema, bg=COLOR_CARD)
             fila.pack(fill="x", padx=10, pady=2)
-            punto = tk.Label(fila, text="●", bg=COLOR_CARD, fg=COLOR_TXT_DIM, font=("Segoe UI", 8))
+            punto = tk.Label(fila, text=iconos[clave], bg=COLOR_CARD, fg=COLOR_TXT_DIM,
+                              font=("Segoe UI", 8), width=2)
             punto.pack(side="left")
             texto = tk.Label(fila, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
                                font=("Segoe UI", 9), anchor="w")
-            texto.pack(side="left", padx=(4, 0))
+            texto.pack(side="left", padx=(2, 0))
             self.filas_sistema[clave] = (punto, texto)
-        tk.Frame(tarjeta_sistema, bg=COLOR_CARD, height=6).pack()  # respiro final
+        tk.Frame(tarjeta_sistema, bg=COLOR_CARD, height=8).pack()  # respiro final
 
     def _crear_tooltip(self, widget, texto):
         """Tooltip simple (sin dependencias): aparece al pasar el mouse encima."""
@@ -270,14 +508,20 @@ class PerformanceWidget(tk.Toplevel):
         def mostrar(_e):
             if globo["win"] is not None or not self._visible:
                 return
-            x = widget.winfo_rootx()
-            y = widget.winfo_rooty() + widget.winfo_height() + 4
             win = tk.Toplevel(self)
             win.overrideredirect(True)
             win.attributes("-topmost", True)
-            tk.Label(win, text=texto, bg="#000000", fg="white", font=("Segoe UI", 8),
-                     padx=6, pady=2).pack()
-            win.geometry(f"+{x}+{y}")
+            tk.Label(win, text=texto, bg="#0b0d12", fg=COLOR_TXT,
+                     font=("Segoe UI", 8), padx=7, pady=3,
+                     highlightbackground=COLOR_BORDE, highlightthickness=1).pack()
+            win.update_idletasks()
+            # Se coloca debajo del atajo, pero sin salirse por la derecha:
+            # el widget vive pegado al borde de la pantalla y el globo de
+            # los ultimos atajos se cortaba.
+            x = widget.winfo_rootx()
+            x = min(x, widget.winfo_screenwidth() - win.winfo_width() - 6)
+            y = widget.winfo_rooty() + widget.winfo_height() + 4
+            win.geometry(f"+{max(0, x)}+{y}")
             globo["win"] = win
 
         def ocultar(_e=None):
@@ -295,20 +539,32 @@ class PerformanceWidget(tk.Toplevel):
         globo["mostrar"] = mostrar
         globo["ocultar"] = ocultar
 
-    def _crear_metric_label(self, parent):
+    def _crear_metric_label(self, parent, ancho=8):
+        """Una métrica de la barra compacta.
+
+        BUG corregido — la barra temblaba. Sin `width`, una etiqueta de Tk
+        se mide por su texto: al pasar de "CPU 9%" a "CPU 10%" crecía un
+        carácter y empujaba a todas las de su derecha, así que la barra
+        entera se recolocaba una o dos veces por segundo mientras la
+        mirabas. Con ancho fijo en caracteres y una tipografía donde todos
+        los dígitos miden lo mismo, el texto cambia y nada se mueve."""
         lbl = tk.Label(parent, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
-                        font=("Segoe UI", 10, "bold"), padx=6, pady=6)
+                        font=("Consolas", 10, "bold"), padx=5, pady=7,
+                        width=ancho, anchor="w")
         lbl.pack(side="left")
         return lbl
 
     def _toggle_expandir(self):
         self._expandido = not self._expandido
         if self._expandido:
-            self.frame_expandido.pack(fill="x")
+            self.frame_expandido.pack(fill="x", pady=(0, 6))
             self.btn_expandir.configure(text="▴")
         else:
             self.frame_expandido.pack_forget()
             self.btn_expandir.configure(text="▾")
+        # La ventana cambia de alto: el fondo redondeado hay que redibujarlo
+        # con la medida nueva o la curva de abajo se queda donde estaba.
+        self.after_idle(self._repintar_fondo)
 
     def _liberar_ram_manual(self):
         threading.Thread(target=opt.trim_process_memory, daemon=True).start()
@@ -459,13 +715,13 @@ class PerformanceWidget(tk.Toplevel):
             gpu_txt = t("wid_gpu", pct=f"{gpu:.0f}") if gpu is not None else t("wid_gpu_nd")
             if self.lbl_gpu:
                 self.lbl_gpu.configure(text=gpu_txt, fg=_color(gpu))
-            if self.lbl_net_up:
-                self.lbl_net_up.configure(text=f"↑{subida_kbps:.0f}K")
             if self.lbl_net_down:
-                self.lbl_net_down.configure(text=f"↓{bajada_kbps:.0f}K")
+                self.lbl_net_down.configure(text="↓" + _formato_red(bajada_kbps))
+            if self.lbl_net_up:
+                self.lbl_net_up.configure(text="↑" + _formato_red(subida_kbps))
 
             if self._expandido:
-                # Tarjeta Rendimiento: números grandes + barritas
+                # Tarjeta Rendimiento: números grandes + minigráficas
                 for clave, valor in (("cpu", cpu), ("ram", ram), ("gpu", gpu)):
                     lbl = self._metricas_grandes.get(clave)
                     barra = self._barras.get(clave)

@@ -39,7 +39,7 @@ import main
 
 # Los que hacen algo de verdad: se comprueba que existan, no se ejecutan.
 CON_EFECTOS = {"/ram", "/temporales", "/papelera", "/dns", "/rapido",
-               "/fps", "/widget", "/auto"}
+               "/fps", "/widget", "/auto", "/guardar"}
 
 fallos = []
 
@@ -82,11 +82,32 @@ for _ in range(8):
 
 # Consola de mentira, para recoger lo que responde cada comando.
 class ConsolaFalsa:
+    """Imita la interfaz que _ejecutar_comando espera de una consola.
+
+    Tiene que seguir a la de verdad: cuando imprimir() empezo a recibir un
+    `tipo` para elegir el color, esta clase se quedo con la firma vieja y el
+    banco fallaba con TypeError en TODOS los comandos — un fallo del banco,
+    no de la app. Se registra tambien el tipo para poder comprobar que un
+    error sale marcado como error y no del mismo color que un exito.
+    """
+
     def __init__(self):
         self.dicho = []
+        self.tipos = []
+        self.limpiada = 0
+        self.guardada = 0
 
-    def imprimir(self, texto):
-        self.dicho.append(texto)
+    def imprimir(self, texto, tipo="info", prefijo=""):
+        self.dicho.append(prefijo + str(texto))
+        self.tipos.append(tipo)
+
+    def limpiar(self):
+        self.limpiada += 1
+        self.imprimir("(limpiada)", "dim")
+
+    def guardar_log(self):
+        self.guardada += 1
+        self.imprimir("(guardada)", "ok")
 
 
 print("\n== Comandos de navegacion (se ejecutan de verdad) ==")

@@ -15,6 +15,7 @@ import sys
 import time
 import json
 import math
+import difflib
 import queue
 import socket
 import getpass
@@ -135,6 +136,10 @@ COMANDOS_DISPONIBLES = {
     "/fps": "cmd_fps",
     "/bios": "cmd_bios",
     "/ajustes": "cmd_ajustes",
+    "/estado": "cmd_estado",
+    "/version": "cmd_version",
+    "/limpiar": "cmd_limpiar",
+    "/guardar": "cmd_guardar",
     "/salir": "cmd_salir",
     "/help": "cmd_help",
 }
@@ -745,108 +750,403 @@ class TarjetaMedicion(ctk.CTkFrame):
         paso(1)
 
 
-class DevConsole(ctk.CTkFrame):
+def _tooltip_ctk(widget, texto):
+    """Globo de ayuda para un widget de customtkinter.
+
+    El widget flotante ya tenía uno, pero vivía dentro de widget.py y
+    trabajaba con tkinter plano. Este es el equivalente para el panel
+    principal: hace falta porque los botones de icono de la consola (⧉ 🗑 💾)
+    no tienen sitio para una etiqueta al lado, y un icono sin explicación es
+    un icono que nadie pulsa.
     """
-    Consola de Desarrollador (Edición Administrador). Muestra el registro
-    técnico en vivo de cada acción Y permite escribir comandos — usa el
-    mismo motor de comandos del panel oculto del cliente (self._ejecutar_comando),
-    así que el admin puede disparar cualquier función escribiendo, además
-    de verla en botones normales por toda la app.
+    estado = {"win": None}
+
+    def mostrar(_e=None):
+        if estado["win"] is not None or not widget.winfo_exists():
+            return
+        ventana = tk.Toplevel(widget)
+        ventana.overrideredirect(True)
+        ventana.attributes("-topmost", True)
+        tk.Label(ventana, text=texto, bg="#0b0d12", fg="#e6edf3",
+                 font=("Segoe UI", 9), padx=8, pady=3,
+                 highlightbackground="#2a2f3a", highlightthickness=1).pack()
+        ventana.update_idletasks()
+        # Se coloca debajo del botón, pero sin salirse por la derecha de la
+        # pantalla: los botones de la consola están pegados al borde
+        # derecho del panel y el globo se cortaba.
+        x = widget.winfo_rootx()
+        x = min(x, widget.winfo_screenwidth() - ventana.winfo_width() - 8)
+        y = widget.winfo_rooty() + widget.winfo_height() + 6
+        ventana.geometry(f"+{max(0, x)}+{y}")
+        estado["win"] = ventana
+
+    def ocultar(_e=None):
+        if estado["win"] is not None:
+            try:
+                estado["win"].destroy()
+            except Exception:
+                pass
+            estado["win"] = None
+
+    widget.bind("<Enter>", mostrar)
+    widget.bind("<Leave>", ocultar)
+    # Al destruirse el botón (cambio de pantalla) el globo es una ventana
+    # aparte y se quedaría flotando sola en el escritorio — el mismo fallo
+    # que ya se había corregido en el widget flotante.
+    widget.bind("<Destroy>", ocultar)
+    return estado
+
+
+class _ConsolaBase(ctk.CTkFrame):
     """
-    def __init__(self, master, on_comando=None, **kwargs):
+    El motor compartido de las dos consolas de la app: la Consola de
+    Desarrollador (Edición Administrador) y el Panel de comandos oculto
+    (Edición Cliente).
+
+    Antes eran dos clases separadas que hacían casi lo mismo, y eso se
+    notaba: a una le habían puesto el placeholder traducido y a la otra no,
+    y el botón de la del cliente decía "Enviar" escrito a mano en el
+    código, así que en la build en inglés salía en español. Un arreglo en
+    una no llegaba nunca a la otra. Ahora el comportamiento está en un solo
+    sitio y las subclases solo eligen color y título.
+
+    Lo que aporta sobre la versión anterior, que era un cuadro de texto de
+    un solo color con una caja de escribir debajo:
+
+      * COLOR POR TIPO DE LÍNEA. Antes todo salía del mismo verde: un
+        "Papelera vaciada" y un "No se pudo vaciar la papelera" se veían
+        exactamente igual y había que leer la frase entera para saber cuál
+        de los dos era.
+      * HORA en cada línea. Sin ella no se sabía si lo que estabas leyendo
+        acababa de pasar o llevaba diez minutos ahí.
+      * HISTORIAL con ↑ y ↓, que es lo primero que uno intenta en una
+        consola y aquí no hacía nada.
+      * COMPLETAR con Tab.
+      * FICHAS CLICABLES con los comandos más usados: antes había que saber
+        que existía /help para descubrir que existía algo.
+      * TOPE DE LÍNEAS. El cuadro crecía sin límite; con el autopiloto
+        registrando, una sesión larga acaba con miles de líneas dentro, y
+        un widget de texto de Tk con miles de líneas se repinta lento.
+      * COPIAR, LIMPIAR y GUARDAR el registro a un archivo.
+    """
+
+    MAX_LINEAS = 400          # tope del buffer visible
+    LINEAS_A_RECORTAR = 120   # cuánto se tira de golpe al llegar al tope
+    MAX_HISTORIAL = 60        # comandos que recuerda ↑/↓
+
+    # Un color por tipo de línea. La clave es el `tipo` que se le pasa a
+    # imprimir(); si llega uno que no está aquí, se usa "info", así que una
+    # llamada antigua de una sola cadena sigue funcionando igual.
+    TONOS = {
+        "orden":  "#8ab4ff",   # el eco de lo que escribió el usuario
+        "ok":     "#5ee08a",
+        "error":  "#ff7b72",
+        "aviso":  "#f0c454",
+        "info":   "#c9d1d9",
+        "dim":    "#6b7280",
+        "titulo": "#e6edf3",
+    }
+    FONDO_CAJA = "#0b0d12"
+    COLOR_HORA = "#4d5461"
+
+    # Fichas de acceso rápido. Son los que se usan de verdad; el resto
+    # sigue estando en /help.
+    FICHAS = ("/ram", "/temporales", "/papelera", "/dns", "/rapido",
+              "/estado", "/limpiar", "/help")
+
+    def __init__(self, master, on_comando=None, acento="#5ee08a", titulo="", **kwargs):
         super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=16, **kwargs)
         self.on_comando = on_comando
+        self.acento = acento
+        self._historial = []
+        self._pos_historial = None      # None = escribiendo algo nuevo
+        self._borrador = ""             # lo que había escrito antes de subir
+        self._lineas = 0
 
-        header = ctk.CTkLabel(self, text="  Consola de Desarrollador — Registro de comandos",
-                               font=ctk.CTkFont(size=14, weight="bold"), anchor="w")
-        header.pack(fill="x", padx=12, pady=(12, 4))
+        # ---- Encabezado: título a la izquierda, estado real a la derecha ----
+        cabecera = ctk.CTkFrame(self, fg_color="transparent")
+        cabecera.pack(fill="x", padx=14, pady=(12, 0))
+        ctk.CTkLabel(cabecera, text=titulo, font=ctk.CTkFont(size=14, weight="bold"),
+                     anchor="w").pack(side="left")
+        ctk.CTkLabel(cabecera, text=self._texto_estado(), anchor="e",
+                     font=ctk.CTkFont(family="Consolas", size=11),
+                     text_color="gray55").pack(side="right")
 
-        self.textbox = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Consolas", size=12),
-                                       fg_color="#0d0f13", text_color="#7CFC7C")
-        self.textbox.pack(fill="both", expand=True, padx=12, pady=(0, 6))
-        self.textbox.insert("end", t("consola_lista") + "\n")
+        # Filito del color de la consola: separa el encabezado de la caja
+        # negra sin gastar la altura de un separador de verdad.
+        #
+        # Es un tk.Frame y no un CTkFrame a proposito. Un CTkFrame pinta su
+        # fondo dibujando un rectangulo en un lienzo interno, y con 2 px de
+        # alto ahi no queda nada que dibujar: el widget medía sus 2 px
+        # —comprobado— pero en la captura de pantalla no habia ni un pixel
+        # del color. Un tk.Frame es un rectangulo de color y nada mas.
+        tk.Frame(self, bg=acento, height=2).pack(fill="x", padx=14, pady=(6, 8))
+
+        # ---- Fichas: los comandos a un clic ----
+        if self.on_comando is not None:
+            fichas = ctk.CTkFrame(self, fg_color="transparent")
+            fichas.pack(fill="x", padx=14, pady=(0, 8))
+            for comando in self.FICHAS:
+                ctk.CTkButton(
+                    fichas, text=comando, width=len(comando) * 8 + 16, height=24,
+                    font=ctk.CTkFont(family="Consolas", size=11),
+                    fg_color="#242832", hover_color=acento, text_color="#b9c2cf",
+                    corner_radius=12,
+                    command=lambda c=comando: self._lanzar_ficha(c),
+                ).pack(side="left", padx=(0, 6))
+
+        # ---- La caja negra ----
+        self.textbox = ctk.CTkTextbox(
+            self, font=ctk.CTkFont(family="Consolas", size=12),
+            fg_color=self.FONDO_CAJA, text_color=self.TONOS["info"],
+            border_width=0, corner_radius=10, wrap="word")
+        self.textbox.pack(fill="both", expand=True, padx=14, pady=(0, 8))
+        for nombre, color in self.TONOS.items():
+            self.textbox.tag_config(nombre, foreground=color)
+        self.textbox.tag_config("hora", foreground=self.COLOR_HORA)
         self.textbox.configure(state="disabled")
 
+        # ---- Línea de escribir + botones del registro ----
         if self.on_comando is not None:
             fila = ctk.CTkFrame(self, fg_color="transparent")
-            fila.pack(fill="x", padx=12, pady=(0, 12))
-            self.entry = ctk.CTkEntry(fila, placeholder_text=t("consola_placeholder"),
-                                       font=ctk.CTkFont(family="Consolas", size=12))
-            self.entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            fila.pack(fill="x", padx=14, pady=(0, 4))
+            ctk.CTkLabel(fila, text="❯", text_color=acento, width=14,
+                         font=ctk.CTkFont(family="Consolas", size=15,
+                                          weight="bold")).pack(side="left")
+            self.entry = ctk.CTkEntry(
+                fila, placeholder_text=t("consola_placeholder"),
+                font=ctk.CTkFont(family="Consolas", size=12),
+                fg_color="#11141a", border_color="#2a2f3a", border_width=1,
+                corner_radius=8, height=34)
+            self.entry.pack(side="left", fill="x", expand=True, padx=(4, 8))
             self.entry.bind("<Return>", self._enviar)
-            ctk.CTkButton(fila, text=t("consola_ejecutar"), width=90,
-                          command=self._enviar).pack(side="left")
+            self.entry.bind("<Up>", self._historial_atras)
+            self.entry.bind("<Down>", self._historial_adelante)
+            self.entry.bind("<Tab>", self._completar)
+            self.entry.bind("<Escape>", self._vaciar_entrada)
+            self.entry.bind("<Control-l>", self._limpiar_atajo)
+
+            ctk.CTkButton(fila, text=t("consola_ejecutar"), width=88, height=34,
+                          corner_radius=8, command=self._enviar).pack(side="left")
+            for etiqueta, clave, accion in (
+                    ("⧉", "consola_btn_copiar", self.copiar),
+                    ("🗑", "consola_btn_limpiar", self.limpiar),
+                    ("💾", "consola_btn_guardar", self.guardar_log)):
+                boton = ctk.CTkButton(fila, text=etiqueta, width=34, height=34,
+                                      corner_radius=8, fg_color="#242832",
+                                      hover_color="#333a47", command=accion)
+                boton.pack(side="left", padx=(6, 0))
+                _tooltip_ctk(boton, t(clave))
+
+            ctk.CTkLabel(self, text=t("consola_pista"), anchor="w",
+                         font=ctk.CTkFont(size=10), text_color="gray45").pack(
+                fill="x", padx=18, pady=(0, 10))
             self.entry.focus_set()
+        else:
+            # Sin caja de escribir (una consola que solo registra): aun así
+            # hace falta hueco abajo para que no quede pegada al borde.
+            ctk.CTkFrame(self, fg_color="transparent", height=8).pack()
+
+    # ---------- estado del encabezado ----------
+    def _texto_estado(self):
+        """Lo que en una consola de verdad se espera ver arriba: qué edición
+        corre, con qué permisos y con qué PID. Antes había que adivinarlo —
+        y "por qué no me deja" casi siempre es que no va como administrador."""
+        permisos = t("consola_estado_admin") if opt.is_admin() else t("consola_estado_usuario")
+        edicion = (t("consola_estado_edicion_admin") if EDICION == "admin"
+                   else t("consola_estado_edicion_cliente"))
+        return f"v{APP_VERSION} · {edicion} · {permisos} · PID {os.getpid()}"
+
+    # ---------- entrada ----------
+    def _lanzar_ficha(self, comando):
+        self.imprimir(comando, "orden", prefijo="❯ ")
+        self._recordar(comando)
+        if self.on_comando is not None:
+            self.on_comando(comando)
 
     def _enviar(self, event=None):
         texto = self.entry.get().strip()
         if not texto:
-            return
+            return "break"
         self.entry.delete(0, "end")
-        self.imprimir(f"$ {texto}")
+        self._pos_historial = None
+        self._borrador = ""
+        self.imprimir(texto, "orden", prefijo="❯ ")
+        self._recordar(texto)
         if self.on_comando is not None:
             self.on_comando(texto)
+        return "break"
 
-    def imprimir(self, texto):
+    def _recordar(self, texto):
+        # No se guarda el mismo comando dos veces seguidas: subir con ↑
+        # cinco veces para saltar cinco /ram idénticos es tiempo perdido.
+        if not self._historial or self._historial[-1] != texto:
+            self._historial.append(texto)
+        del self._historial[:-self.MAX_HISTORIAL]
+
+    def _historial_atras(self, event=None):
+        if not self._historial:
+            return "break"
+        if self._pos_historial is None:
+            self._borrador = self.entry.get()
+            self._pos_historial = len(self._historial)
+        self._pos_historial = max(0, self._pos_historial - 1)
+        self._poner_en_entrada(self._historial[self._pos_historial])
+        return "break"
+
+    def _historial_adelante(self, event=None):
+        if self._pos_historial is None:
+            return "break"
+        self._pos_historial += 1
+        if self._pos_historial >= len(self._historial):
+            # Pasado el final se recupera lo que estabas escribiendo antes
+            # de empezar a subir, no una línea vacía.
+            self._pos_historial = None
+            self._poner_en_entrada(self._borrador)
+        else:
+            self._poner_en_entrada(self._historial[self._pos_historial])
+        return "break"
+
+    def _poner_en_entrada(self, texto):
+        self.entry.delete(0, "end")
+        self.entry.insert(0, texto)
+
+    def _completar(self, event=None):
+        """Tab completa el comando. Con varios candidatos completa la parte
+        común y los enseña, que es lo que hace cualquier terminal."""
+        escrito = self.entry.get().strip().lower()
+        if not escrito:
+            return "break"
+        candidatos = sorted(c for c in COMANDOS_DISPONIBLES if c.startswith(escrito))
+        if not candidatos:
+            return "break"
+        if len(candidatos) == 1:
+            self._poner_en_entrada(candidatos[0])
+            return "break"
+        comun = os.path.commonprefix(candidatos)
+        if len(comun) > len(escrito):
+            self._poner_en_entrada(comun)
+        self.imprimir("   ".join(candidatos), "dim")
+        return "break"
+
+    def _vaciar_entrada(self, event=None):
+        self.entry.delete(0, "end")
+        self._pos_historial = None
+        return "break"
+
+    def _limpiar_atajo(self, event=None):
+        self.limpiar()
+        return "break"
+
+    # ---------- salida ----------
+    def imprimir(self, texto, tipo="info", prefijo=""):
+        """Escribe en la consola. `tipo` elige el color; si no se pasa
+        ninguno queda en el neutro."""
         if not self.textbox.winfo_exists():
             return
+        etiqueta = tipo if tipo in self.TONOS else "info"
         self.textbox.configure(state="normal")
-        self.textbox.insert("end", texto + "\n")
+        hora = datetime.now().strftime("%H:%M:%S")
+        for i, linea in enumerate(str(texto).split("\n")):
+            # La hora solo en la primera línea de un bloque: repetirla en
+            # las veinte líneas de /help sería ruido.
+            self.textbox.insert("end", (hora + "  ") if i == 0 else " " * 10, "hora")
+            self.textbox.insert("end", prefijo + linea + "\n", etiqueta)
+            self._lineas += 1
+        self._recortar_si_hace_falta()
         self.textbox.see("end")
         self.textbox.configure(state="disabled")
 
     def log(self, accion, comando, resultado):
+        """Registro técnico de una acción (lo llama _log_dev). El comando y
+        el resultado van en tonos distintos: en el bloque de tres líneas de
+        antes, todo del mismo color, costaba ver dónde acababa uno."""
         if not self.textbox.winfo_exists():
             return
         self.textbox.configure(state="normal")
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.textbox.insert("end", f'[{ts}] {t("consola_accion")}: {accion}\n')
-        self.textbox.insert("end", f"          CMD:    {comando}\n")
-        self.textbox.insert("end", f"          RESULT: {resultado}\n\n")
+        self.textbox.insert("end", datetime.now().strftime("%H:%M:%S") + "  ", "hora")
+        self.textbox.insert("end", f'{t("consola_accion")}: {accion}\n', "titulo")
+        self.textbox.insert("end", " " * 10, "hora")
+        self.textbox.insert("end", f"CMD     {comando}\n", "dim")
+        self.textbox.insert("end", " " * 10, "hora")
+        self.textbox.insert("end", f"RESULT  {resultado}\n\n", "ok")
+        self._lineas += 4
+        self._recortar_si_hace_falta()
         self.textbox.see("end")
         self.textbox.configure(state="disabled")
 
+    def _recortar_si_hace_falta(self):
+        """El cuadro de texto no soltaba nunca lo viejo. Se tira de las
+        líneas de arriba, que son las que nadie va a volver a leer."""
+        if self._lineas <= self.MAX_LINEAS:
+            return
+        self.textbox.delete("1.0", f"{self.LINEAS_A_RECORTAR + 1}.0")
+        self._lineas -= self.LINEAS_A_RECORTAR
+        self.textbox.insert("1.0", t("consola_recortado") + "\n", "dim")
+        self._lineas += 1
 
-class ComandoConsole(ctk.CTkFrame):
-    """
-    Panel de comandos oculto (edición cliente). Deja que el usuario ejecute,
-    escribiendo, las mismas funciones que ya existen como botones en el
-    resto de la app — no expone comandos ni rutas técnicas del sistema,
-    solo un atajo con estilo de terminal para quien lo descubre.
-    """
+    def texto_completo(self):
+        return self.textbox.get("1.0", "end-1c")
+
+    # ---------- botones del registro ----------
+    def limpiar(self):
+        if not self.textbox.winfo_exists():
+            return
+        self.textbox.configure(state="normal")
+        self.textbox.delete("1.0", "end")
+        self.textbox.configure(state="disabled")
+        self._lineas = 0
+        self.imprimir(t("consola_limpiado"), "dim")
+
+    def copiar(self):
+        contenido = self.texto_completo()
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(contenido)
+            self.imprimir(t("consola_copiado", lineas=contenido.count("\n") + 1), "ok")
+        except Exception as e:
+            self.imprimir(t("consola_copiado_error", error=e), "error")
+
+    def guardar_log(self):
+        """Guarda el registro tal cual está, en la carpeta de datos de la app.
+
+        No abre un diálogo de "Guardar como" a propósito: el diálogo de
+        archivo de Tk bloquea el bucle de eventos, y con una consola que se
+        va llenando eso significa que el registro se congela mientras
+        eliges carpeta. Se guarda en un sitio conocido y se dice cuál es.
+        """
+        try:
+            carpeta = os.path.join(prefs.carpeta_datos(), "registros")
+            os.makedirs(carpeta, exist_ok=True)
+            ruta = os.path.join(carpeta, "consola_"
+                                + datetime.now().strftime("%Y%m%d_%H%M%S") + ".txt")
+            with open(ruta, "w", encoding="utf-8") as f:
+                f.write(self.texto_completo())
+            self.imprimir(t("consola_guardado", ruta=ruta), "ok")
+        except Exception as e:
+            self.imprimir(t("consola_guardado_error", error=e), "error")
+
+
+class DevConsole(_ConsolaBase):
+    """Consola de Desarrollador (Edición Administrador): además de aceptar
+    comandos, recibe por log() el registro técnico en vivo de cada acción
+    de la app."""
+
+    def __init__(self, master, on_comando=None, **kwargs):
+        super().__init__(master, on_comando=on_comando, acento="#5ee08a",
+                         titulo=t("consola_titulo_dev"), **kwargs)
+        self.imprimir(t("consola_lista"), "dim")
+
+
+class ComandoConsole(_ConsolaBase):
+    """Panel de comandos oculto (Edición Cliente): las mismas funciones que
+    ya existen como botones por la app, pero escribiéndolas. No expone
+    rutas ni comandos técnicos del sistema, solo el atajo."""
+
     def __init__(self, master, on_comando, **kwargs):
-        super().__init__(master, fg_color=COLOR_BG_PANEL, corner_radius=16, **kwargs)
-        self.on_comando = on_comando
-
-        self.textbox = ctk.CTkTextbox(self, font=ctk.CTkFont(family="Consolas", size=12),
-                                       fg_color="#0d0f13", text_color="#9fd3ff")
-        self.textbox.pack(fill="both", expand=True, padx=12, pady=(12, 6))
-        self.textbox.insert("end", t("consola_ayuda") + "\n")
-        self.textbox.configure(state="disabled")
-
-        fila = ctk.CTkFrame(self, fg_color="transparent")
-        fila.pack(fill="x", padx=12, pady=(0, 12))
-        self.entry = ctk.CTkEntry(fila, placeholder_text="Escribe un comando y presiona Enter...")
-        self.entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
-        self.entry.bind("<Return>", self._enviar)
-        ctk.CTkButton(fila, text="Enviar", width=80, command=self._enviar).pack(side="left")
-        self.entry.focus_set()
-
-    def _enviar(self, event=None):
-        texto = self.entry.get().strip()
-        if not texto:
-            return
-        self.entry.delete(0, "end")
-        self.imprimir(f"> {texto}")
-        self.on_comando(texto)
-
-    def imprimir(self, texto):
-        if not self.textbox.winfo_exists():
-            return
-        self.textbox.configure(state="normal")
-        self.textbox.insert("end", texto + "\n")
-        self.textbox.see("end")
-        self.textbox.configure(state="disabled")
+        super().__init__(master, on_comando=on_comando, acento="#5aa9ff",
+                         titulo=t("consola_titulo_panel"), **kwargs)
+        self.imprimir(t("consola_ayuda"), "dim")
 
 
 class TechCleanApp(ctk.CTk):
@@ -5308,30 +5608,45 @@ class TechCleanApp(ctk.CTk):
             self.mostrar_dashboard()
             return
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Panel de Desarrollador",
+        ctk.CTkLabel(self.contenido, text=t("dev_panel_titulo"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
-            row=0, column=0, sticky="w", pady=(0, 16))
+            row=0, column=0, sticky="w", pady=(0, 4))
+        ctk.CTkLabel(self.contenido, text=t("dev_panel_sub"), anchor="w",
+                     font=ctk.CTkFont(size=12), text_color="gray55").grid(
+            row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
-        self.contenido.grid_rowconfigure(1, weight=1)
+        self.contenido.grid_rowconfigure(2, weight=1)
         self.dev_console = DevConsole(
             self.contenido,
             on_comando=lambda texto: self._ejecutar_comando(texto, consola=self.dev_console))
-        self.dev_console.grid(row=1, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
+        self.dev_console.grid(row=2, column=0, columnspan=3, sticky="nswe", padx=8, pady=(0, 10))
 
-        referencia = (
-            "Comandos de referencia que esta app puede ejecutar:\n"
-            "  • EmptyWorkingSet (psapi.dll) — compactar RAM de procesos\n"
-            "  • del /s /q %TEMP%\\* — limpiar temporales\n"
-            "  • SHEmptyRecycleBinW (shell32.dll) — vaciar papelera\n"
-            "  • ipconfig /flushdns — limpiar caché DNS\n"
-            "  • DELETE FROM urls/visits — borrar historial de navegador (SQLite)\n"
-            "  • shutdown /r /fw /t 5 — reiniciar directo a BIOS/UEFI\n"
-            "  • SetPriorityClass(HIGH_PRIORITY_CLASS) — impulsar un juego en primer plano\n"
-            "  • reg add HKCU\\...\\Run — activar inicio automático con Windows"
-        )
-        ctk.CTkLabel(self.contenido, text=referencia, justify="left", anchor="w",
-                     font=ctk.CTkFont(family="Consolas", size=11), text_color="gray60").grid(
-            row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 8))
+        # La referencia técnica antes era una etiqueta gris suelta debajo de
+        # la consola, escrita a mano en español — o sea que en la build en
+        # inglés salía en español. Ahora es una tarjeta traducida y plegable:
+        # ocupa nueve líneas que no hacen falta mientras estás escribiendo.
+        self._ref_abierta = False
+        tarjeta_ref = ctk.CTkFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=12)
+        tarjeta_ref.grid(row=3, column=0, columnspan=3, sticky="we", padx=8, pady=(0, 8))
+        boton_ref = ctk.CTkButton(
+            tarjeta_ref, text="▸  " + t("dev_ref_titulo"), anchor="w",
+            fg_color="transparent", hover_color="#252a34", height=30,
+            font=ctk.CTkFont(size=12, weight="bold"))
+        boton_ref.pack(fill="x", padx=6, pady=6)
+        cuerpo_ref = ctk.CTkLabel(tarjeta_ref, text=t("dev_ref_cuerpo"), justify="left",
+                                  anchor="w", font=ctk.CTkFont(family="Consolas", size=11),
+                                  text_color="gray60")
+
+        def alternar_ref():
+            self._ref_abierta = not self._ref_abierta
+            if self._ref_abierta:
+                cuerpo_ref.pack(fill="x", padx=16, pady=(0, 12))
+                boton_ref.configure(text="▾  " + t("dev_ref_titulo"))
+            else:
+                cuerpo_ref.pack_forget()
+                boton_ref.configure(text="▸  " + t("dev_ref_titulo"))
+
+        boton_ref.configure(command=alternar_ref)
 
     def _log_dev(self, accion, comando, resultado, seccion=None, exito=True,
                  bytes_liberados=0, archivos_afectados=0):
@@ -5369,7 +5684,7 @@ class TechCleanApp(ctk.CTk):
             self.mostrar_dashboard()
             return
         self._limpiar_contenido()
-        ctk.CTkLabel(self.contenido, text="Panel de comandos",
+        ctk.CTkLabel(self.contenido, text=t("consola_titulo_panel"),
                      font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 16))
 
@@ -5384,41 +5699,76 @@ class TechCleanApp(ctk.CTk):
         # la Consola Dev del admin — se etiqueta el origen correcto en el Historial.
         seccion_origen = t("consola_seccion_dev") if EDICION == "admin" else t("consola_seccion_oculto")
 
+        # Antes todo se imprimía igual: un "listo" y un "no se pudo" salían
+        # del mismo color y con la misma forma. Ahora cada respuesta lleva su
+        # tipo, y decir(exito, texto) elige verde o rojo por el resultado de
+        # verdad de la operación, no por lo que dice la frase.
+        def decir(exito, mensaje):
+            consola.imprimir(mensaje, "ok" if exito else "error")
+
         if comando in ("/help", "/ayuda", "ayuda", "help", "?"):
-            lineas = [f'{c}  —  {t(clave)}' for c, clave in COMANDOS_DISPONIBLES.items()]
-            consola.imprimir("\n".join(lineas))
+            ancho = max(len(c) for c in COMANDOS_DISPONIBLES)
+            lineas = [f"{c:<{ancho}}   {t(clave)}" for c, clave in
+                      sorted(COMANDOS_DISPONIBLES.items())]
+            consola.imprimir("\n".join(lineas), "info")
+            return
+
+        if comando == "/limpiar":
+            consola.limpiar()
+            return
+
+        if comando == "/guardar":
+            consola.guardar_log()
+            return
+
+        if comando == "/version":
+            consola.imprimir(self._texto_version_consola(), "info")
+            return
+
+        if comando == "/estado":
+            # Una foto del sistema dentro de la propia consola: es la
+            # pregunta que uno se hace justo antes y justo después de
+            # lanzar algo, y hasta ahora había que irse a otra pantalla.
+            consola.imprimir(t("consola_estado_midiendo"), "dim")
+
+            def worker():
+                lineas = self._lineas_estado_consola()
+                self.after(0, lambda: consola.imprimir(lineas, "info"))
+            threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/ram":
-            consola.imprimir(t("consola_liberando_ram"))
+            consola.imprimir(t("consola_liberando_ram"), "dim")
 
             def worker():
                 liberado, afectados, _ = opt.trim_process_memory()
                 msg = t("consola_ram_ok", procesos=afectados, tamano=opt.format_bytes(liberado))
-                self.after(0, lambda: consola.imprimir(msg))
+                self.after(0, lambda: decir(True, msg))
                 self._log_dev(t("consola_log_ram", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
             threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/temporales":
-            consola.imprimir(t("consola_limpiando_temp"))
+            consola.imprimir(t("consola_limpiando_temp"), "dim")
 
             def worker():
                 liberado, borrados, _ = opt.clear_temp_files()
                 msg = t("consola_temp_ok", archivos=borrados, tamano=opt.format_bytes(liberado))
-                self.after(0, lambda: consola.imprimir(msg))
+                self.after(0, lambda: decir(True, msg))
                 self._log_dev(t("consola_log_temp", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado, archivos_afectados=borrados)
             threading.Thread(target=worker, daemon=True).start()
             return
 
         if comando == "/papelera":
+            consola.imprimir(t("consola_vaciando_papelera"), "dim")
+
             def worker():
                 exito, _, liberado, elementos = opt.empty_recycle_bin()
                 msg = (t("consola_papelera_ok", tamano=opt.format_bytes(liberado), elementos=elementos)
                        if exito else t("consola_papelera_error"))
-                self.after(0, lambda: consola.imprimir(msg))
+                self.after(0, lambda: decir(exito, msg))
                 self._log_dev(t("consola_log_papelera", origen=seccion_origen), "N/A", msg,
                               seccion=seccion_origen, exito=exito,
                               bytes_liberados=liberado, archivos_afectados=elementos)
@@ -5428,13 +5778,13 @@ class TechCleanApp(ctk.CTk):
         if comando == "/dns":
             exito, _ = opt.flush_dns()
             msg = t("consola_dns_ok") if exito else t("consola_dns_error")
-            consola.imprimir(msg)
+            decir(exito, msg)
             self._log_dev(t("consola_log_dns", origen=seccion_origen), "N/A", msg,
                           seccion=seccion_origen, exito=exito)
             return
 
         if comando == "/rapido":
-            consola.imprimir(t("consola_rapido"))
+            consola.imprimir(t("consola_rapido"), "dim")
 
             def worker():
                 liberado_ram, procesos, _ = opt.trim_process_memory()
@@ -5442,7 +5792,7 @@ class TechCleanApp(ctk.CTk):
                 msg = t("consola_rapido_ok", procesos=procesos,
                         ram=opt.format_bytes(liberado_ram), archivos=archivos,
                         disco=opt.format_bytes(liberado_disco))
-                self.after(0, lambda: consola.imprimir(msg))
+                self.after(0, lambda: decir(True, msg))
                 self._log_dev(t("consola_log_rapido", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
                               exito=True, bytes_liberados=liberado_ram + liberado_disco,
                               archivos_afectados=procesos + archivos)
@@ -5464,32 +5814,85 @@ class TechCleanApp(ctk.CTk):
             "/salir": self.mostrar_dashboard,
         }
         if comando in navegacion:
-            consola.imprimir(t("consola_abriendo"))
+            consola.imprimir(t("consola_abriendo"), "dim")
             self.after(300, navegacion[comando])
             return
 
         if comando == "/widget":
             self._toggle_widget()
-            consola.imprimir(t("consola_widget_ok") if self.performance_widget
-                             else t("consola_widget_error"))
+            activo = self.performance_widget is not None
+            decir(activo, t("consola_widget_ok") if activo else t("consola_widget_error"))
             return
 
         if comando == "/auto":
             self._toggle_autopilot()
             consola.imprimir(t("consola_modo_juego",
                                 estado=t("consola_activado") if self.autopilot.activo
-                                else t("consola_desactivado")))
+                                else t("consola_desactivado")),
+                             "ok" if self.autopilot.activo else "aviso")
             return
 
         if comando == "/fps":
             exito, _ = opt.abrir_contador_fps_windows()
-            consola.imprimir(t("consola_fps_ok") if exito else t("consola_fps_error"))
+            decir(exito, t("consola_fps_ok") if exito else t("consola_fps_error"))
             return
 
         # Se recorta lo que se devuelve: si alguien pega media pagina en la
         # consola, no tiene sentido volcarsela entera de vuelta.
         eco = texto if len(texto) <= 60 else texto[:60] + "..."
-        consola.imprimir(t("consola_no_reconocido", comando=eco))
+        consola.imprimir(t("consola_no_reconocido", comando=eco), "error")
+        # Una letra de más no debería obligar a leerse /help otra vez.
+        cercanos = difflib.get_close_matches(comando, COMANDOS_DISPONIBLES, n=3, cutoff=0.6)
+        if cercanos:
+            consola.imprimir(t("consola_sugerencia", sugerencia="   ".join(cercanos)), "aviso")
+
+    def _texto_version_consola(self):
+        """Lo que hace falta saber para reportar un fallo: versión, edición,
+        permisos, si va compilada o desde el código, y dónde guarda los
+        datos. Antes había que preguntárselo al usuario dato por dato."""
+        congelada = getattr(sys, "frozen", False)
+        return "\n".join([
+            t("consola_ver_app", version=APP_VERSION),
+            t("consola_ver_edicion", edicion=(t("consola_estado_edicion_admin") if EDICION == "admin"
+                                              else t("consola_estado_edicion_cliente"))),
+            t("consola_ver_permisos", permisos=(t("consola_estado_admin") if opt.is_admin()
+                                                else t("consola_estado_usuario"))),
+            t("consola_ver_python", version=platform.python_version(),
+              modo=t("consola_ver_compilada") if congelada else t("consola_ver_codigo")),
+            t("consola_ver_windows", version=platform.version()),
+            t("consola_ver_datos", ruta=prefs.carpeta_datos()),
+        ])
+
+    def _lineas_estado_consola(self):
+        """Se llama desde un hilo de fondo a propósito: la temperatura y la
+        GPU se consultan por WMI / nvidia-smi y pueden tardar un par de
+        segundos. Hecho en el hilo de la interfaz, la ventana se congelaría
+        justo después de escribir el comando."""
+        try:
+            cpu = psutil.cpu_percent(interval=0.4)
+            memoria = psutil.virtual_memory()
+            disco = sysmon.get_disk_info()
+            temperatura = sysmon.get_cpu_temperature()
+            gpu = sysmon.get_gpu_info()
+            uptime = sysmon.get_uptime_seconds()
+            bateria = psutil.sensors_battery()
+        except Exception as e:
+            return t("consola_estado_error", error=e)
+
+        lineas = [
+            t("consola_estado_cpu", pct=f"{cpu:.0f}", nucleos=psutil.cpu_count(logical=True)),
+            t("consola_estado_ram", pct=f"{memoria.percent:.0f}",
+              usada=opt.format_bytes(memoria.used), total=opt.format_bytes(memoria.total)),
+            t("consola_estado_disco", pct=f'{disco["porcentaje"]:.0f}', libres=disco["libre_gb"]),
+            t("consola_estado_gpu", nombre=gpu.get("nombre") or "N/D",
+              pct=(f'{gpu["porcentaje"]:.0f}' if gpu.get("porcentaje") is not None else "--")),
+            (t("consola_estado_temp", temp=f"{temperatura:.0f}") if temperatura is not None
+             else t("consola_estado_temp_nd")),
+            t("consola_estado_uptime", horas=int(uptime // 3600), minutos=int((uptime % 3600) // 60)),
+        ]
+        if bateria is not None:
+            lineas.append(t("consola_estado_bateria", pct=f"{bateria.percent:.0f}"))
+        return "\n".join(lineas)
 
     # ---------------- Herramientas de técnico (solo Edición Administrador) ----------------
     def mostrar_tecnico(self):

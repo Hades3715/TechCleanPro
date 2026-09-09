@@ -225,8 +225,25 @@ En **Ajustes**, haz **7 clics seguidos** sobre el número de versión. Aparece
 "🔓 Panel oculto" en el menú — una consolita tipo terminal donde puedes
 **escribir comandos** en vez de hacer clic en botones. No expone comandos
 reales del sistema operativo: cada comando dispara la misma función que ya
-existe en la interfaz. Al abrirlo, un texto en gris recuerda: *"Escribe
-/help o ayuda para ver los comandos disponibles."*
+existe en la interfaz.
+
+Se maneja como una consola de verdad:
+
+- **Fichas** arriba con los comandos más usados: no hace falta saber que
+  existe `/help` para descubrir que hay algo.
+- **Flecha arriba y flecha abajo** recorren lo que ya escribiste. Si estabas
+  a medio escribir algo y subes, al volver abajo lo recuperas.
+- **Tab** completa. Con varios candidatos completa la parte común y te los
+  enseña, en vez de elegir uno por ti.
+- **Cada línea con su hora y su color**: verde lo que salió bien, rojo lo
+  que falló, ámbar los avisos. Antes todo salía del mismo color y había que
+  leer la frase entera para saber cuál de los dos era.
+- **Escribes un comando mal y te sugiere el parecido** en vez de mandarte a
+  leer la lista otra vez.
+- **Copiar, limpiar y guardar** el registro. Guardar deja un `.txt` en
+  `%APPDATA%\TechClean\registros` y te dice la ruta — útil si hay que
+  reportar algo.
+- **Ctrl+L** limpia. **Esc** vacía la línea.
 
 | Comando | Qué hace |
 |---|---|
@@ -245,6 +262,10 @@ existe en la interfaz. Al abrirlo, un texto en gris recuerda: *"Escribe
 | `/auto` | Activa/desactiva el Modo Juego |
 | `/bios` | Abre Reiniciar a BIOS |
 | `/ajustes` | Abre Ajustes |
+| `/estado` | Foto rápida de CPU, RAM, disco, GPU, temperatura y batería |
+| `/version` | Versión, edición, permisos, si va compilada y dónde guarda los datos |
+| `/limpiar` | Vacía la consola |
+| `/guardar` | Guarda el registro en un archivo de texto |
 | `/salir` | Vuelve a Inicio |
 
 Repite los 7 clics para ocultarlo de nuevo.
@@ -666,8 +687,11 @@ herramientas/                                              → verificaciones (v
 ### Herramientas de verificación
 
 Antes de dar un cambio por terminado, doble clic en
-**`herramientas\Verificar_Todo.bat`**: corre las 20 comprobaciones seguidas
-y espera una tecla al final para que puedas leer los resultados.
+**`herramientas\Verificar_Todo.bat`**: corre las 26 comprobaciones seguidas
+y espera una tecla al final para que puedas leer los resultados. Al terminar
+dice cuántas pasaron y cuántas no — antes solo imprimía "revisa arriba", y
+una comprobación que ni llegaba a arrancar no se distinguía de una que
+pasaba.
 
 | Herramienta | Qué comprueba |
 |---|---|
@@ -677,12 +701,13 @@ y espera una tecla al final para que puedas leer los resultados.
 | `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar la app |
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
-| `revisar_comandos.py` | Que los 21 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_comandos.py` | Que los 25 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `prueba_consola.py` | La consola entera: historial con las flechas, completar con Tab, tope de líneas, un color por tipo de línea, y que no quede ni una frase escrita a mano sin traducir |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 | `prueba_arranque.py` | Que la app abra y que las 16 pantallas se pinten, en el idioma que le pases |
 | `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
 | `prueba_animacion.py` | Que las barras, gráficas, aguja y tarjetas animen sin reventar |
-| `prueba_widget.py` | Widget flotante: arrastre, límites de pantalla, tooltips, colores, no trabajar oculto |
+| `prueba_widget.py` | Widget flotante: arrastre, límites de pantalla, tooltips, colores, esquinas redondeadas, respuesta al ratón, que los números no muevan la barra, no trabajar oculto |
 | `prueba_bucles.py` | Que entrar y salir de una pantalla deprisa no deje bucles de refresco acumulados |
 | `prueba_hilos_interfaz.py` | El puente hilo→interfaz, antes de que arranque la app y después de cerrarla |
 | `prueba_historial.py` | Que el historial sobreviva al cierre y aguante una línea corrupta |
@@ -692,6 +717,7 @@ y espera una tecla al final para que puedas leer los resultados.
 | `prueba_deshacer.py` | Que deshacer llame a la función inversa correcta, y que algo ya deshecho no se pueda deshacer dos veces |
 | `prueba_tecnico.py` | Foto antes/después (que sepa que subir no siempre es mejor), inspector de arranque y grabación a CSV |
 | `revisar_instalador.py` | Que el script del instalador no mienta: archivos, versión y nombres de las tareas que borra |
+| `revisar_empaquetado.py` | Que los `.exe` ya compilados lleven dentro todo lo que la app importa. Un módulo que PyInstaller deje fuera funciona perfectamente desde el código y falla solo en la copia que se reparte |
 
 Los `.py` sueltos también se pueden correr desde una terminal
 (`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se

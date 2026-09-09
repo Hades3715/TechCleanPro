@@ -25,6 +25,23 @@ Cubre los fallos que se encontraron revisandolo a fondo:
   6. Oculto seguia consultando GPU y temperatura (las consultas caras) y
      repintando cada segundo.
 
+Y lo que trajo el repaso estetico:
+
+  7. La barra compacta TEMBLABA. Las etiquetas se median por su texto, asi
+     que al pasar de "CPU 9%" a "CPU 10%" crecian un caracter y empujaban a
+     las de su derecha: la barra entera se recolocaba cada segundo. Se
+     comprueba midiendo la etiqueta con los dos textos.
+  8. La red iba siempre en K: a 5 MB/s ponia "5120K".
+  9. La minigrafica tiene que apuntar el valor MEDIDO, no los pasos
+     intermedios de la animacion — si no, dibujaria la animacion en vez de
+     lo que hizo el sistema.
+ 10. Las esquinas redondeadas se hacen con un color clave transparente. El
+     riesgo es que ese color aparezca en otro sitio: donde aparezca,
+     Windows abre un agujero en la ventana. Se revisa el fondo de todos los
+     widgets del contenido.
+ 11. Los atajos no daban ninguna senal de ser pulsables. El de Modo Juego
+     es la excepcion a proposito: su fondo dice si el modo esta encendido.
+
 No muestra ninguna ventana en la pantalla del usuario: todo ocurre en
 +4000+4000, fuera del area visible, y con %APPDATA% apuntando a una
 carpeta temporal.
@@ -178,7 +195,192 @@ comprobar("mostrar lo reactiva", w._visible is True)
 comprobar("y pone a cero los contadores de red para no dar un pico falso",
           abs(time.time() - w._net_prev_time) < 2.0)
 
-# ---------------- 7. Destruir a media animacion ----------------
+# ---------------- 7. La red se lee ----------------
+print("\n== Velocidad de red: escala y ancho ==")
+comprobar("por debajo de 1000 va en K", widget_mod._formato_red(842) == "842K",
+          widget_mod._formato_red(842))
+comprobar("5 MB/s ya NO sale como 5120K", widget_mod._formato_red(5120) == "5.0M",
+          widget_mod._formato_red(5120))
+comprobar("muy rapido pierde el decimal para no ensanchar",
+          widget_mod._formato_red(51200) == "50M", widget_mod._formato_red(51200))
+comprobar("sin dato no revienta", widget_mod._formato_red(None) == "--")
+comprobar("un negativo (contador reiniciado) no imprime basura",
+          widget_mod._formato_red(-5) == "--")
+largos = {v: len(widget_mod._formato_red(v))
+          for v in (0, 1, 999, 1000, 9999, 10240, 99999, 999999)}
+comprobar("nunca pasa de 5 caracteres, que es lo que reserva la etiqueta",
+          max(largos.values()) <= 5, str(largos))
+
+# ---------------- 8. Los numeros no mueven la barra ----------------
+print("\n== La barra compacta no tiembla ==")
+etiquetas = [e for e in (w.lbl_cpu, w.lbl_ram, w.lbl_gpu, w.lbl_net_up, w.lbl_net_down)
+             if e is not None]
+comprobar("hay etiquetas en la barra compacta", len(etiquetas) >= 3, f"{len(etiquetas)}")
+for i, lbl in enumerate(etiquetas):
+    comprobar(f"la etiqueta {i} tiene ancho fijo", int(lbl.cget("width")) > 0,
+              f'width={lbl.cget("width")}')
+    familia = str(lbl.cget("font"))
+    comprobar(f"la etiqueta {i} usa digitos de ancho fijo", "Consolas" in familia,
+              familia)
+
+# Lo que importa de verdad: que al cambiar el texto la etiqueta NO cambie de
+# tamano. Es la comprobacion que habria pillado el temblor original.
+lbl = etiquetas[0]
+lbl.configure(text="CPU 9%")
+root.update_idletasks()
+ancho_corto = lbl.winfo_reqwidth()
+lbl.configure(text="CPU 100%")
+root.update_idletasks()
+ancho_largo = lbl.winfo_reqwidth()
+comprobar("de 9% a 100% la etiqueta mide lo mismo", ancho_corto == ancho_largo,
+          f"{ancho_corto} px vs {ancho_largo} px")
+
+# ---------------- 9. La minigrafica guarda historia ----------------
+print("\n== Minigrafica: historia, no solo el valor de ahora ==")
+barra = w._barras["cpu"]
+barra._historia.clear()
+widget_mod.ANIMAR_BARRAS = False       # sin animacion, un paso por valor
+for valor in (10, 20, 30, 40, 50):
+    barra.set_valor(valor)
+comprobar("apunta cada medida", barra._historia == [10, 20, 30, 40, 50],
+          str(barra._historia))
+for valor in range(200):
+    barra.set_valor(valor % 100)
+comprobar("no crece sin limite", len(barra._historia) == barra.MUESTRAS,
+          f"{len(barra._historia)} muestras (tope {barra.MUESTRAS})")
+
+# Con la animacion encendida, la historia tiene que llevar el valor MEDIDO,
+# no los pasos intermedios que dibuja la animacion: si no, la grafica
+# contaria la animacion en vez de lo que hizo el sistema.
+widget_mod.ANIMAR_BARRAS = True
+barra._historia.clear()
+barra._valor_mostrado = 0.0
+barra.set_valor(90)
+for _ in range(20):
+    root.update()
+    time.sleep(0.01)
+comprobar("con animacion apunta UNA sola muestra, la medida",
+          barra._historia == [90.0], str(barra._historia))
+
+comprobar("un valor imposible se recorta en vez de salirse del dibujo",
+          (barra.set_valor(500) or True) and barra._historia[-1] == 100.0,
+          str(barra._historia[-1]))
+comprobar("None se trata como cero y no revienta",
+          (barra.set_valor(None) or True) and barra._historia[-1] == 0.0)
+
+print("\n== Mezclar colores (el canvas de Tk no tiene transparencia) ==")
+comprobar("mezcla al 0 devuelve el primero",
+          widget_mod._mezclar("#ff0000", "#0000ff", 0) == "#ff0000")
+comprobar("mezcla al 1 devuelve el segundo",
+          widget_mod._mezclar("#ff0000", "#0000ff", 1) == "#0000ff")
+comprobar("a medias sale a medias",
+          widget_mod._mezclar("#000000", "#ffffff", 0.5) in ("#808080", "#7f7f7f"),
+          widget_mod._mezclar("#000000", "#ffffff", 0.5))
+comprobar("un color con nombre no revienta el repintado",
+          widget_mod._mezclar("gray50", "#1c1f29", 0.5) == "#1c1f29")
+comprobar("None tampoco", widget_mod._mezclar(None, "#1c1f29", 0.5) == "#1c1f29")
+
+# ---------------- 10. Esquinas redondeadas ----------------
+print("\n== Esquinas redondeadas de la ventana ==")
+comprobar("Windows acepto el color clave", w._redondeada is True)
+comprobar("hay un lienzo de fondo", w._fondo is not None and w._fondo.winfo_exists())
+if w._fondo is not None:
+    comprobar("el lienzo esta por DEBAJO del contenido",
+              w.frame_header.winfo_exists() and w._fondo.winfo_exists())
+    w.mostrar()
+    root.update()
+    w._repintar_fondo()
+    root.update()
+    dibujos = w._fondo.find_all()
+    comprobar("el fondo se pinto", len(dibujos) >= 1, f"{len(dibujos)} figura(s)")
+    coords = w._fondo.coords(dibujos[0]) if dibujos else []
+    comprobar("el fondo cubre la ventana entera",
+              bool(coords) and max(coords[0::2]) >= w.winfo_width() - 3,
+              f"borde derecho del dibujo={max(coords[0::2]) if coords else '-'} "
+              f"ventana={w.winfo_width()}")
+    # El color clave NO puede aparecer en ningun otro sitio: donde aparezca,
+    # Windows abre un agujero en la ventana.
+    def fondos(widget, encontrados):
+        try:
+            encontrados.append(str(widget.cget("bg")).lower())
+        except Exception:
+            pass
+        for hijo in widget.winfo_children():
+            fondos(hijo, encontrados)
+        return encontrados
+
+    usados = fondos(w.frame_header, []) + fondos(w.frame_compacto, []) \
+        + fondos(w.frame_expandido, [])
+    comprobar("el color clave no se usa en ningun widget del contenido",
+              widget_mod.COLOR_CLAVE.lower() not in usados,
+              f"{len(usados)} fondos revisados")
+
+print("\n== Redondeado: los puntos del poligono ==")
+puntos = widget_mod._puntos_redondeados(0, 0, 100, 40, 10)
+comprobar("salen pares de coordenadas", len(puntos) % 2 == 0, f"{len(puntos)} numeros")
+comprobar("no se sale del rectangulo pedido",
+          min(puntos[0::2]) >= 0 and max(puntos[0::2]) <= 100
+          and min(puntos[1::2]) >= 0 and max(puntos[1::2]) <= 40)
+apretado = widget_mod._puntos_redondeados(0, 0, 6, 4, 20)
+comprobar("un radio mayor que la caja se recorta en vez de invertirla",
+          max(apretado[0::2]) <= 6 and max(apretado[1::2]) <= 4,
+          f"x max={max(apretado[0::2])} y max={max(apretado[1::2])}")
+
+# ---------------- 11. Responde al raton ----------------
+print("\n== Los atajos parecen pulsables ==")
+# Hay que DESPLEGAR el panel antes de probar el raton. Tk no reparte eventos
+# de cruce a un widget que no esta mostrado en pantalla, y los atajos viven
+# dentro del panel plegado: con el panel cerrado, event_generate("<Enter>")
+# no llega a ninguna parte y el hover parece roto estandolo. Es la misma
+# razon por la que la prueba de los tooltips llama a los manejadores a mano.
+if not w._expandido:
+    w._toggle_expandir()
+for _ in range(6):
+    root.update()
+    time.sleep(0.02)
+atajos = [hijo for hijo in w._botones_atajos.values()]
+btn_juego = w._botones_atajos.get("modo_juego")
+comprobar("el atajo de Modo Juego se guardo aparte", btn_juego is not None)
+# Un atajo normal: se busca entre los hermanos del de Modo Juego.
+hermanos = [h for h in btn_juego.master.winfo_children() if h is not btn_juego]
+comprobar("hay otros atajos ademas del de Modo Juego", len(hermanos) >= 3,
+          f"{len(hermanos)}")
+otro = hermanos[0]
+fondo_reposo = str(otro.cget("bg"))
+# El fondo se lee INMEDIATAMENTE despues de generar el <Enter>, sin pasar por
+# root.update(). event_generate ejecuta la vinculacion ahi mismo, pero al
+# procesar la cola de eventos aparece el globo del tooltip, que es una
+# ventana nueva encima, y el gestor de ventanas manda entonces un <Leave> de
+# verdad al boton — el raton de carne y hueso no esta ahi. Leyendo despues
+# del update se ve el fondo YA restaurado y parece que el hover no funciona.
+otro.event_generate("<Enter>")
+fondo_encima = str(otro.cget("bg"))
+comprobar("al pasar el raton por encima cambia de fondo",
+          fondo_encima != fondo_reposo, f"{fondo_reposo} -> {fondo_encima}")
+comprobar("y el fondo de encima es el tono de hover",
+          fondo_encima.lower() == widget_mod.COLOR_HOVER.lower(), fondo_encima)
+otro.event_generate("<Leave>")
+comprobar("al salir vuelve al fondo de reposo", str(otro.cget("bg")) == fondo_reposo,
+          str(otro.cget("bg")))
+root.update()
+
+# El de Modo Juego NO debe reaccionar al raton: su fondo dice si el modo esta
+# encendido, y pintarlo al apuntarlo haria dudar de si esta activo.
+fondo_juego = str(btn_juego.cget("bg"))
+btn_juego.event_generate("<Enter>")
+comprobar("el de Modo Juego no cambia de fondo al apuntarlo (su color dice si esta activo)",
+          str(btn_juego.cget("bg")) == fondo_juego,
+          f"{fondo_juego} -> {btn_juego.cget('bg')}")
+btn_juego.event_generate("<Leave>")
+root.update()
+
+print("\n== Las filas de Sistema se distinguen sin leerlas ==")
+iconos = [str(punto.cget("text")) for punto, _ in w.filas_sistema.values()]
+comprobar("cada fila tiene su propio icono", len(set(iconos)) == len(iconos),
+          " ".join(f"U+{ord(i):04X}" for i in iconos))
+comprobar("y son cuatro", len(iconos) == 4)
+
+# ---------------- 12. Destruir a media animacion ----------------
 print("\n== Destruir con animaciones en curso ==")
 for barra in w._barras.values():
     barra.set_valor(90)
