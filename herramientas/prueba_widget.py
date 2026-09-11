@@ -61,7 +61,9 @@ os.makedirs(carpeta, exist_ok=True)
 json.dump({"idioma": "es", "idioma_preguntado": True},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import customtkinter as ctk
 import preferences as prefs
 import widget as widget_mod

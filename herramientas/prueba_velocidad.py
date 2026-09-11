@@ -13,7 +13,9 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import optimizer as opt
 
 ultima = {"fase": None}

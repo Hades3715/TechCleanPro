@@ -13,7 +13,7 @@ sistema. Desarrollada por **Edwin Javier Cortez Cardoza**, alias **Hades**
 la instaló en su propia laptop y en la de otra persona con equipo de bajo
 rendimiento, y varios bugs se encontraron así, con uso real.
 
-- **Versión actual**: 1.5.0 (`APP_VERSION` en `main.py`)
+- **Versión actual**: 1.5.0 (`APP_VERSION` en `codigo/main.py`)
 - **Stack**: Python + customtkinter (tema oscuro), psutil, pystray+Pillow,
   winreg, ctypes, sqlite3, PowerShell (para WMI vía `Get-CimInstance`)
 - **~12,600 líneas** repartidas en `main.py`, `optimizer.py`,
@@ -56,11 +56,11 @@ todo en ambos idiomas sin recompilar.
 
 ## Cómo compilar
 
-`Generar_App_Instalable.bat` (cliente) y `Generar_App_Admin.bat` (admin) —
+`compilar/Generar_App_Instalable.bat` (cliente) y `compilar/Generar_App_Admin.bat` (admin) —
 PyInstaller, `--onefile --windowed --uac-admin`. Ambos scripts tienen una
 sección de **firma digital opcional** al inicio (`CERT_THUMBPRINT` vacío por
 defecto) — se activa sola en cuanto se rellene, sin tocar nada más del script.
-`Iniciar_Rapido.bat`/`Iniciar_Rapido_Admin.bat` corren desde código fuente
+`Iniciar.bat`/`Iniciar_Admin.bat` (en la raíz) corren desde código fuente
 directo, sin compilar (para probar rápido).
 
 El script del cliente genera **las dos builds de una pasada** (ES y EN),
@@ -93,7 +93,7 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 - **Plan de distribución**: dos builds separadas por idioma (ES/EN), que se
   eligen por el nombre del archivo en Releases. **Ya implementado**: el
   selector salió de la edición cliente (ver arriba).
-- **Versión**: `APP_VERSION = "1.5.0"` en `main.py`, unificada con el
+- **Versión**: `APP_VERSION = "1.5.0"` en `codigo/main.py`, unificada con el
   changelog del README (antes decía 1.0.0, un descuido). La etiqueta de la
   release de GitHub debe coincidir: el buscador de actualizaciones compara
   esa constante contra `tag_name`, quitandole la "v" inicial, así que la
@@ -530,11 +530,64 @@ con `comparar_fotos`: cada campo lleva escrito si SUBIR es bueno o malo. Sin
 eso la tabla del antes/después diría que subir la RAM usada es una mejora,
 y esa tabla es justo la que un técnico le enseña a un cliente.
 
-**`instalador/TechClean.iss`** — script de Inno Setup. El desinstalador
+**`compilar/TechClean.iss`** — script de Inno Setup. El desinstalador
 borra las tareas programadas que la app crea; si un nombre no coincide, la
 tarea queda huérfana intentando ejecutar un archivo borrado. `revisar_instalador.py`
 compara esos nombres contra las constantes reales de `optimizer.py`, y ya
 pilló un error así.
+
+## Estructura de carpetas (reorganización de la 1.5.0)
+
+La raíz tenía 35 cosas sueltas: los 14 `.py`, cinco `.bat` de nombres
+parecidos, los `.md`, un `.exe` de respaldo de 22 MB, `dist/` con 44 MB de
+sobras y hasta un `.txt` basura de un comando mal escrito. Quedó así:
+
+```
+Iniciar.bat, Iniciar_Admin.bat   ← abrir desde el código (antes Iniciar_Rapido*.bat)
+TechClean_*.exe                  ← los compilados, a la vista
+codigo/          los 15 módulos de la app
+compilar/        Generar_App_*.bat, Compilar_Instalador.bat, TechClean.iss
+documentacion/   este archivo y las notas de versión
+herramientas/    el banco de pruebas
+assets/          icono y sonido
+```
+
+Cosas que hay que saber para no romperla:
+
+- **`codigo/rutas.py` es el único sitio que sabe dónde está `assets/`.**
+  Antes era `dirname(__file__)`, y funcionaba porque todo estaba junto. Con
+  el código en `codigo/`, eso apunta a `codigo/assets`, que no existe — y el
+  síntoma habría sido la app sin icono ni sonido **solo desde el código**:
+  compilada va bien porque PyInstaller descomprime todo junto en `_MEIPASS`.
+  Un fallo invisible en lo que se reparte y visible solo para quien programa.
+- **Los generadores viven en `compilar/` pero trabajan desde la raíz**:
+  hacen `cd /d "%~dp0.."`. Así `assets`, `requirements.txt`, `dist` y el
+  `.exe` de salida siguen valiendo tal cual; solo cambia que el script de
+  entrada es `codigo\main.py` y que PyInstaller recibe `--paths codigo`.
+- **Las herramientas piden las rutas a `herramientas/_rutas.py`.** Antes
+  cada una lo resolvía a su manera, y varias dependían del directorio actual
+  (`sys.path.insert(0, ".")`, `open("main.py")`): funcionaban solo porque el
+  `.bat` hacía `cd` a la raíz antes. Ahora ninguna depende de dónde se la
+  llame. `_rutas.MODULOS` es la única lista de módulos; `revisar_empaquetado`
+  la usa en vez de tener la suya.
+- `revisar_empaquetado.py` cazó la reorganización a medias: tras crear
+  `rutas.py`, los `.exe` viejos no lo llevaban dentro. Recompilar lo arregló.
+
+### Bug encontrado al recompilar: el generador admin decía "Listo" sin copiar
+
+`Generar_App_Admin.bat` tenía `copy /Y ... >nul`. Con el `.exe` anterior
+abierto (lo normal: uno lo deja en la bandeja para probar), Windows no deja
+sobreescribirlo, el `copy` fallaba en silencio y el script decía "Listo"
+dejando el ejecutable **de tres horas antes**. Ese mismo arreglo ya estaba
+en `Generar_App_Instalable.bat`, pero nunca llegó al otro generador: dos
+copias del mismo paso, el arreglo en una sola. Ahora los dos apartan el
+`.exe` viejo con `ren` (Windows sí deja renombrar un `.exe` en ejecución) y
+comprueban el `errorlevel` del `copy`. Comprobado: se recompiló con dos
+`TechClean_Admin.exe` corriendo.
+
+Es el tercer caso del mismo patrón en la 1.5.0 (las dos consolas, los dos
+generadores, las dos listas de módulos): **cuando algo existe dos veces, un
+arreglo llega a una sola.**
 
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 

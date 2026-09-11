@@ -30,7 +30,7 @@ if not exist "..\TechClean_EN.exe" (
 if "%FALTAN%"=="1" (
     echo.
     echo Primero hay que generar las aplicaciones: vuelve a la carpeta
-    echo de arriba y haz doble clic en Generar_App_Instalable.bat.
+    echo de al lado y haz doble clic en Generar_App_Instalable.bat.
     echo Cuando termine, vuelve aqui.
     echo.
     pause
@@ -86,7 +86,7 @@ echo.
 echo ============================================================
 echo   Listo. El instalador quedo en:
 echo.
-echo     instalador\salida\TechClean_1.5.0_Instalador.exe
+echo     compilar\salida\TechClean_1.5.0_Instalador.exe
 echo.
 echo   Ese es el archivo que se sube a Releases. Quien lo descargue
 echo   solo tiene que abrirlo y darle a Siguiente.

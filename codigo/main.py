@@ -40,6 +40,7 @@ import widget as widget_mod
 import tray as tray_mod
 import autopilot as autopilot_mod
 import preferences as prefs
+import rutas
 
 try:
     import winsound
@@ -144,9 +145,14 @@ COMANDOS_DISPONIBLES = {
     "/help": "cmd_help",
 }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-HONK_PATH = os.path.join(BASE_DIR, "assets", "honk.wav")
-ICON_PATH = os.path.join(BASE_DIR, "assets", "icono.ico")
+# Las rutas de assets/ salen de rutas.py y no de dirname(__file__).
+# Con el codigo en codigo/ y assets/ en la raiz, dirname(__file__) apunta a
+# codigo/assets, que no existe — y la app abriria sin icono y sin sonido,
+# pero SOLO desde el codigo: compilada seguiria bien porque PyInstaller
+# descomprime todo junto. O sea, un fallo invisible en lo que se reparte.
+BASE_DIR = rutas.CARPETA_CODIGO
+HONK_PATH = rutas.recurso("honk.wav")
+ICON_PATH = rutas.recurso("icono.ico")
 
 
 def color_por_porcentaje(p):

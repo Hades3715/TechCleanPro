@@ -1,9 +1,20 @@
 # -*- coding: utf-8 -*-
 """Rutina de auditoria del CONTEXTO_PROYECTO.md, pasos 2-4."""
 import ast, collections
+import _rutas
+
+# Los .py de la app viven en codigo/. Se leen por _rutas.fuente() y no por
+# nombre suelto: leerlos por nombre suelto dependia de que el .bat hubiera
+# hecho cd a la raiz antes, asi que correr la auditoria a mano desde otra
+# carpeta fallaba con "no such file".
+#
+# Las CLAVES del diccionario siguen siendo el nombre corto, porque son lo
+# que se imprime en los mensajes y "main.py:DevConsole" se lee mejor que la
+# ruta absoluta entera.
 ARCH = ["main.py","optimizer.py","system_monitor.py","idiomas.py","widget.py",
-        "tray.py","autopilot.py","privacy.py","report.py","preferences.py","main_admin.py"]
-arb = {f: ast.parse(open(f, encoding="utf-8").read(), f) for f in ARCH}
+        "tray.py","autopilot.py","privacy.py","report.py","preferences.py",
+        "rutas.py","main_admin.py"]
+arb = {f: ast.parse(_rutas.leer(f), f) for f in ARCH}
 
 print("2. Duplicados de clase/modulo:", end=" ")
 d = []

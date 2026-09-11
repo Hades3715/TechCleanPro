@@ -34,14 +34,15 @@ import sys
 import tempfile
 import zipfile
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import _rutas
+RAIZ = _rutas.RAIZ
 EXES = ["TechClean_ES.exe", "TechClean_EN.exe", "TechClean_Admin.exe"]
 
 # Modulos propios de la app: se miran sus imports.
-PROPIOS = ["main.py", "main_admin.py", "optimizer.py", "system_monitor.py",
-           "idiomas.py", "widget.py", "tray.py", "autopilot.py", "privacy.py",
-           "report.py", "preferences.py", "deshacer.py", "tecnico.py",
-           "build_config.py"]
+# La lista sale de _rutas para que no haya dos listas de modulos que se
+# puedan desincronizar: si manana se anade un modulo y solo se apunta en un
+# sitio, esta comprobacion dejaria de vigilarlo sin decir nada.
+PROPIOS = _rutas.MODULOS
 
 # Estos viven en el CArchive de fuera (extensiones compiladas, DLL) o son
 # parte del propio arranque, no modulos del PYZ.
@@ -78,13 +79,13 @@ def imports_de(ruta):
 print("== Lo que la app importa ==")
 necesarios = set()
 for nombre in PROPIOS:
-    ruta = os.path.join(RAIZ, nombre)
+    ruta = _rutas.fuente(nombre)
     if not os.path.exists(ruta):
         continue
     necesarios |= imports_de(ruta)
 # Los propios tambien tienen que estar dentro.
 necesarios |= {os.path.splitext(n)[0] for n in PROPIOS
-               if os.path.exists(os.path.join(RAIZ, n))}
+               if os.path.exists(_rutas.fuente(n))}
 necesarios -= FUERA_DEL_PYZ
 # Los puntos de ENTRADA no van en el PYZ: son el script principal del .exe.
 # Y main_admin es el punto de entrada de la OTRA edicion — que no este dentro

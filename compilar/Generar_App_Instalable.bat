@@ -1,7 +1,10 @@
 @echo off
 chcp 65001 >nul
 title TechClean - Generador de la app instalable (ES + EN)
-cd /d "%~dp0"
+REM Se trabaja desde la RAIZ del proyecto, no desde compilar: asi las
+REM rutas relativas que ya habia (assets, requirements.txt, dist, el
+REM .exe de salida) siguen valiendo tal cual.
+cd /d "%~dp0.."
 echo ============================================================
 echo   TechClean - Generando tus aplicaciones (.exe)
 echo ============================================================
@@ -62,7 +65,7 @@ rmdir /s /q dist >nul 2>nul
 del /q "TechClean.spec" >nul 2>nul
 del /q "TechClean_ES.spec" >nul 2>nul
 del /q "TechClean_EN.spec" >nul 2>nul
-if exist "__pycache__" rmdir /s /q "__pycache__" >nul 2>nul
+if exist "codigo\__pycache__" rmdir /s /q "codigo\__pycache__" >nul 2>nul
 
 echo.
 echo [2/4] Comprobando que los dos idiomas esten completos...
@@ -115,7 +118,7 @@ REM ------------------------------------------------------------
 echo.
 echo   --- Compilando version %2 ---
 call :fijar_idioma %1
-python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_%2" --add-data "assets;assets" main.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_%2" --add-data "assets;assets" --paths codigo codigo\main.py
 
 if not exist "dist\TechClean_%2.exe" (
     echo.
@@ -156,7 +159,7 @@ REM ------------------------------------------------------------
 REM  Reescribe SOLO build_config.py con el idioma %1
 REM ------------------------------------------------------------
 :fijar_idioma
-python -c "import io,re,sys; c=io.open('build_config.py',encoding='utf-8').read(); c=re.sub(r'^IDIOMA = \".*\"$', 'IDIOMA = \"'+sys.argv[1]+'\"', c, flags=re.M); io.open('build_config.py','w',encoding='utf-8',newline='\n').write(c)" %1
+python -c "import io,re,sys; c=io.open('codigo/build_config.py',encoding='utf-8').read(); c=re.sub(r'^IDIOMA = \".*\"$', 'IDIOMA = \"'+sys.argv[1]+'\"', c, flags=re.M); io.open('codigo/build_config.py','w',encoding='utf-8',newline='\n').write(c)" %1
 exit /b 0
 
 REM ------------------------------------------------------------

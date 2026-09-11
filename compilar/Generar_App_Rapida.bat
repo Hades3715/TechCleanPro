@@ -1,7 +1,10 @@
 @echo off
 chcp 65001 >nul
 title TechClean - Generador de la version RAPIDA (carpeta)
-cd /d "%~dp0"
+REM Se trabaja desde la RAIZ del proyecto, no desde compilar: asi las
+REM rutas relativas que ya habia (assets, requirements.txt, dist, el
+REM .exe de salida) siguen valiendo tal cual.
+cd /d "%~dp0.."
 echo ============================================================
 echo   TechClean - Version RAPIDA (arranca en menos de 1 segundo)
 echo ============================================================
@@ -106,7 +109,7 @@ REM ------------------------------------------------------------
 echo.
 echo   --- Compilando version %2 (rapida) ---
 call :fijar_idioma %1
-python -m PyInstaller --noconfirm --clean --onedir --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_%2_rapida" --distpath "dist_rapida" --add-data "assets;assets" main.py
+python -m PyInstaller --noconfirm --clean --onedir --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_%2_rapida" --distpath "dist_rapida" --add-data "assets;assets" --paths codigo codigo\main.py
 
 if not exist "dist_rapida\TechClean_%2_rapida\TechClean_%2_rapida.exe" (
     echo.
@@ -129,14 +132,14 @@ REM ------------------------------------------------------------
 REM  Reescribe SOLO build_config.py con el idioma %1
 REM ------------------------------------------------------------
 :fijar_idioma
-> build_config.py echo # -*- coding: utf-8 -*-
->> build_config.py echo """Idioma fijado al compilar.
->> build_config.py echo.
->> build_config.py echo Este archivo lo REESCRIBE el generador antes de cada compilacion.
->> build_config.py echo No lo edites a mano: se pierde en la siguiente build.
->> build_config.py echo """
->> build_config.py echo.
->> build_config.py echo IDIOMA = "%1"
+> codigo\build_config.py echo # -*- coding: utf-8 -*-
+>> codigo\build_config.py echo """Idioma fijado al compilar.
+>> codigo\build_config.py echo.
+>> codigo\build_config.py echo Este archivo lo REESCRIBE el generador antes de cada compilacion.
+>> codigo\build_config.py echo No lo edites a mano: se pierde en la siguiente build.
+>> codigo\build_config.py echo """
+>> codigo\build_config.py echo.
+>> codigo\build_config.py echo IDIOMA = "%1"
 exit /b 0
 
 :error

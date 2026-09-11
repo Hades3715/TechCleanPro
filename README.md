@@ -25,10 +25,10 @@ publicarla como tuya ni venderla — ver [LICENSE.md](LICENSE.md).
 No necesitas leer todo este documento para usar la app. Extrae el ZIP y haz
 doble clic en:
 
-**`Generar_App_Instalable.bat`**
+**`compilar\Generar_App_Instalable.bat`**
 
 Ese archivo hace todo el trabajo una sola vez (instala lo necesario y
-compila la app) y al final te deja **dos** archivos en la misma carpeta:
+compila la app) y al final te deja **dos** archivos en la carpeta principal:
 
 - **`TechClean_ES.exe`** — la app en español
 - **`TechClean_EN.exe`** — la app en inglés
@@ -43,7 +43,7 @@ vez (marca "Add Python to PATH" al instalarlo). Es solo para generar el
 `.exe`; una vez generado, ya no hace falta.
 
 Si mientras seguimos ajustando la app prefieres probar cambios rápido sin
-recompilar el `.exe` cada vez, usa `Iniciar_Rapido.bat` en su lugar.
+recompilar el `.exe` cada vez, usa `Iniciar.bat` en su lugar.
 
 ### ¿Y si quieres que abra más rápido?
 
@@ -52,7 +52,7 @@ que descomprimir 22 MB en una carpeta temporal **cada vez** que lo abres,
 antes de que aparezca nada. Medido en el equipo de desarrollo: **3.7
 segundos**.
 
-`Generar_App_Rapida.bat` compila la misma app en modo carpeta, sin nada que
+`compilar\Generar_App_Rapida.bat` compila la misma app en modo carpeta, sin nada que
 descomprimir: **0.5 segundos**. El costo es que en vez de un archivo suelto
 es una carpeta con muchos archivos dentro (el script deja también los `.zip`
 listos para repartir).
@@ -62,7 +62,7 @@ sigue existiendo porque es más cómodo de descargar y de pasarle a alguien.
 
 ### ¿Y un instalador normal?
 
-También hay uno. `instalador\Compilar_Instalador.bat` genera un instalador
+También hay uno. `compilar\Compilar_Instalador.bat` genera un instalador
 de los de toda la vida: se instala en Archivos de programa, aparece en
 "Agregar o quitar programas", crea accesos directos y se desinstala limpio
 (incluidas las tareas programadas que la app deja, para que no queden
@@ -88,8 +88,8 @@ Para abrirla igualmente: haz clic en **"Más información"** y luego en
 
 Si prefieres no confiar en un ejecutable sin firmar — que es una postura
 perfectamente razonable — el código fuente completo está en este mismo
-repositorio y puedes generar tu propio `.exe` con `Generar_App_Instalable.bat`,
-o correr la app directamente con `Iniciar_Rapido.bat`.
+repositorio y puedes generar tu propio `.exe` con `compilar\Generar_App_Instalable.bat`,
+o correr la app directamente con `Iniciar.bat`.
 
 El resto de este documento explica el paso a paso manual y el detalle
 técnico de cada sección, por si lo necesitas.
@@ -103,8 +103,8 @@ mismo código:
 
 | | Edición Cliente | Edición Administrador |
 |---|---|---|
-| Archivo fuente | `main.py` | `main_admin.py` |
-| Script para generar el `.exe` | `Generar_App_Instalable.bat` | `Generar_App_Admin.bat` |
+| Archivo fuente | `codigo/main.py` | `codigo/main_admin.py` |
+| Script para generar el `.exe` | `compilar/Generar_App_Instalable.bat` | `compilar/Generar_App_Admin.bat` |
 | `.exe` resultante | `TechClean_ES.exe` y `TechClean_EN.exe` | `TechClean_Admin.exe` |
 | Idioma | Fijo, según el `.exe` que descargues | Selector en Ajustes (ES/EN) |
 | Consola Dev en el menú | No existe | Siempre visible |
@@ -160,33 +160,31 @@ Descarga el archivo `TechClean.zip` y **extráelo completo** (clic derecho →
 
 ```
 TechClean/
-├── Generar_App_Instalable.bat   ← doble clic: genera TechClean_ES.exe y _EN.exe
-├── Generar_App_Rapida.bat       ← doble clic: la misma app, pero abre en medio segundo
-├── Generar_App_Admin.bat        ← doble clic: genera TechClean_Admin.exe
-├── Iniciar_Rapido.bat           ← doble clic: prueba la edición cliente sin compilar
-├── Iniciar_Rapido_Admin.bat     ← doble clic: prueba la edición admin sin compilar
-├── main.py                      ← app + edición cliente
-├── main_admin.py                ← lanzador de la edición administrador
-├── idiomas.py                   ← todos los textos, en español e inglés
-├── deshacer.py                  ← registro de cambios reversibles
-├── tecnico.py                   ← herramientas de la edición administrador
-├── instalador/                  ← script del instalador (necesita Inno Setup)
-├── build_config.py              ← idioma de esta compilación (lo reescribe el .bat)
-├── system_monitor.py
-├── optimizer.py
-├── preferences.py
-├── privacy.py
-├── report.py
-├── autopilot.py
-├── tray.py
-├── widget.py
-├── requirements.txt
+├── Iniciar.bat                  ← doble clic: abre la edición cliente sin compilar
+├── Iniciar_Admin.bat            ← doble clic: abre la edición admin sin compilar
 ├── README.md
 ├── LICENSE.md
+├── requirements.txt
+├── codigo/                      ← el programa
+│   ├── main.py                  ← app + edición cliente
+│   ├── main_admin.py            ← lanzador de la edición administrador
+│   ├── idiomas.py               ← todos los textos, en español e inglés
+│   ├── optimizer.py · system_monitor.py · widget.py · tray.py · ...
+│   ├── rutas.py                 ← dónde está assets/, desde el código o compilada
+│   └── build_config.py          ← idioma de esta compilación (lo reescribe el .bat)
+├── compilar/                    ← todo lo que genera ejecutables
+│   ├── Generar_App_Instalable.bat   ← genera TechClean_ES.exe y _EN.exe
+│   ├── Generar_App_Rapida.bat       ← la misma app, pero abre en medio segundo
+│   ├── Generar_App_Admin.bat        ← genera TechClean_Admin.exe
+│   ├── Compilar_Instalador.bat      ← instalador de Windows (necesita Inno Setup)
+│   └── TechClean.iss
+├── documentacion/               ← contexto del proyecto y notas de cada versión
 ├── herramientas/                ← el banco de comprobaciones (ver sección 11)
-└── assets/
-    └── honk.wav
+└── assets/                      ← icono y sonido
 ```
+
+Los `.exe` que generan los scripts de `compilar/` aparecen en la carpeta
+principal, junto a `Iniciar.bat`, para que no haya que buscarlos.
 
 Si solo ves un archivo `.py` suelto, es que no extrajiste el ZIP — todavía está
 comprimido. Tiene que quedar la carpeta completa con TODOS los archivos.
@@ -213,9 +211,10 @@ pip install -r requirements.txt
 
 ### Paso 5 — Ejecuta la app
 ```
-python main.py
+python codigo\main.py
 ```
-(o `python main_admin.py` para la edición administrador)
+(o `python codigo\main_admin.py` para la edición administrador — o, sin
+terminal, doble clic en `Iniciar.bat` / `Iniciar_Admin.bat`)
 
 ---
 
@@ -379,18 +378,19 @@ un equipo que ya corre Windows 11 (se verifica el build number real).
 
 ## 6. Convertirla en un .exe independiente (manual, opcional)
 
-`Generar_App_Instalable.bat` ya hace esto por ti (y genera los dos idiomas
+`compilar\Generar_App_Instalable.bat` ya hace esto por ti (y genera los dos idiomas
 de una pasada). Si prefieres hacerlo a mano:
 
 ```
 pip install pyinstaller
 
-REM Edición cliente — el idioma sale de build_config.py, así que hay que
+REM Desde la carpeta principal del proyecto.
+REM Edición cliente — el idioma sale de codigo\build_config.py, así que hay que
 REM cambiarlo entre una compilación y la otra (IDIOMA = "es" / "en").
-pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_ES" --add-data "assets;assets" main.py
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_ES" --add-data "assets;assets" --paths codigo codigo\main.py
 
 REM Edición administrador
-pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" main_admin.py
+pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" --paths codigo codigo\main_admin.py
 ```
 
 ---
@@ -448,7 +448,7 @@ reemplaza sin dejar la vieja suelta.
   "Esta sesión" y "Todo el historial", con su propio resumen: cuántas
   acciones, en cuántas sesiones, cuánto espacio liberado y desde cuándo. Hay
   botón para borrarlo, y se recorta solo a las 3000 acciones más recientes.
-- **Versión que arranca en medio segundo** (`Generar_App_Rapida.bat`) — ver
+- **Versión que arranca en medio segundo** (`compilar\Generar_App_Rapida.bat`) — ver
   la sección 0.
 
 **Corregido:**
@@ -664,24 +664,30 @@ reemplaza sin dejar la vieja suelta.
 ## 11. Estructura del proyecto
 
 ```
-main.py              → interfaz gráfica + edición cliente
-main_admin.py           → lanzador de la edición administrador (reutiliza main.py)
-idiomas.py                 → todos los textos de la app en español e inglés
-build_config.py               → idioma de esta compilación (lo reescribe el .bat)
-system_monitor.py          → CPU/RAM/GPU/disco/red/batería/componentes/info del sistema
-optimizer.py                   → RAM, temporales, papelera, DNS, BIOS, inicio automático,
-                                   perfiles de energía, reparación, limpieza programada,
-                                   gestor de inicio, desinstalador, servicios, speedtest,
-                                   notificaciones, punto de restauración, espacio en disco
-preferences.py                     → preferencias del usuario entre sesiones (JSON local)
-privacy.py                            → detección y limpieza de navegadores
-report.py                                → registro transparente de sesión
-autopilot.py                                → motor de Modo Juego (RAM + impulso + energía)
-tray.py                                        → icono en la bandeja del sistema
-widget.py                                         → barra de rendimiento flotante
-assets/icono.ico                                     → ícono de la app (ventana, bandeja, .exe)
-assets/honk.wav                                         → sonido del easter egg
-herramientas/                                              → verificaciones (ver abajo)
+codigo/
+  main.py            → interfaz gráfica + edición cliente
+  main_admin.py      → lanzador de la edición administrador (reutiliza main.py)
+  idiomas.py         → todos los textos de la app en español e inglés
+  build_config.py    → idioma de esta compilación (lo reescribe el .bat)
+  rutas.py           → dónde está assets/, tanto desde el código como compilada
+  system_monitor.py  → CPU/RAM/GPU/disco/red/batería/componentes/info del sistema
+  optimizer.py       → RAM, temporales, papelera, DNS, BIOS, inicio automático,
+                       perfiles de energía, reparación, limpieza programada,
+                       gestor de inicio, desinstalador, servicios, speedtest,
+                       notificaciones, punto de restauración, espacio en disco
+  preferences.py     → preferencias del usuario entre sesiones (JSON local)
+  privacy.py         → detección y limpieza de navegadores
+  report.py          → registro transparente de sesión
+  deshacer.py        → registro de cambios reversibles
+  tecnico.py         → herramientas de la edición administrador
+  autopilot.py       → motor de Modo Juego (RAM + impulso + energía)
+  tray.py            → icono en la bandeja del sistema
+  widget.py          → barra de rendimiento flotante
+compilar/            → generadores de .exe, instalador y su script de Inno Setup
+documentacion/       → CONTEXTO_PROYECTO.md y las notas de cada versión
+assets/icono.ico     → ícono de la app (ventana, bandeja, .exe)
+assets/honk.wav      → sonido del easter egg
+herramientas/        → verificaciones (ver abajo)
 ```
 
 ### Herramientas de verificación

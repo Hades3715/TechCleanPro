@@ -22,10 +22,14 @@ try:
 except ImportError:
     HAS_PYSTRAY = False
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 from idiomas import t
+import rutas
 
-ICON_PATH = os.path.join(BASE_DIR, "assets", "icono.ico")
+# Ver el comentario de rutas.py: aqui pasaba lo mismo que en main.py, y
+# calcular la ruta en los dos sitios era la razon de sobra para sacarla a un
+# modulo comun.
+BASE_DIR = rutas.CARPETA_CODIGO
+ICON_PATH = rutas.recurso("icono.ico")
 
 COLOR_OK = (46, 204, 113, 255)
 COLOR_WARN = (241, 196, 15, 255)

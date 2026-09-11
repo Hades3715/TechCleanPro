@@ -1,6 +1,10 @@
 @echo off
 chcp 65001 >nul
 title TechClean - Generador de la Edicion Administrador
+REM Se trabaja desde la RAIZ del proyecto, no desde compilar: asi las
+REM rutas relativas que ya habia (assets, requirements.txt, dist, el
+REM .exe de salida) siguen valiendo tal cual.
+cd /d "%~dp0.."
 echo ============================================================
 echo   TechClean - Edicion ADMINISTRADOR
 echo ============================================================
@@ -49,11 +53,11 @@ echo Limpiando restos de compilaciones anteriores (para evitar usar codigo viejo
 rmdir /s /q build >nul 2>nul
 rmdir /s /q dist >nul 2>nul
 del /q "TechClean_Admin.spec" >nul 2>nul
-if exist "__pycache__" rmdir /s /q "__pycache__" >nul 2>nul
+if exist "codigo\__pycache__" rmdir /s /q "codigo\__pycache__" >nul 2>nul
 
 echo.
 echo [2/5] Compilando la Edicion Administrador...
-python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" main_admin.py
+python -m PyInstaller --noconfirm --clean --onefile --windowed --uac-admin --icon "assets\icono.ico" --name "TechClean_Admin" --add-data "assets;assets" --paths codigo codigo\main_admin.py
 
 if not exist "dist\TechClean_Admin.exe" (
     echo.
@@ -64,7 +68,36 @@ if not exist "dist\TechClean_Admin.exe" (
 
 echo.
 echo [3/5] Copiando el resultado a esta misma carpeta...
-copy /Y "dist\TechClean_Admin.exe" "TechClean_Admin.exe" >nul
+REM BUG corregido: este copy mandaba su salida a nul, asi que cuando fallaba
+REM nadie se enteraba. Y falla de verdad: si el .exe anterior esta ABIERTO
+REM (tipico, porque uno lo deja minimizado en la bandeja para probarlo),
+REM Windows no deja sobreescribirlo. El script seguia diciendo "Listo" y en
+REM la carpeta quedaba el ejecutable VIEJO.
+REM
+REM El arreglo ya estaba en Generar_App_Instalable.bat, pero a este generador
+REM nunca llego: dos copias del mismo paso, el arreglo solo en una.
+REM
+REM Truco: Windows SI deja renombrar un .exe en ejecucion (el candado es
+REM sobre el contenido, no sobre el nombre). Se aparta el viejo y se copia el
+REM nuevo en su lugar; el que este corriendo sigue vivo sin enterarse.
+if exist "TechClean_Admin.exe" (
+    del /q "TechClean_Admin_anterior.exe" >nul 2>nul
+    ren "TechClean_Admin.exe" "TechClean_Admin_anterior.exe" >nul 2>nul
+)
+copy /Y "dist\TechClean_Admin.exe" "TechClean_Admin.exe"
+if errorlevel 1 (
+    echo.
+    echo   [ERROR] No se pudo dejar TechClean_Admin.exe en esta carpeta.
+    REM Ojo: NADA de parentesis sueltos dentro de un bloque if ^(...^) —
+    REM cmd cierra el bloque en el primer ^) que encuentra y revienta con
+    REM "No se esperaba y en este momento". Van escapados con ^.
+    echo   Cierra la app si la tienes abierta: mira el icono de la bandeja,
+    echo   junto al reloj, clic derecho y Salir. Luego vuelve a intentarlo.
+    echo   El ejecutable recien compilado quedo en la carpeta dist.
+    pause
+    exit /b 1
+)
+del /q "TechClean_Admin_anterior.exe" >nul 2>nul
 
 echo.
 echo [4/5] Firma digital...

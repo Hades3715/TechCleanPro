@@ -6,7 +6,7 @@ __pycache__/
 build/
 dist/
 dist_rapida/
-instalador/salida/
+compilar/salida/
 *.spec
 TechClean.exe
 TechClean_ES.exe
@@ -15,6 +15,9 @@ TechClean_Admin.exe
 # copias de seguridad que deja el generador si el .exe anterior estaba abierto
 TechClean_*_anterior.exe
 TechClean_*_viejo_en_uso.exe
+
+# Marca que dejan Iniciar.bat / Iniciar_Admin.bat tras instalar dependencias
+.deps_ok
 
 # Entornos virtuales
 .venv/

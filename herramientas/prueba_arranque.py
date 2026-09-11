@@ -14,7 +14,9 @@ IDIOMA = sys.argv[1] if len(sys.argv) > 1 else "es"
 json.dump({"idioma": IDIOMA, "idioma_preguntado": True, "widget_visible": False},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))
 
-sys.path.insert(0, ".")
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import main
 
 fallos = []

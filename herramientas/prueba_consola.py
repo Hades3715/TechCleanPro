@@ -42,8 +42,9 @@ os.makedirs(carpeta, exist_ok=True)
 json.dump({"idioma": "es", "idioma_preguntado": True, "widget_visible": False},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, RAIZ)
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import customtkinter as ctk
 import tkinter as tk
 import idiomas
@@ -184,7 +185,7 @@ import ast
 # comprobacion leia el fuente en crudo y marcaba como fallo las frases que
 # estan DENTRO de los comentarios y los docstrings explicando el arreglo.
 # Un banco que grita por su propia documentacion no sirve de nada.
-arbol = ast.parse(open(os.path.join(RAIZ, "main.py"), encoding="utf-8").read())
+arbol = ast.parse(open(_rutas.fuente("main.py"), encoding="utf-8").read())
 nombres = {"_tooltip_ctk", "_ConsolaBase", "DevConsole", "ComandoConsole"}
 nodos = [n for n in arbol.body
          if isinstance(n, (ast.FunctionDef, ast.ClassDef)) and n.name in nombres]

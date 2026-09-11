@@ -31,10 +31,11 @@ import os
 import re
 import sys
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import _rutas
+RAIZ = _rutas.RAIZ
 CERCA = 12          # lineas arriba/abajo donde se acepta la actualizacion
 
-fuente = io.open(os.path.join(RAIZ, "main.py"), encoding="utf-8").read()
+fuente = io.open(_rutas.fuente("main.py"), encoding="utf-8").read()
 lineas = fuente.splitlines()
 
 recargas = {i for i, l in enumerate(lineas, 1)

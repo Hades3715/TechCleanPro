@@ -40,7 +40,10 @@ import io
 import os
 import sys
 
-MODULOS = ["main.py", "widget.py", "tray.py", "autopilot.py"]
+import _rutas
+
+MODULOS = [_rutas.fuente(n) for n in
+           ("main.py", "widget.py", "tray.py", "autopilot.py")]
 
 # Metodos que casi siempre son de un widget de Tkinter/customtkinter.
 METODOS_INTERFAZ = {

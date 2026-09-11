@@ -11,7 +11,9 @@ usuario: la prueba no debe borrarle nada a nadie.
 """
 import os, sys, tempfile, shutil
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import optimizer as opt
 
 banco = tempfile.mkdtemp(prefix="tcp_prueba_limpieza_")

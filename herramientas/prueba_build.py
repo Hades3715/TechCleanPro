@@ -11,7 +11,9 @@ os.makedirs(carpeta, exist_ok=True)
 json.dump({"idioma": "en", "idioma_preguntado": True},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))
 
-sys.path.insert(0, ".")
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import build_config
 build_config.IDIOMA = sys.argv[2] if len(sys.argv) > 2 else "es"
 import main

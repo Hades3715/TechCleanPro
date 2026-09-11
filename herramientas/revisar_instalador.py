@@ -21,8 +21,9 @@ import os
 import re
 import sys
 
-RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ISS = os.path.join(RAIZ, "instalador", "TechClean.iss")
+import _rutas
+RAIZ = _rutas.RAIZ
+ISS = os.path.join(RAIZ, "compilar", "TechClean.iss")
 
 fallos = []
 
@@ -42,7 +43,7 @@ script = io.open(ISS, encoding="utf-8").read()
 print("== Version ==")
 version_iss = re.search(r'#define\s+VersionApp\s+"([^"]+)"', script)
 version_app = re.search(r'APP_VERSION\s*=\s*"([^"]+)"',
-                        io.open(os.path.join(RAIZ, "main.py"), encoding="utf-8").read())
+                        io.open(_rutas.fuente("main.py"), encoding="utf-8").read())
 comprobar("el .iss declara una version", version_iss is not None)
 if version_iss and version_app:
     comprobar("coincide con APP_VERSION de la app",
@@ -51,7 +52,7 @@ if version_iss and version_app:
 
 print("\n== Archivos que dice empaquetar ==")
 for origen in re.findall(r'^Source:\s*"([^"]+)"', script, re.M):
-    ruta = os.path.normpath(os.path.join(RAIZ, "instalador", origen))
+    ruta = os.path.normpath(os.path.join(RAIZ, "compilar", origen))
     existe = os.path.exists(ruta)
     # Los .exe se generan al compilar: no tenerlos ahora no es un fallo del
     # script, pero conviene decirlo.
@@ -61,7 +62,7 @@ for origen in re.findall(r'^Source:\s*"([^"]+)"', script, re.M):
     comprobar(f"existe {origen}", existe, "" if existe else ruta)
 
 print("\n== Tareas programadas que borra al desinstalar ==")
-fuente_opt = io.open(os.path.join(RAIZ, "optimizer.py"), encoding="utf-8").read()
+fuente_opt = io.open(_rutas.fuente("optimizer.py"), encoding="utf-8").read()
 tareas_app = set(re.findall(r'^(?:SCHEDULED_TASK_NAME|NOMBRE_TAREA_INICIO(?:_ANTERIOR)?)\s*=\s*"([^"]+)"',
                             fuente_opt, re.M))
 tareas_iss = set(re.findall(r'/delete /tn ""([^"]+)""', script))
@@ -88,7 +89,7 @@ comprobar("pide permisos de administrador (la app los necesita)",
 comprobar("incluye la licencia", "LicenseFile=" in script)
 
 print("\n== Carpeta de datos que ofrece borrar ==")
-fuente_prefs = io.open(os.path.join(RAIZ, "preferences.py"), encoding="utf-8").read()
+fuente_prefs = io.open(_rutas.fuente("preferences.py"), encoding="utf-8").read()
 carpetas_app = set(re.findall(r'^NOMBRE_CARPETA(?:_ANTERIOR)?\s*=\s*"([^"]+)"', fuente_prefs, re.M))
 carpetas_iss = set(re.findall(r'\{userappdata\}\\\\?([A-Za-z]+)', script))
 print(f"      la app usa      : {sorted(carpetas_app)}")

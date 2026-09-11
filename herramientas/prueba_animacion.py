@@ -10,7 +10,9 @@ os.makedirs(carpeta, exist_ok=True)
 json.dump({"idioma": "es", "idioma_preguntado": True},
           open(os.path.join(carpeta, "preferencias.json"), "w", encoding="utf-8"))
 
-sys.path.insert(0, ".")
+import _rutas
+RAIZ = _rutas.RAIZ
+_rutas.poner_en_ruta()
 import customtkinter as ctk
 import main, widget as widget_mod
 

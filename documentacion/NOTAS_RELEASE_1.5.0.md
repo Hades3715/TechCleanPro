@@ -47,7 +47,7 @@ igual de bien que una de fibra.
 
 El `.exe` de un solo archivo tiene que descomprimir 22 MB cada vez que lo
 abrís, antes de que aparezca nada: **3.7 segundos**. Con
-`Generar_App_Rapida.bat` la misma app queda en modo carpeta, sin nada que
+`compilar\Generar_App_Rapida.bat` la misma app queda en modo carpeta, sin nada que
 descomprimir: **0.5 segundos**.
 
 ### La temperatura del CPU funciona en muchos más equipos
