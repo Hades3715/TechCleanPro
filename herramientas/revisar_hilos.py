@@ -50,6 +50,11 @@ METODOS_INTERFAZ = {
     "configure", "insert", "delete", "set", "pack", "grid", "destroy",
     "grab_set", "focus_set", "select", "deselect", "see", "state",
     "pack_forget", "grid_forget", "deiconify", "withdraw", "geometry",
+    # Las CONSULTAS también son tocar Tk. winfo_exists() desde un hilo
+    # daba "main thread is not in main loop" 22 veces en el banco, y esta
+    # herramienta no lo veía porque solo buscaba métodos que cambian algo.
+    "winfo_exists", "winfo_width", "winfo_height", "winfo_rootx", "winfo_rooty",
+    "winfo_children", "cget", "update", "update_idletasks",
 }
 
 

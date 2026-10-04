@@ -488,10 +488,23 @@ def get_gpu_info():
             "vram_total_gb": None, "temperatura_c": None, "ventilador_pct": None, "fuente": None}
 
 
+_NVIDIA_SMI = None   # None = sin comprobar; "" = no existe en este equipo
+
+
 def get_gpu_utilization():
-    """Versión ligera y rápida: solo el % de uso (NVIDIA únicamente).
-    Segura para llamar cada 1-4 segundos sin impactar el rendimiento."""
-    salida = _run(["nvidia-smi", "--query-gpu=utilization.gpu",
+    """Solo el % de uso (NVIDIA únicamente).
+
+    OJO: lanza un programa (nvidia-smi) en cada llamada; NO es gratis. Se
+    llama desde un hilo, nunca desde el de la interfaz. Y en un equipo sin
+    NVIDIA no se vuelve a intentar: antes se lanzaba igual cada 2 segundos
+    para fallar siempre."""
+    global _NVIDIA_SMI
+    if _NVIDIA_SMI is None:
+        import shutil
+        _NVIDIA_SMI = shutil.which("nvidia-smi") or ""
+    if not _NVIDIA_SMI:
+        return None
+    salida = _run([_NVIDIA_SMI, "--query-gpu=utilization.gpu",
                     "--format=csv,noheader,nounits"])
     if salida:
         try:

@@ -124,11 +124,18 @@ comprobar("y se ejecuta", directo == ["directo"])
 
 print("\n== 4. Un encargo que falla no para la bomba ==")
 despues_del_fallo = []
+# La ventana de error se sustituye por una que solo apunta: antes saltaba
+# DE VERDAD en la pantalla de quien corría el banco y desaparecía al cerrar
+# la prueba, sin que nadie supiera si era este error provocado o uno real.
+ventanas_error = []
+app._mostrar_ventana_error = lambda texto: ventanas_error.append(texto)
 threading.Thread(target=lambda: app.after(0, lambda: 1 / 0), daemon=True).start()
 time.sleep(0.15)
 for _ in range(30):
     app.update()
     time.sleep(0.01)
+comprobar("el fallo se reporta (habria salido la ventana de error)",
+          any("ZeroDivisionError" in v for v in ventanas_error), f"{len(ventanas_error)} avisos")
 threading.Thread(target=lambda: app.after(0, lambda: despues_del_fallo.append("sigue")),
                  daemon=True).start()
 inicio = time.time()

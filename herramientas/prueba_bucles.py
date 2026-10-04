@@ -115,6 +115,23 @@ while time.time() - inicio < 5:
 comprobar("fuera de Componentes no se refresca nada", ciclos["veces"] == 0,
           f"{ciclos['veces']} ciclos")
 
+
+print("\n== Inicio no trabaja con la ventana oculta (bandeja) ==")
+llamadas = []
+original_refrescar = app._refrescar_gauges
+app._refrescar_gauges = lambda: llamadas.append(1)
+try:
+    app.withdraw()
+    app.update()
+    app._tick_dashboard()
+    comprobar("oculta: no refresca los indicadores", llamadas == [], f"{len(llamadas)} refrescos")
+    app.deiconify()
+    app.update()
+    app._tick_dashboard()
+    comprobar("visible: si los refresca", llamadas == [1], f"{len(llamadas)} refrescos")
+finally:
+    app._refrescar_gauges = original_refrescar
+    app.withdraw()
 app.destroy()
 print("\nRESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS"))
 sys.exit(1 if fallos else 0)

@@ -78,7 +78,8 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 
 ## Estado de publicación (a la fecha de este documento)
 
-- **Repositorio**: `Hades3715/TechClean` (público). El buscador de
+- **Repositorio**: `Hades3715/TechCleanPro` (público; se llamaba así cuando
+  la app era "TechClean Pro" y el nombre se quedó). El buscador de
   actualizaciones está ACTIVO: `REPO_ACTUALIZACIONES` en `optimizer.py` ya
   apunta ahí. Consulta la API de GitHub Releases y compara `tag_name` (sin
   la "v" inicial) contra `APP_VERSION`. Si el repo no responde o no hay
@@ -592,7 +593,7 @@ arreglo llega a una sola.**
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
-corre las 26 comprobaciones seguidas y espera una tecla al final. Los
+corre las 32 comprobaciones seguidas y espera una tecla al final. Los
 `.py` sueltos imprimen y salen, así que al hacerles doble clic la ventana se
 cierra antes de poder leer nada — para eso está el `.bat`.
 
@@ -621,6 +622,12 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `revisar_empaquetado.py` | Que los `.exe` ya compilados lleven dentro todo lo que la app importa (abre el CArchive, el PYZ y `base_library.zip`). No destructiva: se puede correr siempre |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar (que se actualice `self.prefs`, no solo el disco) |
 | `prueba_bucles.py` | Que entrar y salir de Componentes deprisa no deje bucles de refresco acumulados |
+| `prueba_memoria.py` | Liberación de RAM: estructuras de Windows, que excluir un proceso no use órdenes de sistema y, como admin, que cada paso funcione de verdad |
+| `prueba_auto_ram.py` | Liberación automática: umbral con espera de 2 min, intervalo, que se aparte con el Modo Juego, y la espera del autopiloto |
+| `prueba_limpieza_fondo.py` | Borrado seguro: no entrar en uniones, no contar lo bloqueado, filtros, salida de sfc/DISM y que no se cuelgue con mucha salida |
+| `prueba_vigilante.py` | Qué es y qué no es una fuga, avisos sin repetir, PIDs reciclados, disco lleno, y la lectura rápida de procesos contra psutil |
+| `prueba_dns_unidades.py` | Consulta DNS contra un servidor de mentira local, filtrado de lo que llega a PowerShell, proveedores y plan Máximo. No cambia nada |
+| `revisar_errores_banco.py` | Los errores que la APP registró durante el banco (`ultimo_error.txt` de cada prueba). Va al final, tras marcar el inicio |
 
 Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
 a una carpeta temporal.
@@ -739,6 +746,333 @@ en `%TEMP%` — incluidos los de la herramienta con la que estés trabajando. Se
 corre a mano y aparte. Para lo que se necesita el 99% de las veces —saber si
 un módulo quedó dentro del `.exe`— está `revisar_empaquetado.py`, que lee el
 binario sin ejecutarlo y sin borrar nada.
+
+## Liberación de RAM a nivel de sistema (para la 1.6.0)
+
+Queja del usuario: con la misma RAM, Mem Reduct liberaba bastante más.
+Tenía razón, y no por poco. `trim_process_memory` era solo un bucle de
+`EmptyWorkingSet` proceso por proceso, y eso deja fuera tres cosas:
+
+1. **Los procesos protegidos** (antivirus, servicios, "System"):
+   `OpenProcess` no los abre, así que nunca se tocaban.
+2. **La caché de archivos del sistema**: vive en el working set del
+   SISTEMA, no en el de ningún proceso.
+3. **La lista modificada**: páginas pendientes de escribir a disco, que
+   cuentan como memoria EN USO hasta que alguien las escribe.
+
+Ahora `liberar_memoria(nivel)` en `optimizer.py` hace lo mismo que Mem
+Reduct y RAMMap: `NtSetSystemInformation(SystemMemoryListInformation)` para
+vaciar todos los working sets y escribir la lista modificada, más
+`SetSystemFileCacheSize(-1, -1)` (este sí documentado) para la caché.
+`trim_process_memory` sigue existiendo con la misma firma y llama a la
+nueva, así que los ocho sitios que liberan RAM (Optimizador, Inicio,
+widget, autopiloto, consola, Modo Juego, limpieza programada) mejoraron
+sin tocarlos.
+
+**Dos niveles, a propósito:**
+- `normal`: lo de arriba. Seguro para el autopiloto.
+- `profunda` (botón aparte en el Optimizador): además vacía la lista EN
+  ESPERA y combina páginas idénticas. La lista en espera es caché de
+  disco: vaciarla hace que lo próximo que se abra tarde algo más. Por eso
+  nunca se hace en automático.
+
+**Cosas que hay que saber para no romperlo:**
+- **Ser administrador no basta**: los privilegios
+  `SeProfileSingleProcessPrivilege` y `SeIncreaseQuotaPrivilege` vienen
+  APAGADOS en el token. `_activar_privilegio` los enciende, y mira
+  `GetLastError() == 0` porque `AdjustTokenPrivileges` devuelve éxito
+  aunque no haya podido asignar nada (error 1300).
+- **Con un proceso excluido** (el juego del Modo Juego) NO se usa ninguna
+  orden de sistema: vacían todo sin excepciones, y escribir la lista
+  modificada en mitad de una partida puede dar un tirón de disco. Se cae
+  al bucle de siempre.
+- **Vaciar la lista en espera NO sube la memoria disponible**: esas páginas
+  ya cuentan como disponibles. Por eso el nivel profundo informa la caché
+  en espera aparte (antes → después). Sin eso parecería que no hizo nada.
+- Sin administrador (corriendo desde `Iniciar.bat` sin elevar) se cae al
+  bucle viejo y la pantalla lo dice. No presume de liberación completa.
+
+**Medido en la laptop del desarrollador (como administrador):** normal,
+38 % → 25 % (2.5 GB); profunda, caché en espera de 14.8 GB → 51 MB.
+`herramientas/prueba_memoria.py` lo comprueba, incluida la verificación
+cruzada de la estructura: libre + en espera cuadró con la memoria
+disponible al 0 %. Sin admin solo prueba el camino de respaldo; para la
+parte completa hay que correrla elevada (y con `--profunda` para el
+segundo nivel, que no va en el banco porque vacía la caché del equipo).
+
+## Liberación automática de RAM (para la 1.6.0)
+
+**El ajuste mentía.** Ajustes decía "TechClean libera memoria sola en
+segundo plano, sin que tengas que hacer nada", pero eso solo lo hacía el
+autopiloto, y el autopiloto solo corre con el Modo Juego encendido. Con el
+Modo Juego apagado, el umbral se guardaba y nunca pasaba nada.
+
+Ahora hay `LimpiezaAutomaticaRAM` en `autopilot.py`, encendida por defecto
+(`auto_ram_activa`), que libera al pasar el umbral y, si se elige, cada N
+minutos (`auto_ram_intervalo_min`). Reglas:
+
+- **Con el Modo Juego activo se aparta.** El autopiloto ya libera RAM
+  EXCLUYENDO el juego; si actuaran las dos, esta vaciaría la memoria del
+  juego.
+- **Solo nivel normal**, nunca el profundo: vaciar la caché en espera en
+  automático haría que todo abriera más lento sin que nadie supiera por qué.
+- **2 minutos de espera tras liberar por umbral** (`ESPERA_TRAS_LIBERAR_SEG`).
+  El autopiloto del Modo Juego NO la tenía: con la RAM por encima del
+  umbral (lo normal cuando de verdad se necesita esa memoria) liberaba cada
+  8 segundos para siempre, forzando a todo a recargar de disco. Era el
+  autopiloto el que daba los tirones que se suponía que evitaba.
+- `revisar(ahora=...)` está separado del bucle para probarlo sin hilos ni
+  esperas (`prueba_auto_ram.py`).
+
+## Limpieza a fondo del disco (para la 1.6.0)
+
+Pestaña nueva en Espacio en disco: lo mismo que el Liberador de espacio de
+Windows (descargas de Windows Update, Optimización de distribución,
+informes de errores, volcados de memoria, registros CBS archivados), con el
+tamaño real de cada cosa. Y aparte, `DISM /StartComponentCleanup`.
+
+**Lo que hay que saber para no romperlo:**
+- **`_vaciar_contenido` NUNCA entra en uniones ni enlaces** (`_es_enlace`).
+  Una unión dentro de una caché puede apuntar a cualquier sitio, y seguirla
+  convierte "vaciar la caché" en "vaciar lo que haya al otro lado". La
+  prueba lo comprobó rompiéndolo: sin esa protección borró un archivo de
+  fuera de la carpeta.
+- **Se mide antes y después**, nunca se suma lo que se intentó. Un archivo
+  en uso no se borra y no cuenta.
+- **Windows Update: se respeta lo de los últimos 3 días**, por si hay una
+  actualización descargándose o instalándose.
+- **CBS: solo `CbsPersist_*`.** `CBS.log` es el que se lee tras un sfc.
+- **DISM sin `/ResetBase`**: con él ya no se puede desinstalar ninguna
+  actualización. Lo liberado se mide como espacio libre del disco antes y
+  después (DISM no lo informa). Si se cambia de pantalla sigue corriendo,
+  y al volver el botón ofrece CANCELAR ese, no lanzar otro.
+- **Fuera a propósito**: caché de sombreadores (los juegos darían tirones
+  al recompilarlos, en una app con Modo Juego), Prefetch (Windows lo usa
+  para abrir más rápido; borrarlo es un mito) y Windows.old (se borra solo
+  a los 10 días y quitarlo a mano exige tomar posesión de archivos).
+
+## Vigilante: fugas de memoria y disco casi lleno (para la 1.6.0)
+
+`Vigilante` en `autopilot.py` (no en un módulo nuevo: un módulo nuevo deja
+los `.exe` viejos sin él y `revisar_empaquetado` falla hasta recompilar).
+Una muestra por minuto; avisa con notificación de Windows.
+
+- **Fuga** (`es_fuga`, función pura): ≥30 min observado, ≥500 MB **y** ≥50 %
+  de crecimiento, sube en 6 de cada 10 muestras, y sigue arriba ahora. Los
+  umbrales son conservadores a propósito: un aviso falso enseña a ignorar
+  los verdaderos. Se mide la memoria PRIVADA, no el working set: el working
+  set baja cada vez que TechClean libera RAM y la fuga parecería curarse.
+- La clave es `(pid, hora_de_creación)`: Windows recicla PIDs, y sin la hora
+  un programa nuevo heredaba la historia de uno cerrado.
+- "Memory Compression", System, etc. no se vigilan: crecer es su trabajo.
+- **Disco**: mismo umbral que el semáforo de Inicio (`umbral_salud_disco`).
+  Como mucho un aviso al día por unidad; se rearma si baja 5 puntos.
+- **La lectura de procesos NO usa psutil.** Para los procesos protegidos
+  psutil pide la lista ENTERA del sistema una vez por proceso: 1.6 s por
+  muestra. `_leer_procesos_nt` hace una sola llamada a
+  `NtQuerySystemInformation(SystemProcessInformation)`, como el Administrador
+  de tareas: 10 ms. La estructura se comprueba contra psutil (PIDs, hora de
+  creación exacta, memoria privada) en `prueba_vigilante.py`.
+- La lista de procesos de Optimizar marca en ámbar los que tienen fuga.
+
+## Plan Máximo rendimiento (para la 1.6.0)
+
+Viene OCULTO en Windows: se copia de su plantilla
+(`e9a42b02-d5df-448d-aa00-03f14749eb61`) con `/duplicatescheme` y un GUID
+**fijo propio** (`POWER_PLANS["maximo"]`). Con uno al azar, cada clic
+dejaba otro plan igual en el Panel de control. Probado en la laptop del
+desarrollador: se crea, se activa, el segundo clic no duplica, y se vuelve
+al plan anterior. En portátiles con Modern Standby Windows puede negarse;
+la app lo dice con su propio mensaje.
+
+**Deshacer el plan ahora vuelve al plan EXACTO** (`guid_anterior`, leído a
+Windows antes de cambiar). Antes se guardaba el perfil de las preferencias,
+y si el usuario estaba en un plan propio o del fabricante, deshacer lo
+mandaba a Equilibrado.
+
+## Optimizar unidades (para la 1.6.0)
+
+`Optimize-Volume -DriveLetter X` sin parámetros: Windows decide (TRIM en
+SSD, desfragmentar en HDD), igual que su propia herramienta. La app NUNCA
+elige desfragmentar: hacerlo en un SSD no sirve y lo desgasta. La letra
+pasa por `_letra_unidad`, que deja solo una letra A-Z, porque va dentro de
+un comando de PowerShell. El tipo de disco tarda ~8 s en leerse
+(Get-PhysicalDisk, WMI lento) y se cachea por sesión.
+
+## DNS más rápido (para la 1.6.0, en Reparar)
+
+Mide con consultas DNS armadas a mano (`_paquete_dns`, RFC 1035) el DNS
+actual y Cloudflare, Google, Quad9 y OpenDNS; mediana de 8 dominios.
+**Solo recomienda cambiar si la mejora se nota** (más de 10 ms y más del
+25 %). En la laptop del desarrollador el DNS del proveedor fue el más
+rápido (16 ms contra 44-93) y la app lo dice en vez de empujar a cambiar.
+
+- Se ponen las direcciones IPv4 **y** IPv6 del proveedor: con solo IPv4,
+  Windows puede seguir usando el DNS IPv6 del router.
+- "Éxito" = releer el DNS después y ver el pedido, no que el comando no
+  haya dado error.
+- **Deshacer** (`tipo "dns"`): se guarda si el DNS era automático o fijo
+  (registro `NameServer` de Tcpip y Tcpip6). Automático → `-ResetServerAddresses`;
+  fijo → las direcciones que había.
+- Las IP pasan por `_ps_lista`, que descarta cualquier cosa que no sea una IP.
+- NO se probó aplicar un DNS en el equipo real (cambiaría su red); la
+  medición, la lectura y el filtrado sí.
+
+## Errores corregidos en la pasada de la 1.6.0
+
+- **`limpiar_cache_app` mentía**: medía antes de borrar y sumaba ese número
+  con `rmtree(ignore_errors=True)`. Mismo fallo que ya se había corregido
+  en la caché del navegador. **Tercera vez del mismo patrón**: ahora todo
+  borrado pasa por `_vaciar_contenido`, que mide antes y después.
+- **Las cachés de Steam y Discord nunca aparecían**: apuntaban a carpetas
+  donde esas apps no guardan nada (Steam usa Local, Discord usa Roaming).
+  En la laptop del desarrollador eran 761 MB de Steam invisibles.
+- **Las reparaciones largas (sfc, DISM) podían colgarse para siempre.** La
+  salida iba a un PIPE que no se leía hasta el final; el búfer ronda los
+  64 KB y, lleno, el comando espera a que alguien lea mientras la app
+  espera a que el comando termine. Ahora va a un archivo temporal. De paso
+  se lee bien: sfc escribe en UTF-16 y DISM en la página OEM (cp850).
+- **`C:\Windows\Temp` escrito a mano**: con Windows en otra unidad, la
+  limpieza de temporales del sistema no hacía nada. Ahora `_carpeta_windows()`
+  pregunta `%SystemRoot%`.
+- **Textos en español en la build en inglés**: "Temporales de Windows", el
+  aviso de reparación cancelada y el título de cuatro ventanas "Confirmar".
+- **Dos textos más sin traducir**: el botón "Protegido" de la lista de
+  procesos (en el mismo archivo ya existía `opt_protegido`, usado en la
+  otra rama del mismo `if`).
+
+## Revisión antes de subir la 1.6.0
+
+- **"Limpiar temporales" borraba a través de uniones (junctions).**
+  `os.walk(followlinks=False)` esquiva los enlaces simbólicos, pero en
+  Windows SÍ entra en las uniones. Una unión dentro de %TEMP% hacia otra
+  carpeta (las dejan algunos instaladores) hacía que se vaciara esa otra
+  carpeta. **Comprobado con la versión publicada**: borró un documento de
+  fuera de %TEMP%. Ahora todo borrado pasa por `_recorrer` /
+  `_vaciar_contenido`, que podan enlaces y uniones, y `prueba_limpieza_fondo`
+  lo prueba con una unión de verdad. **Nunca recorrer para borrar con
+  os.walk a pelo.**
+- **`verificar_idiomas.py` nunca devolvía código de error.** Imprimía las
+  claves que faltaban y el banco lo daba por bueno igual — exactamente lo
+  que ya le había pasado a `auditoria.py`. Ahora sale con 1, y además
+  busca con `ast` textos de interfaz escritos a mano (`text=`, `title=`)
+  sin pasar por `t()`. Encontró cinco más: "Cerrar", "Terminar",
+  "Desinstalar", "Listo." y "🔓 Panel oculto activo". Se le vio fallar
+  metiendo uno a propósito.
+- **El aviso de disco lleno se repetía en cada arranque**: "una vez al día"
+  vivía en memoria, y la app arranca con Windows. Se guarda en
+  `avisos_disco` (preferencias) con hora de reloj, y la primera revisión
+  de disco es a los 10 minutos, no al encender.
+- **Cambiar el DNS podía fallar entero** en un adaptador con IPv6
+  desactivado (Windows rechaza la lista por las direcciones IPv6). Si
+  falla, se reintenta solo con IPv4.
+
+## Edición Admin: herramientas nuevas de técnico (para la 1.6.0)
+
+Todo en `tecnico.py` (lógica pura, probada en `prueba_tecnico.py`) y en
+pestañas nuevas de Herramientas de técnico. **Ninguna añade dependencias**:
+PowerShell, powercfg, pnputil y la librería estándar. El `.exe` no crece.
+
+- **Informe para el cliente** (`generar_informe_html`): antes/después, el
+  trabajo hecho (Historial desde la primera foto) y la salud del hardware.
+  HTML y no PDF a propósito: un PDF exige otra librería dentro del `.exe`, y
+  cualquier navegador imprime a PDF. Se guarda en el Escritorio y se abre.
+  Todo pasa por `html.escape`: el nombre del equipo o del cliente no puede
+  meter HTML. La foto antes/después ya existía, pero solo se veía en
+  pantalla y el "recuperable" salía en bytes crudos ("523452345 B").
+- **Salud de discos**: `Get-StorageReliabilityCounter`. Necesita admin, y
+  muchos controladores no dan desgaste/temperatura: un `None` se enseña como
+  "n/d", **nunca como 0** (sería inventar que está perfecto).
+- **Batería**: `powercfg /batteryreport /xml` (el XML no está traducido ni
+  cambia de formato; el HTML sí). Ojo: falla si la ruta de salida va con
+  barras mezcladas — usar `os.path.join`.
+- **Pantallazos**: evento 1001 de WER (el código está en `Properties[0]`) y
+  evento 41 de Kernel-Power para apagados inesperados. Los códigos
+  `0x1000xxxx` se normalizan al base. La causa es una pista, y se dice.
+  En la laptop del desarrollador: 0 pantallazos y **52 apagados inesperados
+  en 90 días**.
+- **Respaldo de controladores**: `pnputil /export-driver *`. **Probado de
+  verdad, y salió mal la primera vez**: con una ruta de destino larga,
+  pnputil se cortó en 54 de 91 ("nombre de archivo demasiado largo") y la
+  app lo daba por bueno porque solo miraba que hubiera `.inf`. Ahora lee
+  los totales del final de la salida (`contar_exportados`) y avisa de un
+  respaldo a medias; la carpeta se llama corta (`Drivers_AAAAMMDD`). Con
+  ruta corta: 91 de 91, 3.2 GB, 15 s.
+- **pnputil escribe en la página ANSI** (cp1252), no en la OEM como DISM:
+  `_decodificar_salida_consola` prueba las dos y se queda con la que deja
+  texto legible ("exportó" y no "export¾").
+- **Mantenimiento completo**: punto de restauración, RAM, temporales,
+  limpieza a fondo, DNS, (sfc + DISM opcional), optimizar discos (HDD
+  opcional), con foto antes/después y el informe al final. Cancelable
+  entre pasos y dentro de los largos.
+
+## Consola: 13 comandos nuevos (38 en total)
+
+`/ramprofunda /autoram /fondo /fugas /procesos /discos /bateria
+/pantallazos /unidades /medirdns /plan /red /tecnico`. Los lentos van por
+`en_hilo()` dentro de `_ejecutar_comando`. `revisar_comandos.py` los
+tiene en `CON_EFECTOS`: lanzan PowerShell o tocan el sistema, y un hilo
+vivo al cerrar la app de prueba ensuciaría el banco. Los comandos solo son
+de una palabra: el banco los descubre con `comando == "/[a-z]+"`.
+
+## Rendimiento: la app trabajaba en la bandeja
+
+Medido (perfilado con la ventana oculta), y venía de antes de esta sesión:
+**Inicio seguía refrescándose con la app en la bandeja** — animando
+gráficas que nadie veía unas 15 veces por segundo y lanzando `nvidia-smi`
+cada 2 s **desde el hilo de la interfaz** (hasta 5 s de ventana congelada
+si tardaba). ~3 % de CPU constante en una app de optimización.
+
+- `_tick_dashboard` no refresca nada si la ventana está oculta o
+  minimizada (`prueba_bucles.py` lo vigila).
+- La GPU se lee en un hilo (`_leer_gpu_en_fondo`) y se pinta el último
+  valor. Sin `nvidia-smi` en el equipo, no se vuelve a intentar.
+- Resultado: en la bandeja, **3.1 % → 1.0 %** de un núcleo (y parte de ese
+  1 % es el bucle de la propia medición). RAM igual (~69 MB). El `.exe`
+  sigue en ~22.7 MB.
+
+## Revisión de idiomas, segunda vuelta
+
+`verificar_idiomas.py` ahora también reconoce `t('clave')` con comillas
+simples (dentro de f-strings no se veían), y quedaron otros textos a mano
+fuera de `text=`: "Cargando..." de la info del equipo, "GB libres", "GPU
+NVIDIA" y "No disponible en vivo" (Inicio). **El ast solo mira `text=`,
+`title=` y `message=`**: un texto en un argumento posicional o en un
+diccionario se le escapa.
+
+## Los errores que se veían pasar por la pantalla durante el banco
+
+El desarrollador avisó: mientras corría el banco, aparecían ventanas de
+error que se cerraban solas. **El banco decía "todo en verde"**: la app
+atrapa el error, lo apunta en `ultimo_error.txt` y enseña la ventana, pero
+la prueba no se entera. Había 24 registros en las carpetas temporales de
+las pruebas:
+
+- **22 eran un error real**: `worker_estado_limpieza` (Segundo plano)
+  llamaba a `winfo_exists()` DESDE el hilo — "main thread is not in main
+  loop". `revisar_hilos.py` no lo veía porque solo buscaba métodos que
+  CAMBIAN algo (`configure`, `pack`...), no consultas. Con la lista
+  ampliada (`winfo_*`, `cget`, `update`) aparecieron **10 sitios más** con
+  el mismo patrón `if ... winfo_exists(): self.after(0, ...)` en el hilo.
+  Todos corregidos: la comprobación va DENTRO de lo que se manda por
+  `after(0)`, o se usa `_actualizar_label`, que ya la hace.
+- Los otros eran el `1 / 0` provocado a propósito por
+  `prueba_hilos_interfaz.py`. Ahora esa prueba sustituye la ventana de
+  error por una que solo apunta, y comprueba que se habría mostrado.
+
+**`revisar_errores_banco.py`** cierra el hueco: `Verificar_Todo.bat` apunta
+la hora al empezar (`--inicio`) y, al final, busca `ultimo_error.txt` en
+todas las carpetas temporales de las pruebas. Si la app registró algo que
+no sea provocado (se reconoce por el archivo de la prueba en el traceback,
+nunca por el tipo de error), el banco falla y dice la línea de NUESTRO
+código. Se le vio fallar con los 24 registros viejos.
+
+> **Corolario:** que una prueba no falle no significa que la app no haya
+> fallado durante ella. La app se traga sus errores a propósito, para no
+> cerrarse en la cara del usuario; el banco tiene que ir a buscarlos.
+
+Y cinco etiquetas del Historial seguían en español a mano (`_log_dev("...")`
+como argumento posicional, que el ast de `verificar_idiomas` no mira).
 
 ## Ideas ya discutidas y descartadas (para no proponerlas de nuevo sin repensar)
 

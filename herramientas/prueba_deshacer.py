@@ -71,6 +71,12 @@ class OptimizerFalso:
     def quitar_limpieza_programada(self):
         return self._apuntar("quitar_limpieza_programada")
 
+    def activar_plan_guid(self, guid):
+        return self._apuntar("activar_plan_guid", guid)
+
+    def restaurar_dns(self, adaptadores):
+        return self._apuntar("restaurar_dns", adaptadores)
+
 
 carpeta = tempfile.mkdtemp(prefix="tcp_desh_")
 reg = deshacer.RegistroDeshacer(carpeta_datos=carpeta)
@@ -117,6 +123,13 @@ casos = [
      ("crear_limpieza_programada", ("WEEKLY", "07:30"), {})),
     ("limpieza_programada", {"estaba_activa": False},
      ("quitar_limpieza_programada", (), {})),
+    # Desde la 1.6.0 se guarda el plan EXACTO: si está, manda sobre el perfil.
+    ("perfil_energia", {"anterior": "equilibrado", "guid_anterior": "1234abcd-0000-0000-0000-000000000000"},
+     ("activar_plan_guid", ("1234abcd-0000-0000-0000-000000000000",), {})),
+    ("perfil_energia", {"anterior": "silencioso"},
+     ("set_power_plan", ("silencioso",), {})),
+    ("dns", {"adaptadores": [{"indice": 7, "fijos_v4": ["8.8.8.8"], "fijos_v6": []}]},
+     ("restaurar_dns", ([{"indice": 7, "fijos_v4": ["8.8.8.8"], "fijos_v6": []}],), {})),
 ]
 for tipo, datos, esperado in casos:
     identificador = reg.anotar(tipo, datos, f"prueba {tipo}")

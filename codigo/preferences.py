@@ -40,6 +40,12 @@ _DEFAULTS = {
     "idioma": "es",                                       # "es" o "en" — se aplica al reiniciar la app
     "idioma_preguntado": False,                              # para preguntarlo solo la primera vez
     "umbral_ram_auto": 85,                                   # % de RAM al que se libera memoria sola en segundo plano
+    "auto_ram_activa": True,                                 # liberación automática de RAM (con o sin Modo Juego)
+    "auto_ram_intervalo_min": 0,                             # además, liberar cada N minutos; 0 = solo por umbral
+    "avisar_fugas": True,                                    # notificar programas con fugas de memoria
+    "avisar_disco_lleno": True,                              # notificar unidades por encima de umbral_salud_disco
+    "avisos_disco": {},                                      # {unidad: hora del último aviso}, para no repetir al reiniciar
+    "tecnico_nombre": "",                                    # para los informes al cliente (edición admin)
     "umbral_salud_ram": 75,                                  # % de RAM al que el semáforo de salud (Inicio) empieza a avisar
     "umbral_salud_disco": 85,                                # % de disco lleno al que el semáforo de salud empieza a avisar
 }

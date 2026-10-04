@@ -46,6 +46,9 @@ if errorlevel 1 (
 set PYTHONIOENCODING=utf-8
 set TOTAL=0
 set FALLOS=0
+REM Apunta cuando empieza el banco: al final se revisan los errores que
+REM la APP registro mientras tanto (ver revisar_errores_banco.py).
+python herramientas/revisar_errores_banco.py --inicio >nul
 
 call :comprobar "1. Auditoria (duplicados y referencias rotas)" herramientas/auditoria.py
 call :comprobar "2. Idiomas (paridad es/en y claves)" herramientas/verificar_idiomas.py
@@ -73,12 +76,18 @@ call :comprobar "23. Arranque real en espanol" herramientas/prueba_arranque.py e
 call :comprobar "24. Arranque real en ingles" herramientas/prueba_arranque.py en
 
 call :comprobar "25. Los .exe llevan dentro todo lo que importan" herramientas/revisar_empaquetado.py
+call :comprobar "26. Liberacion de RAM (como administrador prueba la parte completa)" herramientas/prueba_memoria.py
+call :comprobar "27. Liberacion automatica de RAM (umbral, intervalo, Modo Juego)" herramientas/prueba_auto_ram.py
+call :comprobar "28. Limpieza a fondo (uniones, bloqueados, filtros)" herramientas/prueba_limpieza_fondo.py
+call :comprobar "29. Vigilante (fugas de memoria y disco lleno)" herramientas/prueba_vigilante.py
+call :comprobar "30. DNS, unidades y plan Maximo (sin cambiar nada)" herramientas/prueba_dns_unidades.py
+call :comprobar "31. Errores que la app registro durante el banco" herramientas/revisar_errores_banco.py
 
-echo ---------- 26. Velocidad de internet (necesita conexion) ----------
+echo ---------- 32. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause
-call :comprobar "26. Velocidad de internet" herramientas/prueba_velocidad.py
+call :comprobar "32. Velocidad de internet" herramientas/prueba_velocidad.py
 
 echo ==========================================================
 echo   Termino: %TOTAL% comprobaciones, %FALLOS% con fallo.

@@ -28,6 +28,20 @@ De ahí las tres:
 
 Ninguna cambia nada del sistema: las tres solo miran y escriben archivos
 en donde se les diga.
+
+Desde la 1.6.0, además:
+
+  4. SALUD DE DISCOS — estado, desgaste, temperatura y errores, para
+     avisar al cliente ANTES de que el disco falle.
+  5. SALUD DE BATERÍA — capacidad original contra la actual.
+  6. PANTALLAZOS AZULES — cuándo, qué código, y por dónde empezar a mirar.
+  7. RESPALDO DE CONTROLADORES — exportarlos antes de formatear y
+     reinstalarlos después. Restaurar SÍ cambia el sistema (instala).
+  8. INFORME PARA EL CLIENTE — el antes/después y el trabajo hecho, en HTML
+     para imprimir o guardar como PDF.
+
+Ninguna añade dependencias: todo sale de herramientas que Windows ya trae
+(PowerShell, powercfg, pnputil) y de la librería estándar de Python.
 """
 
 import csv
@@ -395,3 +409,444 @@ class GrabadorMetricas:
     def detener(self):
         self.activo = False
         return self.muestras
+
+
+# ============================================================
+#  4. Salud de discos (SMART, vía los contadores de Windows)
+# ============================================================
+
+def salud_discos():
+    """Estado de cada disco físico. Devuelve una lista de diccionarios, o
+    None si no se pudo preguntar.
+
+    Los contadores de fiabilidad (desgaste, temperatura, horas, errores)
+    salen de Get-StorageReliabilityCounter, que necesita administrador y
+    que algunos controladores no rellenan: un None ahí significa "Windows
+    no lo sabe", y se enseña así, nunca como un cero.
+    """
+    script = (
+        "Get-PhysicalDisk | ForEach-Object { $r = $null; "
+        "try { $r = $_ | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}; "
+        "[pscustomobject]@{ nombre = $_.FriendlyName; tipo = [string]$_.MediaType; bus = [string]$_.BusType; "
+        "salud = [string]$_.HealthStatus; tamano = [int64]$_.Size; "
+        "desgaste = $r.Wear; temperatura = $r.Temperature; horas = $r.PowerOnHours; "
+        "errores_lectura = $r.ReadErrorsUncorrected; errores_escritura = $r.WriteErrorsUncorrected } "
+        "} | ConvertTo-Json -Compress"
+    )
+    salida = _run_ps(script, timeout=60).strip()
+    if not salida:
+        return None
+    try:
+        datos = json.loads(salida)
+    except ValueError:
+        return None
+    if isinstance(datos, dict):
+        datos = [datos]
+    discos = []
+    for d in datos if isinstance(datos, list) else []:
+        disco = {k: d.get(k) for k in ("nombre", "tipo", "bus", "salud", "tamano", "desgaste",
+                                        "temperatura", "horas", "errores_lectura", "errores_escritura")}
+        disco["veredicto"], disco["motivos"] = veredicto_disco(disco)
+        discos.append(disco)
+    return discos
+
+
+def veredicto_disco(d):
+    """("bien" | "atencion" | "critico", [claves de idiomas con el motivo]).
+    Función pura, para probarla con discos inventados."""
+    motivos = []
+    nivel = "bien"
+
+    def subir(a):
+        nonlocal nivel
+        orden = ["bien", "atencion", "critico"]
+        if orden.index(a) > orden.index(nivel):
+            nivel = a
+
+    salud = str(d.get("salud") or "")
+    if salud and salud not in ("Healthy", "0"):
+        subir("critico")
+        motivos.append("salud_motivo_windows")
+    desgaste = d.get("desgaste")
+    if isinstance(desgaste, (int, float)):
+        if desgaste >= 90:
+            subir("critico")
+            motivos.append("salud_motivo_desgaste_alto")
+        elif desgaste >= 70:
+            subir("atencion")
+            motivos.append("salud_motivo_desgaste")
+    errores = sum(v for v in (d.get("errores_lectura"), d.get("errores_escritura"))
+                  if isinstance(v, (int, float)))
+    if errores > 0:
+        subir("atencion")
+        motivos.append("salud_motivo_errores")
+    temperatura = d.get("temperatura")
+    limite = 55 if str(d.get("tipo")).upper() == "HDD" else 70
+    if isinstance(temperatura, (int, float)) and temperatura >= limite:
+        subir("atencion")
+        motivos.append("salud_motivo_temperatura")
+    return nivel, motivos
+
+
+# ============================================================
+#  5. Salud de la batería
+# ============================================================
+
+def salud_bateria(carpeta_temporal=None):
+    """Capacidad de diseño contra la actual, de powercfg /batteryreport.
+    Devuelve una lista (vacía si el equipo no tiene batería) o None si
+    powercfg falló.
+
+    Se lee el XML y no el HTML: el HTML cambia de formato entre versiones de
+    Windows y está traducido; el XML no.
+    """
+    if not IS_WINDOWS:
+        return None
+    import tempfile
+    import xml.etree.ElementTree as ET
+    carpeta = carpeta_temporal or tempfile.gettempdir()
+    ruta = os.path.join(carpeta, f"techclean_bateria_{os.getpid()}.xml")
+    try:
+        r = subprocess.run(["powercfg", "/batteryreport", "/xml", "/output", ruta], capture_output=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+        if r.returncode != 0 or not os.path.exists(ruta):
+            return None
+        raiz = ET.parse(ruta).getroot()
+    except Exception:
+        return None
+    finally:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+    return leer_baterias_xml(raiz)
+
+
+def leer_baterias_xml(raiz):
+    """Separado de salud_bateria para poder probarlo con un XML inventado."""
+    def sin_ns(etiqueta):
+        return etiqueta.split("}", 1)[-1]
+
+    def entero(texto):
+        try:
+            return int(float(texto))
+        except (TypeError, ValueError):
+            return None
+
+    baterias = []
+    for nodo in raiz.iter():
+        if sin_ns(nodo.tag) != "Battery":
+            continue
+        campos = {sin_ns(h.tag): (h.text or "").strip() for h in nodo}
+        diseno = entero(campos.get("DesignCapacity"))
+        actual = entero(campos.get("FullChargeCapacity"))
+        if not diseno:
+            continue
+        porcentaje = round(actual * 100 / diseno) if actual is not None else None
+        if porcentaje is None:
+            veredicto = "atencion"
+        elif porcentaje >= 80:
+            veredicto = "bien"
+        elif porcentaje >= 60:
+            veredicto = "atencion"
+        else:
+            veredicto = "critico"
+        baterias.append({
+            "nombre": campos.get("Id") or "", "fabricante": campos.get("Manufacturer") or "",
+            "quimica": campos.get("Chemistry") or "", "diseno_mwh": diseno, "actual_mwh": actual,
+            "ciclos": entero(campos.get("CycleCount")), "porcentaje": porcentaje, "veredicto": veredicto,
+        })
+    return baterias
+
+
+def abrir_informe_bateria_windows(carpeta):
+    """El informe completo de Windows (HTML), para quien quiera el detalle
+    de cada carga. Devuelve la ruta o None."""
+    ruta = os.path.join(carpeta, "informe_bateria_windows.html")
+    try:
+        r = subprocess.run(["powercfg", "/batteryreport", "/output", ruta], capture_output=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+        if r.returncode == 0 and os.path.exists(ruta):
+            os.startfile(ruta)
+            return ruta
+    except Exception:
+        pass
+    return None
+
+
+# ============================================================
+#  6. Pantallazos azules y apagados inesperados
+# ============================================================
+
+# Los códigos de parada más comunes, con su nombre oficial y QUÉ SUELE
+# estar detrás. Es una pista para empezar a buscar, no un diagnóstico: el
+# mismo código puede tener varias causas, y la interfaz lo dice.
+CODIGOS_PARADA = {
+    0x0A: ("IRQL_NOT_LESS_OR_EQUAL", "bsod_causa_driver"),
+    0x19: ("BAD_POOL_HEADER", "bsod_causa_driver"),
+    0x1A: ("MEMORY_MANAGEMENT", "bsod_causa_ram"),
+    0x1E: ("KMODE_EXCEPTION_NOT_HANDLED", "bsod_causa_driver"),
+    0x24: ("NTFS_FILE_SYSTEM", "bsod_causa_disco"),
+    0x3B: ("SYSTEM_SERVICE_EXCEPTION", "bsod_causa_driver"),
+    0x50: ("PAGE_FAULT_IN_NONPAGED_AREA", "bsod_causa_ram"),
+    0x7A: ("KERNEL_DATA_INPAGE_ERROR", "bsod_causa_disco"),
+    0x7B: ("INACCESSIBLE_BOOT_DEVICE", "bsod_causa_disco"),
+    0x7E: ("SYSTEM_THREAD_EXCEPTION_NOT_HANDLED", "bsod_causa_driver"),
+    0x9F: ("DRIVER_POWER_STATE_FAILURE", "bsod_causa_energia"),
+    0xC2: ("BAD_POOL_CALLER", "bsod_causa_driver"),
+    0xD1: ("DRIVER_IRQL_NOT_LESS_OR_EQUAL", "bsod_causa_driver"),
+    0xEF: ("CRITICAL_PROCESS_DIED", "bsod_causa_sistema"),
+    0xF4: ("CRITICAL_OBJECT_TERMINATION", "bsod_causa_disco"),
+    0x101: ("CLOCK_WATCHDOG_TIMEOUT", "bsod_causa_hardware"),
+    0x116: ("VIDEO_TDR_FAILURE", "bsod_causa_grafica"),
+    0x117: ("VIDEO_TDR_TIMEOUT_DETECTED", "bsod_causa_grafica"),
+    0x124: ("WHEA_UNCORRECTABLE_ERROR", "bsod_causa_hardware"),
+    0x133: ("DPC_WATCHDOG_VIOLATION", "bsod_causa_driver"),
+    0x139: ("KERNEL_SECURITY_CHECK_FAILURE", "bsod_causa_driver"),
+    0x154: ("UNEXPECTED_STORE_EXCEPTION", "bsod_causa_disco"),
+    0x1E0: ("ATTEMPTED_WRITE_TO_READONLY_MEMORY", "bsod_causa_driver"),
+}
+
+
+def interpretar_codigo_parada(texto):
+    """De "0x0000009f (0x3, ...)" saca (codigo, nombre, clave_de_causa).
+    Los códigos 0x1000xxxx son la variante del mismo error con más
+    parámetros: se normalizan al código base."""
+    import re
+    m = re.search(r"0x([0-9a-fA-F]+)", str(texto or ""))
+    if not m:
+        return None, None, "bsod_causa_desconocida"
+    codigo = int(m.group(1), 16)
+    base = codigo & ~0x10000000 if codigo & 0x10000000 else codigo
+    nombre, causa = CODIGOS_PARADA.get(base, (None, "bsod_causa_desconocida"))
+    return base, nombre, causa
+
+
+def historial_fallos(dias_apagados=90):
+    """{"pantallazos": [...], "apagados": n} o None.
+
+    pantallazos: el evento 1001 de WER (lo escribe Windows al reiniciar
+    después de un pantallazo azul). apagados: el evento 41 de Kernel-Power
+    (el equipo se apagó sin pasar por un apagado normal: corte de luz,
+    botón mantenido, cuelgue). Muchos 41 sin pantallazos suelen ser
+    energía o temperatura, no software.
+    """
+    script = (
+        "$p = Get-WinEvent -FilterHashtable @{LogName='System'; "
+        "ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; Id=1001} -MaxEvents 50 "
+        "-ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ "
+        "fecha = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm'); codigo = [string]$_.Properties[0].Value } }; "
+        "$a = (Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; "
+        f"Id=41; StartTime=(Get-Date).AddDays(-{int(dias_apagados)})}} -ErrorAction SilentlyContinue "
+        "| Measure-Object).Count; "
+        "[pscustomobject]@{ pantallazos = @($p); apagados = $a } | ConvertTo-Json -Compress -Depth 3"
+    )
+    salida = _run_ps(script, timeout=60).strip()
+    if not salida:
+        return None
+    try:
+        datos = json.loads(salida)
+    except ValueError:
+        return None
+    pantallazos = []
+    for p in datos.get("pantallazos") or []:
+        if not isinstance(p, dict):
+            continue
+        codigo, nombre, causa = interpretar_codigo_parada(p.get("codigo"))
+        pantallazos.append({"fecha": p.get("fecha") or "", "codigo": codigo, "nombre": nombre, "causa": causa})
+    try:
+        apagados = int(datos.get("apagados") or 0)
+    except (TypeError, ValueError):
+        apagados = 0
+    return {"pantallazos": pantallazos, "apagados": apagados, "dias": int(dias_apagados)}
+
+
+# ============================================================
+#  7. Respaldo de controladores
+# ============================================================
+
+def _ruta_segura(carpeta):
+    """La carpeta va a un comando de pnputil: tiene que existir y no puede
+    llevar comillas (las listas de subprocess ya escapan los espacios)."""
+    carpeta = os.path.abspath(str(carpeta or ""))
+    if '"' in carpeta or not os.path.isdir(carpeta):
+        return None
+    return carpeta
+
+
+def contar_drivers(carpeta):
+    """(cantidad de .inf, bytes totales) dentro de una carpeta."""
+    infs = 0
+    total = 0
+    for raiz, _, archivos in os.walk(carpeta):
+        for a in archivos:
+            if a.lower().endswith(".inf"):
+                infs += 1
+            try:
+                total += os.path.getsize(os.path.join(raiz, a))
+            except OSError:
+                pass
+    return infs, total
+
+
+def exportar_drivers(carpeta, opt, callback_progreso=None, evento_cancelar=None):
+    """pnputil /export-driver * — copia TODOS los controladores de terceros
+    (los que no vienen con Windows) a una carpeta. Es lo que hay que hacer
+    antes de formatear: después se reinstalan sin buscar uno por uno en la
+    web del fabricante. Devuelve (exito, cantidad, bytes, resumen)."""
+    carpeta = _ruta_segura(carpeta)
+    if carpeta is None:
+        return False, 0, 0, ""
+    exito, resumen, cancelado = opt._ejecutar_reparacion_cancelable(
+        ["pnputil", "/export-driver", "*", carpeta], timeout_seg=1800,
+        callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+    cantidad, total = contar_drivers(carpeta)
+    esperados, exportados = contar_exportados(resumen)
+    # "Éxito" es que estén TODOS. Probado de verdad: con una ruta de destino
+    # larga, pnputil se cortó en 54 de 91 ("nombre de archivo demasiado
+    # largo") y, mirando solo si había .inf en la carpeta, se daba por bueno.
+    completo = esperados is None or exportados == esperados
+    exito_real = exito and not cancelado and cantidad > 0 and completo
+    return exito_real, cantidad, total, resumen, esperados, exportados
+
+
+def contar_exportados(resumen):
+    """Las dos últimas líneas de pnputil /export-driver son los paquetes
+    totales y los exportados ("...totales: 91", "...exportados: 54"). Están
+    traducidas, así que se leen solo los números del final de línea.
+    Devuelve (totales, exportados) o (None, None)."""
+    import re
+    numeros = [int(m.group(1)) for m in re.finditer(r":\s*(\d+)\s*$", resumen or "", re.M)]
+    if len(numeros) < 2:
+        return None, None
+    return numeros[-2], numeros[-1]
+
+
+def restaurar_drivers(carpeta, opt, callback_progreso=None, evento_cancelar=None):
+    """pnputil /add-driver *.inf /subdirs /install — instala todo lo que
+    haya en una carpeta exportada antes. Devuelve (exito, resumen)."""
+    carpeta = _ruta_segura(carpeta)
+    if carpeta is None or contar_drivers(carpeta)[0] == 0:
+        return False, ""
+    exito, resumen, cancelado = opt._ejecutar_reparacion_cancelable(
+        ["pnputil", "/add-driver", os.path.join(carpeta, "*.inf"), "/subdirs", "/install"],
+        timeout_seg=3600, callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+    return exito and not cancelado, resumen
+
+
+# ============================================================
+#  8. Informe para el cliente
+# ============================================================
+
+def _formatear_valor(valor, unidad):
+    if unidad == " B" and isinstance(valor, (int, float)):
+        for u in ("B", "KB", "MB", "GB", "TB"):
+            if abs(valor) < 1024:
+                return f"{valor:.1f} {u}" if u != "B" else f"{int(valor)} B"
+            valor /= 1024
+        return f"{valor:.1f} PB"
+    return f"{valor}{unidad}"
+
+
+# Clave de idiomas de cada nivel de salud (completa, no armada con "+":
+# verificar_idiomas tiene que poder ver que se usan).
+NIVELES_SALUD = {"bien": "salud_nivel_bien", "atencion": "salud_nivel_atencion", "critico": "salud_nivel_critico"}
+
+
+def generar_informe_html(datos, t):
+    """El informe que el técnico le entrega al cliente, en HTML listo para
+    imprimir o guardar como PDF desde el navegador (Ctrl+P). HTML y no PDF
+    a propósito: generar PDF exigiría una librería más dentro del .exe, y
+    cualquier navegador ya sabe imprimir a PDF.
+
+    `datos`: {"equipo", "tecnico", "cliente", "antes", "despues", "filas",
+    "acciones", "discos", "baterias", "fallos", "notas"}; todo opcional.
+    `t` se pasa como parámetro para poder probarlo sin la app.
+    """
+    from html import escape as e
+
+    def fila(*celdas, clase=""):
+        return f'<tr class="{clase}">' + "".join(f"<td>{c}</td>" for c in celdas) + "</tr>"
+
+    equipo = datos.get("equipo") or {}
+    partes = [
+        "<!doctype html><html><head><meta charset='utf-8'>",
+        f"<title>{e(t('inf_titulo'))}</title>",
+        "<style>body{font-family:Segoe UI,Arial,sans-serif;max-width:820px;margin:32px auto;color:#1d2330;"
+        "padding:0 16px}h1{margin:0 0 4px;font-size:24px}h2{font-size:16px;margin:28px 0 8px;"
+        "border-bottom:2px solid #e3e6ec;padding-bottom:4px}table{width:100%;border-collapse:collapse;"
+        "font-size:13px}td{padding:6px 8px;border-bottom:1px solid #eef0f4;vertical-align:top}"
+        ".meta{color:#5b6475;font-size:13px}.mejor{color:#1e8e4e;font-weight:600}"
+        ".peor{color:#c0392b;font-weight:600}.atencion{color:#b7791f;font-weight:600}"
+        ".critico{color:#c0392b;font-weight:600}.bien{color:#1e8e4e;font-weight:600}"
+        ".pie{margin-top:36px;font-size:11px;color:#8a92a3}@media print{body{margin:0}}</style>",
+        "</head><body>",
+        f"<h1>{e(t('inf_titulo'))}</h1>",
+        f"<div class='meta'>{e(t('inf_fecha', fecha=datetime.now().strftime('%Y-%m-%d %H:%M')))}",
+    ]
+    if datos.get("tecnico"):
+        partes.append(" · " + e(t("inf_tecnico", nombre=datos["tecnico"])))
+    if datos.get("cliente"):
+        partes.append(" · " + e(t("inf_cliente", nombre=datos["cliente"])))
+    partes.append("</div>")
+
+    partes.append(f"<h2>{e(t('inf_equipo'))}</h2><table>")
+    for clave, etiqueta in (("hostname", "inf_eq_nombre"), ("sistema_operativo", "inf_eq_so"),
+                            ("procesador", "inf_eq_cpu"), ("ram", "inf_eq_ram"),
+                            ("placa_madre", "inf_eq_placa")):
+        if equipo.get(clave):
+            partes.append(fila(e(t(etiqueta)), e(str(equipo[clave]))))
+    partes.append("</table>")
+
+    filas = datos.get("filas") or []
+    if filas:
+        antes = datos.get("antes") or {}
+        despues = datos.get("despues") or {}
+        partes.append(f"<h2>{e(t('inf_antes_despues'))}</h2>")
+        partes.append(f"<div class='meta'>{e(t('inf_momentos', antes=antes.get('momento', ''), despues=despues.get('momento', '')))}</div><table>")
+        partes.append(fila(f"<b>{e(t('inf_col_medida'))}</b>", f"<b>{e(t('inf_col_antes'))}</b>",
+                           f"<b>{e(t('inf_col_despues'))}</b>", f"<b>{e(t('inf_col_cambio'))}</b>"))
+        for f in filas:
+            signo = "+" if f["diferencia"] > 0 else ""
+            cambio = f"{signo}{_formatear_valor(f['diferencia'], f['unidad'])}"
+            partes.append(fila(e(t(f["clave"])), e(_formatear_valor(f["antes"], f["unidad"])),
+                               e(_formatear_valor(f["despues"], f["unidad"])),
+                               f"<span class='{f['sentido']}'>{e(cambio)}</span>"))
+        partes.append("</table>")
+
+    acciones = datos.get("acciones") or []
+    if acciones:
+        partes.append(f"<h2>{e(t('inf_trabajo'))}</h2><table>")
+        for a in acciones:
+            marca = "✓" if a.get("exito") else "✗"
+            partes.append(fila(e(a.get("timestamp", "")[11:16]), f"{marca} {e(a.get('accion', ''))}",
+                               e(str(a.get("resultado", ""))[:220])))
+        partes.append("</table>")
+
+    discos = datos.get("discos") or []
+    baterias = datos.get("baterias") or []
+    fallos = datos.get("fallos")
+    if discos or baterias or fallos:
+        partes.append(f"<h2>{e(t('inf_salud'))}</h2><table>")
+        for d in discos:
+            detalle = ", ".join(t(m) for m in d.get("motivos") or []) or t("salud_sin_problemas")
+            partes.append(fila(e(t("inf_disco", nombre=d.get("nombre") or "?")),
+                               f"<span class='{d['veredicto']}'>{e(t(NIVELES_SALUD[d['veredicto']]))}</span>",
+                               e(detalle)))
+        for b in baterias:
+            partes.append(fila(e(t("inf_bateria")),
+                               f"<span class='{b['veredicto']}'>{e(t(NIVELES_SALUD[b['veredicto']]))}</span>",
+                               e(t("bat_resumen", porcentaje=b.get("porcentaje"), ciclos=b.get("ciclos") or "?"))))
+        if fallos:
+            n = len(fallos.get("pantallazos") or [])
+            partes.append(fila(e(t("inf_estabilidad")),
+                               f"<span class='{'atencion' if n or fallos.get('apagados') else 'bien'}'>"
+                               f"{e(t('inf_estabilidad_valor', pantallazos=n, apagados=fallos.get('apagados', 0), dias=fallos.get('dias', 90)))}</span>",
+                               ""))
+        partes.append("</table>")
+
+    if datos.get("notas"):
+        partes.append(f"<h2>{e(t('inf_notas'))}</h2><p>{e(datos['notas'])}</p>")
+
+    partes.append(f"<div class='pie'>{e(t('inf_pie'))}</div></body></html>")
+    return "".join(partes)

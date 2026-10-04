@@ -35,8 +35,10 @@ for f in glob.glob(os.path.join(_rutas.CODIGO, "*.py")):
     codigo = open(f, encoding="utf-8").read()
     # quitar comentarios de linea para no contar claves citadas en comentarios
     sin_comentarios = "\n".join(re.sub(r"#.*$", "", l) for l in codigo.split("\n"))
-    directas |= set(re.findall(r'(?<![a-zA-Z_.])t\("([a-z_0-9]+)"', sin_comentarios))
-    sueltas |= {s for s in re.findall(r'"([a-z_0-9]+)"', sin_comentarios) if s in es}
+    # Comillas dobles y simples: dentro de un f-string las llamadas a t()
+    # van con simples (t('inf_titulo')), y antes no se veían.
+    directas |= set(re.findall(r"""(?<![a-zA-Z_.])t\(["']([a-z_0-9]+)["']""", sin_comentarios))
+    sueltas |= {s for s in re.findall(r"""["']([a-z_0-9]+)["']""", sin_comentarios) if s in es}
 
 usadas = directas | sueltas
 print(f"claves: es={len(es)} en={len(en)} | desbalance: {es ^ en or 'ninguno'}")
@@ -51,3 +53,37 @@ for k in es & en:
     if pe != pn:
         malos.append((k, sorted(pe), sorted(pn)))
 print(f"placeholders desalineados: {malos or 'ninguno'}")
+
+# Textos escritos a mano en la interfaz, sin pasar por t(). En la build en
+# ingles salen en espanol. Aparecio una y otra vez ("Confirmar", "Protegido",
+# "Terminar", "Desinstalar"...) porque nada lo buscaba.
+import ast
+PERMITIDOS = {
+    "Mbps", "TechClean", "⚙ TechClean", "🪿 HONK!", "¿?",
+    # El dialogo de idioma del primer arranque es bilingue por necesidad:
+    # todavia no se sabe que idioma habla quien abre la app.
+    "Idioma / Language", "Español", "English",
+    "Selecciona tu idioma\nSelect your language",
+    "Se puede cambiar después en Ajustes.\nYou can change this later in Settings.",
+}
+escritos_a_mano = []
+for f in glob.glob(os.path.join(_rutas.CODIGO, "*.py")):
+    if os.path.basename(f) == "idiomas.py":
+        continue
+    arbol = ast.parse(open(f, encoding="utf-8").read())
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call):
+            continue
+        valores = [kw.value for kw in nodo.keywords if kw.arg in ("text", "title", "message")]
+        if getattr(nodo.func, "attr", "") == "title" and nodo.args:
+            valores.append(nodo.args[0])
+        for v in valores:
+            if (isinstance(v, ast.Constant) and isinstance(v.value, str)
+                    and sum(c.isalpha() for c in v.value) >= 4 and v.value not in PERMITIDOS):
+                escritos_a_mano.append(f"{os.path.basename(f)}:{nodo.lineno} {v.value!r}")
+print(f"textos de interfaz sin traducir: {escritos_a_mano or 'ninguno'}")
+
+# El codigo de salida es lo que mira Verificar_Todo.bat. Sin esto, este
+# script imprimia los problemas y el banco lo daba por bueno igual.
+problemas = (es ^ en) or (directas - es) or (es - usadas) or malos or escritos_a_mano
+sys.exit(1 if problemas else 0)

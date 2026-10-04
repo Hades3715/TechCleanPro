@@ -40,7 +40,11 @@ import main
 
 # Los que hacen algo de verdad: se comprueba que existan, no se ejecutan.
 CON_EFECTOS = {"/ram", "/temporales", "/papelera", "/dns", "/rapido",
-               "/fps", "/widget", "/auto", "/guardar"}
+               "/fps", "/widget", "/auto", "/guardar",
+               # 1.6.0: los que tocan el sistema o lanzan PowerShell/mediciones
+               # en un hilo que seguiría vivo al cerrar la app de prueba.
+               "/ramprofunda", "/autoram", "/fondo", "/procesos", "/discos", "/bateria",
+               "/pantallazos", "/unidades", "/medirdns", "/plan", "/red"}
 
 fallos = []
 

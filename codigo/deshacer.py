@@ -26,6 +26,7 @@ Lo que sí se puede deshacer:
   * Inicio rápido de Windows   -> volver a como estaba
   * Inicio automático de la app-> volver a como estaba
   * Limpieza programada        -> volver a como estaba
+  * Servidor DNS               -> volver al de antes (o a automático)
 
 Lo que NO, y la app lo dice claro:
 
@@ -67,6 +68,7 @@ TIPOS = {
     "inicio_rapido": "desh_tipo_inicio_rapido",
     "inicio_automatico": "desh_tipo_inicio_automatico",
     "limpieza_programada": "desh_tipo_limpieza_programada",
+    "dns": "desh_tipo_dns",
 }
 
 
@@ -213,9 +215,14 @@ class RegistroDeshacer:
         exito, comando = False, ""
 
         if tipo == "perfil_energia":
-            anterior = datos.get("anterior")
-            if anterior:
-                exito, comando = opt.set_power_plan(anterior)
+            # El GUID exacto si se guardó (desde la 1.6.0); si no, el perfil.
+            if datos.get("guid_anterior"):
+                exito, comando = opt.activar_plan_guid(datos["guid_anterior"])
+            elif datos.get("anterior"):
+                exito, comando = opt.set_power_plan(datos["anterior"])
+
+        elif tipo == "dns":
+            exito, comando = opt.restaurar_dns(datos.get("adaptadores") or [])
 
         elif tipo == "app_inicio":
             # Se guardó si estaba activa ANTES; deshacer es devolverla a eso.

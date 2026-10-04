@@ -93,32 +93,184 @@ def relaunch_as_admin():
         return False
 
 
-def trim_process_memory(exclude_pids=None):
-    """
-    Fuerza a los procesos accesibles a liberar memoria no usada al SO
-    (EmptyWorkingSet de la API de Windows). Es una acción real y segura:
-    no cierra procesos, solo compacta su huella de RAM.
+# ---------------------------------------------------------------------------
+# Liberación de memoria
+#
+# Hasta la 1.5.0 esto era SOLO un bucle de EmptyWorkingSet proceso por
+# proceso, y por eso se quedaba muy por detrás de Mem Reduct con la misma
+# RAM. Tres razones, todas medibles:
+#
+#  1. El bucle solo llega a los procesos que OpenProcess deja abrir. Los
+#     protegidos (antivirus, servicios del sistema, el propio "System") se
+#     quedaban sin tocar, y suelen ser de los que más memoria tienen.
+#  2. La caché de archivos del sistema vive en el working set del SISTEMA,
+#     no en el de ningún proceso: ningún EmptyWorkingSet la toca.
+#  3. Las páginas MODIFICADAS (datos que todavía hay que escribir a disco)
+#     cuentan como memoria en uso. Mientras nadie las escriba, no se liberan.
+#
+# Mem Reduct resuelve las tres con NtSetSystemInformation, la misma llamada
+# que usa RAMMap de Sysinternals. Es una API nativa sin documentar en MSDN,
+# pero estable desde Windows Vista y con las constantes publicadas en las
+# cabeceras de System Informer (phnt). La caché de archivos sí tiene API
+# documentada (SetSystemFileCacheSize) y se usa esa.
+#
+# La medida que se informa es la memoria DISPONIBLE antes y después
+# (GlobalMemoryStatusEx, lo mismo que mira el Administrador de tareas y
+# Mem Reduct): las páginas que pasan a la lista "en espera" ya cuentan como
+# disponibles, así que vaciar esa lista NO sube ese número. Por eso el
+# nivel profundo informa la caché en espera aparte.
+# ---------------------------------------------------------------------------
 
-    exclude_pids: PIDs a NO tocar (ej. un juego activo en primer plano,
-    para no causarle un microcorte de rendimiento mientras se juega).
+_CLASE_LISTAS_MEMORIA = 80        # SystemMemoryListInformation
+_CLASE_COMBINAR_MEMORIA = 130     # SystemCombinePhysicalMemoryInformation (Windows 10+)
+_ORDEN_VACIAR_WORKING_SETS = 2    # MemoryEmptyWorkingSets — todos los procesos, protegidos incluidos
+_ORDEN_ESCRIBIR_MODIFICADA = 3    # MemoryFlushModifiedList
+_ORDEN_PURGAR_ESPERA = 4          # MemoryPurgeStandbyList
+_ORDEN_PURGAR_ESPERA_BAJA = 5     # MemoryPurgeLowPriorityStandbyList
 
-    Devuelve (bytes_liberados_estimados, procesos_afectados, comando_equivalente)
-    """
-    comando = "EmptyWorkingSet() vía psapi.dll (API nativa de Windows) sobre cada proceso accesible"
+if IS_WINDOWS:
+    class _ListasMemoria(ctypes.Structure):
+        # SYSTEM_MEMORY_LIST_INFORMATION. Todo en PÁGINAS, no en bytes.
+        _fields_ = [
+            ("ZeroPageCount", ctypes.c_size_t),
+            ("FreePageCount", ctypes.c_size_t),
+            ("ModifiedPageCount", ctypes.c_size_t),
+            ("ModifiedNoWritePageCount", ctypes.c_size_t),
+            ("BadPageCount", ctypes.c_size_t),
+            ("PageCountByPriority", ctypes.c_size_t * 8),
+            ("RepurposedPagesByPriority", ctypes.c_size_t * 8),
+            ("ModifiedPageCountPageFile", ctypes.c_size_t),
+        ]
+
+    class _CombinarMemoria(ctypes.Structure):
+        # MEMORY_COMBINE_INFORMATION_EX
+        _fields_ = [
+            ("Handle", ctypes.c_void_p),
+            ("PagesCombined", ctypes.c_size_t),
+            ("Flags", ctypes.c_ulong),
+        ]
+
+    class _LUID(ctypes.Structure):
+        _fields_ = [("LowPart", ctypes.wintypes.DWORD), ("HighPart", ctypes.wintypes.LONG)]
+
+    class _TOKEN_PRIVILEGES(ctypes.Structure):
+        _fields_ = [("PrivilegeCount", ctypes.wintypes.DWORD),
+                    ("Luid", _LUID),
+                    ("Attributes", ctypes.wintypes.DWORD)]
+
+
+def _tamano_pagina():
+    try:
+        import mmap
+        return mmap.PAGESIZE
+    except Exception:
+        return 4096
+
+
+def _activar_privilegio(nombre):
+    """Activa un privilegio en el token de este proceso. Ser administrador
+    no basta: el privilegio viene APAGADO en el token y hay que encenderlo.
+    Devuelve True solo si de verdad quedó activo.
+
+    Ojo con AdjustTokenPrivileges: devuelve éxito aunque no haya podido
+    asignar el privilegio, y avisa solo por GetLastError (1300,
+    ERROR_NOT_ALL_ASSIGNED). Mirar solo lo que devuelve es suponer."""
     if not IS_WINDOWS:
-        return 0, 0, comando
+        return False
+    try:
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        HANDLE = ctypes.wintypes.HANDLE
+        kernel32.GetCurrentProcess.restype = HANDLE
+        kernel32.CloseHandle.argtypes = [HANDLE]
+        advapi32.OpenProcessToken.argtypes = [HANDLE, ctypes.wintypes.DWORD, ctypes.POINTER(HANDLE)]
+        advapi32.LookupPrivilegeValueW.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPCWSTR,
+                                                   ctypes.POINTER(_LUID)]
+        advapi32.AdjustTokenPrivileges.argtypes = [HANDLE, ctypes.wintypes.BOOL,
+                                                   ctypes.POINTER(_TOKEN_PRIVILEGES),
+                                                   ctypes.wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p]
 
-    exclude_pids = exclude_pids or set()
-    import psutil
-    antes = psutil.virtual_memory().used
+        TOKEN_ADJUST_PRIVILEGES, TOKEN_QUERY, SE_PRIVILEGE_ENABLED = 0x20, 0x08, 0x02
+        token = HANDLE()
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(),
+                                         TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, ctypes.byref(token)):
+            return False
+        try:
+            luid = _LUID()
+            if not advapi32.LookupPrivilegeValueW(None, nombre, ctypes.byref(luid)):
+                return False
+            tp = _TOKEN_PRIVILEGES(1, luid, SE_PRIVILEGE_ENABLED)
+            ctypes.set_last_error(0)
+            if not advapi32.AdjustTokenPrivileges(token, False, ctypes.byref(tp), 0, None, None):
+                return False
+            return ctypes.get_last_error() == 0
+        finally:
+            kernel32.CloseHandle(token)
+    except Exception:
+        return False
+
+
+def _nt_set(clase, dato):
+    """NtSetSystemInformation. Devuelve el NTSTATUS (0 = éxito)."""
+    ntdll = ctypes.WinDLL("ntdll")
+    ntdll.NtSetSystemInformation.argtypes = [ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
+    ntdll.NtSetSystemInformation.restype = ctypes.c_long
+    return ntdll.NtSetSystemInformation(clase, ctypes.byref(dato), ctypes.sizeof(dato))
+
+
+def _orden_listas(orden):
+    try:
+        return _nt_set(_CLASE_LISTAS_MEMORIA, ctypes.c_ulong(orden)) == 0
+    except Exception:
+        return False
+
+
+def estado_listas_memoria():
+    """Cuánta memoria hay en cada lista de Windows, en bytes:
+    {"en_espera", "modificada", "libre"}. None si no se puede leer
+    (hace falta ser administrador).
+
+    Comprobación cruzada que usa prueba_memoria.py: libre + en espera debe
+    parecerse a la memoria DISPONIBLE que da GlobalMemoryStatusEx. Si la
+    estructura estuviera mal declarada, los números saldrían absurdos."""
+    if not IS_WINDOWS or not _activar_privilegio("SeProfileSingleProcessPrivilege"):
+        return None
+    try:
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtQuerySystemInformation.argtypes = [ctypes.c_ulong, ctypes.c_void_p,
+                                                   ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong)]
+        ntdll.NtQuerySystemInformation.restype = ctypes.c_long
+        info = _ListasMemoria()
+        largo = ctypes.c_ulong(0)
+        if ntdll.NtQuerySystemInformation(_CLASE_LISTAS_MEMORIA, ctypes.byref(info),
+                                          ctypes.sizeof(info), ctypes.byref(largo)) != 0:
+            return None
+    except Exception:
+        return None
+    pagina = _tamano_pagina()
+    return {
+        "en_espera": sum(info.PageCountByPriority) * pagina,
+        "modificada": info.ModifiedPageCount * pagina,
+        "libre": (info.ZeroPageCount + info.FreePageCount) * pagina,
+    }
+
+
+def _vaciar_working_sets_por_proceso(exclude_pids):
+    """El método de siempre, proceso por proceso. Sigue haciendo falta para
+    cuando hay que EXCLUIR un proceso (el juego del Modo Juego): la orden de
+    sistema vacía todos a la vez, sin excepciones."""
     afectados = 0
-    psapi = ctypes.windll.psapi
-    kernel32 = ctypes.windll.kernel32
+    psapi = ctypes.WinDLL("psapi")
+    kernel32 = ctypes.WinDLL("kernel32")
+    HANDLE = ctypes.wintypes.HANDLE
+    kernel32.OpenProcess.restype = HANDLE
+    kernel32.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [HANDLE]
+    psapi.EmptyWorkingSet.argtypes = [HANDLE]
     PROCESS_QUERY_INFORMATION = 0x0400
     PROCESS_SET_QUOTA = 0x0100
 
-    for proc in psutil.process_iter(["pid"]):
-        pid = proc.info["pid"]
+    for pid in psutil.pids():
         if pid in exclude_pids:
             continue
         handle = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_SET_QUOTA, False, pid)
@@ -130,10 +282,126 @@ def trim_process_memory(exclude_pids=None):
                 pass
             finally:
                 kernel32.CloseHandle(handle)
+    return afectados
 
-    despues = psutil.virtual_memory().used
-    liberado = max(0, antes - despues)
-    return liberado, afectados, comando
+
+def liberar_memoria(nivel="normal", exclude_pids=None):
+    """
+    Libera RAM como lo hace Mem Reduct. Dos niveles:
+
+    - "normal": vacía los working sets de TODOS los procesos (protegidos
+      incluidos), la caché de archivos del sistema, y escribe a disco la
+      lista modificada para que esas páginas pasen a disponibles. Seguro
+      para usar a menudo; es lo que hace el autopiloto.
+    - "profunda": además vacía la lista EN ESPERA (la caché de lo que se
+      leyó de disco) y combina páginas idénticas. Deja más memoria libre de
+      verdad, pero los programas que se abran justo después tardan algo más
+      la primera vez: Windows vuelve a llenar esa caché sobre la marcha. Por
+      eso solo se hace cuando lo pide el usuario, nunca en automático.
+
+    exclude_pids: si hay procesos que NO tocar (el juego del Modo Juego),
+    se usa solo el método proceso por proceso y nada de órdenes de sistema:
+    escribir la lista modificada a disco en mitad de una partida puede dar
+    un tirón de disco justo cuando se quiere evitar.
+
+    Nunca lanza. Devuelve un diccionario con lo medido y con qué pasos
+    funcionaron de verdad (cada orden mira su NTSTATUS).
+    """
+    pasos = []
+    comando_partes = []
+    resultado = {"nivel": nivel, "liberado": 0, "procesos": 0, "pasos": pasos,
+                 "completo": False, "espera_antes": None, "espera_despues": None,
+                 "uso_antes": None, "uso_despues": None, "comando": ""}
+    if not IS_WINDOWS:
+        return resultado
+
+    exclude_pids = set(exclude_pids or ())
+    memoria = psutil.virtual_memory()
+    disponible_antes = memoria.available
+    resultado["uso_antes"] = memoria.percent
+
+    if nivel == "profunda":
+        listas = estado_listas_memoria()
+        resultado["espera_antes"] = listas["en_espera"] if listas else None
+
+    perfil_ok = _activar_privilegio("SeProfileSingleProcessPrivilege")
+    cuota_ok = _activar_privilegio("SeIncreaseQuotaPrivilege")
+
+    sistema_ok = False
+    if not exclude_pids and perfil_ok:
+        sistema_ok = _orden_listas(_ORDEN_VACIAR_WORKING_SETS)
+        pasos.append(("working_sets_sistema", sistema_ok))
+        if sistema_ok:
+            comando_partes.append("NtSetSystemInformation(SystemMemoryListInformation, MemoryEmptyWorkingSets)")
+
+    if sistema_ok:
+        resultado["procesos"] = len(psutil.pids())
+    else:
+        # Sin privilegio (app abierta sin administrador) o con un proceso a
+        # excluir: el bucle de siempre, que llega a lo que puede.
+        resultado["procesos"] = _vaciar_working_sets_por_proceso(exclude_pids)
+        pasos.append(("working_sets_procesos", resultado["procesos"] > 0))
+        comando_partes.append("EmptyWorkingSet() vía psapi.dll sobre cada proceso accesible")
+
+    if not exclude_pids:
+        if cuota_ok:
+            try:
+                kernel32 = ctypes.WinDLL("kernel32")
+                kernel32.SetSystemFileCacheSize.argtypes = [ctypes.c_size_t, ctypes.c_size_t,
+                                                            ctypes.wintypes.DWORD]
+                # (SIZE_T)-1 en los dos tamaños = vaciar la caché (documentado en MSDN).
+                tope = ctypes.c_size_t(-1).value
+                cache_ok = bool(kernel32.SetSystemFileCacheSize(tope, tope, 0))
+            except Exception:
+                cache_ok = False
+            pasos.append(("cache_archivos", cache_ok))
+            if cache_ok:
+                comando_partes.append("SetSystemFileCacheSize(-1, -1, 0)")
+
+        if perfil_ok:
+            modificada_ok = _orden_listas(_ORDEN_ESCRIBIR_MODIFICADA)
+            pasos.append(("lista_modificada", modificada_ok))
+            if modificada_ok:
+                comando_partes.append("MemoryFlushModifiedList")
+
+            if nivel == "profunda":
+                # Primero la de prioridad baja, que es la que menos se echa
+                # de menos; luego el resto.
+                baja_ok = _orden_listas(_ORDEN_PURGAR_ESPERA_BAJA)
+                espera_ok = _orden_listas(_ORDEN_PURGAR_ESPERA)
+                pasos.append(("lista_espera", baja_ok or espera_ok))
+                if espera_ok:
+                    comando_partes.append("MemoryPurgeStandbyList")
+                elif baja_ok:
+                    comando_partes.append("MemoryPurgeLowPriorityStandbyList")
+
+                # Windows 8 y anteriores no tienen esta clase: devuelve error
+                # y simplemente no se cuenta. No es un fallo de la limpieza.
+                try:
+                    combinar_ok = _nt_set(_CLASE_COMBINAR_MEMORIA, _CombinarMemoria()) == 0
+                except Exception:
+                    combinar_ok = False
+                pasos.append(("combinar_paginas", combinar_ok))
+                if combinar_ok:
+                    comando_partes.append("SystemCombinePhysicalMemoryInformation")
+
+    memoria = psutil.virtual_memory()
+    resultado["uso_despues"] = memoria.percent
+    resultado["liberado"] = max(0, memoria.available - disponible_antes)
+    if nivel == "profunda":
+        listas = estado_listas_memoria()
+        resultado["espera_despues"] = listas["en_espera"] if listas else None
+    # "Completo" = llegó a la memoria del sistema, no solo a procesos sueltos.
+    resultado["completo"] = sistema_ok
+    resultado["comando"] = " + ".join(comando_partes)
+    return resultado
+
+
+def trim_process_memory(exclude_pids=None, nivel="normal"):
+    """Envoltorio con la firma de siempre, para los sitios que solo
+    necesitan el número: (bytes_liberados, procesos_afectados, comando)."""
+    r = liberar_memoria(nivel=nivel, exclude_pids=exclude_pids)
+    return r["liberado"], r["procesos"], r["comando"]
 
 
 def _carpetas_intocables():
@@ -179,20 +447,18 @@ def _es_intocable(ruta, intocables):
 
 
 def _dir_size(path, intocables=None):
-    """Tamano de una carpeta. Si se pasan carpetas intocables, no las cuenta:
+    """Tamaño de una carpeta. Si se pasan carpetas intocables, no las cuenta:
     asi lo que se ESTIMA como recuperable coincide con lo que la limpieza va
     a borrar de verdad, en vez de prometer 22 MB de mas (los de la propia app
     descomprimida en %TEMP%)."""
-    total = 0
-    for root, _, files in os.walk(path, topdown=True, onerror=lambda e: None):
-        if intocables and _es_intocable(root, intocables):
-            continue
-        for f in files:
-            try:
-                total += os.path.getsize(os.path.join(root, f))
-            except OSError:
-                continue
-    return total
+    return _medir(path, excluir=(lambda d: _es_intocable(d, intocables)) if intocables else None)
+
+
+def _carpeta_windows():
+    """La carpeta de Windows de verdad. No siempre es C:/Windows: hay equipos
+    con el sistema instalado en otra unidad, y ahí la ruta escrita a mano
+    apuntaba a una carpeta que no existe y la limpieza no hacía nada."""
+    return os.environ.get("SystemRoot") or os.environ.get("windir") or r"C:\Windows"
 
 
 def estimate_reclaimable_space():
@@ -202,9 +468,11 @@ def estimate_reclaimable_space():
     candidatos.append((t("optmod_temp_usuario"), temp_dir))
 
     if IS_WINDOWS:
-        win_temp = r"C:\Windows\Temp"
+        win_temp = os.path.join(_carpeta_windows(), "Temp")
         if os.path.isdir(win_temp):
-            candidatos.append(("Temporales de Windows", win_temp))
+            # BUG corregido: el nombre iba escrito en español a mano y en la
+            # build en inglés salía "Temporales de Windows".
+            candidatos.append((t("optmod_temp_windows"), win_temp))
 
     intocables = _carpetas_intocables()
     resultados = []
@@ -221,36 +489,26 @@ def clear_temp_files():
     """
     Borra archivos temporales del usuario y del sistema (los que no estén
     en uso). Devuelve (bytes_liberados, archivos_borrados, comando_equivalente).
+
+    BUG corregido: recorría %TEMP% con os.walk, que en Windows SÍ entra en
+    las uniones (junctions). Una unión dentro de %TEMP% apuntando a otra
+    carpeta —la dejan algunos instaladores— hacía que "limpiar temporales"
+    vaciara esa otra carpeta. Ahora pasa por _vaciar_contenido, que nunca
+    entra en enlaces, y sigue sin tocar las carpetas _MEI (la propia app).
     """
     comando = 'del /s /q "%TEMP%\\*" y limpieza equivalente de C:\\Windows\\Temp'
     rutas = [tempfile.gettempdir()]
-    if IS_WINDOWS and os.path.isdir(r"C:\Windows\Temp"):
-        rutas.append(r"C:\Windows\Temp")
+    win_temp = os.path.join(_carpeta_windows(), "Temp")
+    if IS_WINDOWS and os.path.isdir(win_temp):
+        rutas.append(win_temp)
 
     intocables = _carpetas_intocables()
     liberado = 0
     borrados = 0
     for ruta in rutas:
-        for root, dirs, files in os.walk(ruta, topdown=False):
-            if _es_intocable(root, intocables):
-                continue
-            for f in files:
-                fp = os.path.join(root, f)
-                try:
-                    size = os.path.getsize(fp)
-                    os.remove(fp)
-                    liberado += size
-                    borrados += 1
-                except (OSError, PermissionError):
-                    continue
-            for d in dirs:
-                dp = os.path.join(root, d)
-                if _es_intocable(dp, intocables):
-                    continue
-                try:
-                    os.rmdir(dp)
-                except OSError:
-                    continue
+        bytes_ruta, archivos = _vaciar_contenido(ruta, excluir=lambda d: _es_intocable(d, intocables))
+        liberado += bytes_ruta
+        borrados += archivos
     return liberado, borrados, comando
 
 
@@ -695,6 +953,13 @@ POWER_PLANS = {
                      "palabras": ["balanced", "equilibrado"]},
     "rendimiento": {"guid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
                       "palabras": ["high performance", "alto rendimiento"]},
+    # "Máximo rendimiento" (Ultimate Performance) viene OCULTO en Windows:
+    # hay que copiarlo de su plantilla con /duplicatescheme. Se copia con
+    # un GUID fijo propio y no con uno al azar, para que pulsar el botón
+    # diez veces no deje diez planes iguales en el Panel de control.
+    "maximo": {"guid": "7ec1ea4c-0000-4d1a-9b5e-7ec1ea4c0001",
+               "plantilla": "e9a42b02-d5df-448d-aa00-03f14749eb61",
+               "palabras": ["ultimate performance", "máximo rendimiento", "rendimiento máximo"]},
 }
 
 
@@ -714,6 +979,21 @@ def set_power_plan(perfil):
             return True, comando
     except Exception:
         pass
+
+    # Planes ocultos (Máximo rendimiento): crearlos desde su plantilla la
+    # primera vez. En algunos portátiles con Modern Standby Windows no deja
+    # crearlo; entonces sigue al respaldo por nombre y, si no, falla.
+    plantilla = POWER_PLANS[perfil].get("plantilla")
+    if plantilla:
+        try:
+            r = subprocess.run(["powercfg", "/duplicatescheme", plantilla, guid], capture_output=True,
+                               creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
+            if r.returncode == 0:
+                exito, _ = activar_plan_guid(guid)
+                if exito:
+                    return True, f"powercfg /duplicatescheme {plantilla} {guid} + {comando}"
+        except Exception:
+            pass
 
     # Respaldo: el GUID estándar no existe en este equipo — buscar por nombre.
     try:
@@ -750,6 +1030,39 @@ def get_active_power_plan_name():
 # Todas usan herramientas OFICIALES de Windows (sfc, DISM, fsutil, netsh) —
 # TechClean no reemplaza ni reinventa nada de esto, solo les da un botón.
 
+def _decodificar_salida_consola(datos):
+    """sfc escribe en UTF-16 cuando su salida va a un archivo; DISM y casi
+    todo lo demás, en la página de códigos OEM de la consola (cp850 en
+    Windows en español). Leído todo como uno solo, el otro sale ilegible:
+    letras separadas por caracteres nulos, o las tildes rotas."""
+    if not datos:
+        return ""
+    # En UTF-16 el texto normal lleva un byte nulo en cada posición impar.
+    muestra = datos[1:400:2]
+    if datos.startswith(b"\xff\xfe") or (muestra and muestra.count(0) > len(muestra) * 0.4):
+        return datos.decode("utf-16-le", errors="replace").lstrip("﻿")
+    # Y no todas usan la misma página: pnputil escribe en la ANSI (cp1252),
+    # no en la OEM, y leída como OEM "exportó" salía "export¾". Se prueban
+    # las dos y gana la que deja más letras del idioma y menos símbolos raros.
+    try:
+        paginas = ([f"cp{ctypes.windll.kernel32.GetOEMCP()}", f"cp{ctypes.windll.kernel32.GetACP()}"]
+                   if IS_WINDOWS else ["utf-8"])
+    except AttributeError:
+        paginas = ["utf-8"]
+    buenas = set("áéíóúñüÁÉÍÓÚÑÜ¿¡àèìòùçÀÈÌÒÙÇ")
+    candidatos = []
+    for pagina in dict.fromkeys(paginas):
+        try:
+            texto = datos.decode(pagina, errors="replace")
+        except LookupError:
+            continue
+        puntos = sum(c in buenas for c in texto) - sum(not c.isascii() and c not in buenas for c in texto)
+        candidatos.append((puntos, texto))
+    if not candidatos:
+        return datos.decode("utf-8", errors="replace")
+    return max(candidatos, key=lambda c: c[0])[1]
+
+
 def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_progreso=None, evento_cancelar=None):
     """
     Ejecuta un comando de reparación largo (sfc, DISM) de forma que SÍ se
@@ -766,10 +1079,21 @@ def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_pr
 
     Devuelve (exito, resumen, cancelado).
     """
+    # BUG corregido: la salida iba a un PIPE que no se leía hasta el final.
+    # El búfer de una tubería en Windows ronda los 64 KB; si el comando
+    # escribe más (DISM pinta su barra de progreso una y otra vez), se queda
+    # bloqueado esperando a que alguien lea, y aquí se esperaba a que
+    # terminara: los dos esperándose para siempre. A un archivo temporal se
+    # puede escribir sin límite.
     try:
-        proceso = subprocess.Popen(comando_lista, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        salida_archivo = tempfile.TemporaryFile()
     except Exception as e:
+        return False, t("optmod_no_inicio", error=e), False
+    try:
+        proceso = subprocess.Popen(comando_lista, stdout=salida_archivo, stderr=subprocess.STDOUT,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+    except Exception as e:
+        salida_archivo.close()
         return False, t("optmod_no_inicio", error=e), False
 
     inicio = time.time()
@@ -801,12 +1125,16 @@ def _ejecutar_reparacion_cancelable(comando_lista, timeout_seg=3600, callback_pr
                 proceso.kill()
             except Exception:
                 pass
-        return False, "Se detuvo antes de completarse (cancelado o por tardar demasiado).", True
+        salida_archivo.close()
+        return False, t("optmod_cancelado"), True
 
     try:
-        salida = proceso.stdout.read() if proceso.stdout else ""
+        salida_archivo.seek(0)
+        salida = _decodificar_salida_consola(salida_archivo.read())
     except Exception:
         salida = ""
+    finally:
+        salida_archivo.close()
     resumen = (salida or "").strip()[-600:] or t("optmod_sin_salida")
     return proceso.returncode == 0, resumen, False
 
@@ -1911,18 +2239,24 @@ def listar_cache_apps_comunes():
     base = _ruta_localappdata()
     # Se arma DENTRO de la funcion, no a nivel de modulo, asi que aqui t() ya
     # tiene el idioma fijado y se puede traducir directo.
+    roaming = os.environ.get("APPDATA") or os.path.join(base, "..", "Roaming")
+    # Cada caché con sus posibles sitios, en orden; se usa el primero que
+    # exista. BUG corregido: Steam y Discord apuntaban a carpetas donde
+    # esas apps no guardan nada (Steam usa Local, Discord usa Roaming), así
+    # que nunca aparecían en la lista. Spotify cambió Storage por Data.
     candidatos = {
-        t("optmod_cache_steam"): os.path.join(base, "..", "Roaming", "Steam", "htmlcache"),
-        t("optmod_cache_discord"): os.path.join(base, "Discord", "Cache"),
-        t("optmod_cache_onedrive"): os.path.join(base, "Microsoft", "OneDrive", "logs"),
-        t("optmod_cache_pip"): os.path.join(base, "pip", "Cache"),
-        t("optmod_cache_npm"): os.path.join(base, "npm-cache"),
-        t("optmod_cache_spotify"): os.path.join(base, "Spotify", "Storage"),
+        t("optmod_cache_steam"): [os.path.join(base, "Steam", "htmlcache")],
+        t("optmod_cache_discord"): [os.path.join(roaming, "discord", "Cache")],
+        t("optmod_cache_onedrive"): [os.path.join(base, "Microsoft", "OneDrive", "logs")],
+        t("optmod_cache_pip"): [os.path.join(base, "pip", "Cache")],
+        t("optmod_cache_npm"): [os.path.join(base, "npm-cache")],
+        t("optmod_cache_spotify"): [os.path.join(base, "Spotify", "Data"),
+                                    os.path.join(base, "Spotify", "Storage")],
     }
     resultados = []
-    for nombre, ruta in candidatos.items():
-        ruta = os.path.normpath(ruta)
-        if not os.path.isdir(ruta):
+    for nombre, posibles in candidatos.items():
+        ruta = next((os.path.normpath(r) for r in posibles if os.path.isdir(r)), None)
+        if ruta is None:
             continue
         total = 0
         try:
@@ -1943,29 +2277,585 @@ def listar_cache_apps_comunes():
 def limpiar_cache_app(ruta):
     """Borra el CONTENIDO de una carpeta de caché (no la carpeta en sí, para
     que la app no truene la próxima vez que la busque). Devuelve
-    (bytes_liberados, comando)."""
+    (bytes_liberados, comando).
+
+    BUG corregido: medía cada carpeta ANTES de borrarla y sumaba ese número,
+    con rmtree(ignore_errors=True), que nunca avisa. Con la app abierta
+    (Discord, Spotify) la mitad de los archivos están bloqueados: se borraba
+    una parte y se anunciaba el total. Es el mismo fallo que ya se había
+    corregido en la caché del navegador. Ahora se mide antes y después."""
     comando = f'Vaciar contenido de "{ruta}"'
-    liberado = 0
-    if not os.path.isdir(ruta):
-        return 0, comando
-    try:
-        with os.scandir(ruta) as it:
-            for entrada in it:
-                try:
-                    if entrada.is_dir(follow_symlinks=False):
-                        tam = sum(os.path.getsize(os.path.join(dp, f))
-                                  for dp, _, fs in os.walk(entrada.path) for f in fs)
-                        shutil.rmtree(entrada.path, ignore_errors=True)
-                        liberado += tam
-                    else:
-                        tam = entrada.stat().st_size
-                        os.remove(entrada.path)
-                        liberado += tam
-                except Exception:
-                    continue
-    except Exception:
-        pass
+    liberado, _ = _vaciar_contenido(ruta)
     return liberado, comando
+
+
+def _es_enlace(ruta):
+    """Enlace simbólico o unión (junction). NUNCA se entra en uno al borrar:
+    una unión puede apuntar a cualquier sitio del disco, y seguirla
+    convertiría "vaciar esta caché" en "vaciar lo que haya al otro lado"."""
+    try:
+        if os.path.islink(ruta):
+            return True
+        es_union = getattr(os.path, "isjunction", None)
+        return bool(es_union and es_union(ruta))
+    except OSError:
+        return True
+
+
+def _recorrer(ruta, excluir=None):
+    """os.walk SIN entrar en enlaces ni uniones, y saltando las carpetas
+    que `excluir(carpeta)` diga. Da las mismas tuplas (raiz, dirs, archivos).
+
+    Ojo: os.walk(followlinks=False) NO basta en Windows. Solo esquiva los
+    enlaces simbólicos; las UNIONES (junctions) no lo son para él y entra
+    en ellas. Comprobado en prueba_limpieza_fondo.py."""
+    for raiz, dirs, archivos in os.walk(ruta, topdown=True, onerror=lambda e: None):
+        dirs[:] = [d for d in dirs
+                   if not _es_enlace(os.path.join(raiz, d))
+                   and not (excluir and excluir(os.path.join(raiz, d)))]
+        yield raiz, dirs, archivos
+
+
+def _medir(ruta, filtro=None, excluir=None):
+    """Tamaño de una carpeta (o de un archivo suelto), contando solo lo que
+    pase el filtro y sin entrar en enlaces."""
+    if os.path.isfile(ruta):
+        try:
+            return os.path.getsize(ruta) if (filtro is None or filtro(ruta)) else 0
+        except OSError:
+            return 0
+    total = 0
+    for raiz, _, archivos in _recorrer(ruta, excluir):
+        for a in archivos:
+            fp = os.path.join(raiz, a)
+            if filtro is not None and not filtro(fp):
+                continue
+            try:
+                total += os.path.getsize(fp)
+            except OSError:
+                continue
+    return total
+
+
+def _vaciar_contenido(ruta, filtro=None, excluir=None):
+    """Borra lo que hay DENTRO de una carpeta (o un archivo suelto) y deja
+    la carpeta en su sitio. Devuelve (bytes_liberados, archivos_borrados).
+
+    Solo se suma el tamaño de lo que se borró DE VERDAD (os.remove sin
+    error), nunca lo que se intentó: un archivo en uso no se borra, y
+    anunciarlo como liberado sería mentir (ya pasó dos veces en esta app,
+    con el navegador y con las cachés)."""
+    if not os.path.exists(ruta):
+        return 0, 0
+
+    def borrar(fp):
+        try:
+            tam = os.path.getsize(fp)
+            os.remove(fp)
+            return tam
+        except OSError:
+            return None
+
+    if os.path.isfile(ruta):
+        if filtro is not None and not filtro(ruta):
+            return 0, 0
+        tam = borrar(ruta)
+        return (tam, 1) if tam is not None else (0, 0)
+
+    liberado = 0
+    borrados = 0
+    carpetas = []
+    for raiz, dirs, archivos in _recorrer(ruta, excluir):
+        carpetas.extend(os.path.join(raiz, d) for d in dirs)
+        for a in archivos:
+            fp = os.path.join(raiz, a)
+            if filtro is not None and not filtro(fp):
+                continue
+            tam = borrar(fp)
+            if tam is not None:
+                liberado += tam
+                borrados += 1
+    # Las subcarpetas que quedaron vacías, de la más profunda a la menos.
+    # rmdir no borra una carpeta con algo dentro, así que es seguro.
+    for carpeta in sorted(carpetas, key=len, reverse=True):
+        try:
+            os.rmdir(carpeta)
+        except OSError:
+            continue
+    return liberado, borrados
+
+
+def _mas_viejo_que(dias):
+    limite = time.time() - dias * 86400
+
+    def filtro(fp):
+        try:
+            return os.path.getmtime(fp) < limite
+        except OSError:
+            return False
+    return filtro
+
+
+def _categorias_limpieza_sistema():
+    """Lo mismo que limpia el Liberador de espacio de Windows (cleanmgr),
+    categoría por categoría. Se arma al llamarla, no al importar el módulo,
+    para que t() ya tenga el idioma fijado.
+
+    Lo que NO está, a propósito:
+    - Caché de sombreadores (DirectX/NVIDIA/AMD): borrarla hace que los
+      juegos vuelvan a compilarlos y den tirones las primeras partidas. En
+      una app que tiene Modo Juego, eso es ir en contra de sí misma.
+    - Prefetch: Windows lo usa para abrir los programas más rápido. Las
+      "guías de optimización" que dicen borrarlo están equivocadas.
+    - Windows.old: Windows lo borra solo a los 10 días y quitarlo a mano
+      exige tomar posesión de miles de archivos del sistema."""
+    win = _carpeta_windows()
+    datos_programa = os.environ.get("ProgramData") or r"C:\ProgramData"
+    local = _ruta_localappdata()
+    return [
+        {
+            "clave": "update",
+            "nombre": t("fondo_update"),
+            "desc": t("fondo_update_desc"),
+            "rutas": [os.path.join(win, "SoftwareDistribution", "Download")],
+            # Lo de los últimos 3 días se respeta: puede ser una
+            # actualización que se está descargando o instalando ahora.
+            "filtro": _mas_viejo_que(3),
+        },
+        {
+            "clave": "entrega",
+            "nombre": t("fondo_entrega"),
+            "desc": t("fondo_entrega_desc"),
+            "rutas": [os.path.join(win, "ServiceProfiles", "NetworkService", "AppData", "Local",
+                                   "Microsoft", "Windows", "DeliveryOptimization", "Cache")],
+            "filtro": None,
+        },
+        {
+            "clave": "errores",
+            "nombre": t("fondo_errores"),
+            "desc": t("fondo_errores_desc"),
+            "rutas": [os.path.join(datos_programa, "Microsoft", "Windows", "WER", "ReportArchive"),
+                      os.path.join(datos_programa, "Microsoft", "Windows", "WER", "ReportQueue"),
+                      os.path.join(local, "Microsoft", "Windows", "WER")],
+            "filtro": None,
+        },
+        {
+            "clave": "volcados",
+            "nombre": t("fondo_volcados"),
+            "desc": t("fondo_volcados_desc"),
+            "rutas": [os.path.join(win, "Minidump"),
+                      os.path.join(win, "MEMORY.DMP"),
+                      os.path.join(local, "CrashDumps")],
+            "filtro": None,
+        },
+        {
+            "clave": "registros",
+            "nombre": t("fondo_registros"),
+            "desc": t("fondo_registros_desc"),
+            # Solo los registros ARCHIVADOS (CbsPersist_*). CBS.log, el
+            # actual, se deja: es el que se lee después de un sfc /scannow.
+            "rutas": [os.path.join(win, "Logs", "CBS")],
+            "filtro": lambda fp: os.path.basename(fp).lower().startswith("cbspersist_"),
+        },
+    ]
+
+
+def listar_limpieza_sistema():
+    """Cuánto ocupa cada categoría de la limpieza a fondo, sin borrar nada.
+    Devuelve una lista de {"clave", "nombre", "desc", "bytes"}."""
+    resultado = []
+    for c in _categorias_limpieza_sistema():
+        total = sum(_medir(r, c["filtro"]) for r in c["rutas"] if os.path.exists(r))
+        resultado.append({"clave": c["clave"], "nombre": c["nombre"], "desc": c["desc"], "bytes": total})
+    return resultado
+
+
+def limpiar_sistema(claves):
+    """Limpia las categorías pedidas (por su clave interna, nunca por el
+    texto visible). Devuelve (bytes_liberados, archivos_borrados, comando)."""
+    liberado = 0
+    borrados = 0
+    rutas_usadas = []
+    for c in _categorias_limpieza_sistema():
+        if c["clave"] not in claves:
+            continue
+        for ruta in c["rutas"]:
+            if not os.path.exists(ruta):
+                continue
+            bytes_ruta, archivos = _vaciar_contenido(ruta, c["filtro"])
+            liberado += bytes_ruta
+            borrados += archivos
+            rutas_usadas.append(ruta)
+    comando = "Vaciar contenido de: " + "; ".join(rutas_usadas) if rutas_usadas else "N/A"
+    return liberado, borrados, comando
+
+
+def limpiar_componentes_windows(callback_progreso=None, evento_cancelar=None):
+    """DISM /StartComponentCleanup: quita las versiones viejas de los
+    componentes de Windows que dejan las actualizaciones (la carpeta
+    WinSxS). Es lo que hace la tarea programada de Windows, pero esa solo
+    corre con el equipo inactivo y a veces nunca llega a correr.
+
+    Sin /ResetBase, a propósito: con /ResetBase ya no se puede desinstalar
+    ninguna actualización instalada, y si una sale mala, no hay vuelta atrás.
+
+    Lo liberado se mide como espacio libre del disco del sistema antes y
+    después: DISM no informa cuánto quitó, y estimarlo antes cuesta otros
+    tantos minutos (/AnalyzeComponentStore).
+
+    Devuelve (exito, bytes_liberados, resumen, cancelado)."""
+    unidad = os.path.splitdrive(_carpeta_windows())[0] + "\\"
+    try:
+        libre_antes = shutil.disk_usage(unidad).free
+    except OSError:
+        libre_antes = None
+    exito, resumen, cancelado = _ejecutar_reparacion_cancelable(
+        ["Dism.exe", "/Online", "/Cleanup-Image", "/StartComponentCleanup"],
+        timeout_seg=3600, callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+    liberado = 0
+    if libre_antes is not None:
+        try:
+            liberado = max(0, shutil.disk_usage(unidad).free - libre_antes)
+        except OSError:
+            pass
+    return exito, liberado, resumen, cancelado
+
+
+def _guid_en(texto):
+    """El primer GUID que aparezca en una línea de powercfg."""
+    m = re.search(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", texto or "")
+    return m.group(0).lower() if m else None
+
+
+def plan_activo_guid():
+    """GUID del plan de energía activo, o None.
+
+    Para deshacer hace falta el plan EXACTO de antes, no el perfil que
+    TechClean tenía guardado: si el usuario estaba en un plan propio (o en
+    el del fabricante del portátil), "deshacer" lo mandaba a Equilibrado."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        r = subprocess.run(["powercfg", "/getactivescheme"], capture_output=True, text=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+        return _guid_en(r.stdout)
+    except Exception:
+        return None
+
+
+def activar_plan_guid(guid):
+    """Activa un plan por su GUID. Devuelve (exito, comando)."""
+    comando = f"powercfg /setactive {guid}"
+    if not IS_WINDOWS or not _guid_en(guid):
+        return False, comando
+    try:
+        r = subprocess.run(["powercfg", "/setactive", guid], capture_output=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=10)
+        return r.returncode == 0, comando
+    except Exception:
+        return False, comando
+
+
+# ---------------- Optimizar unidades (TRIM / desfragmentar) ----------------
+
+# El tipo de cada disco no cambia mientras la app está abierta, y leerlo
+# cuesta ~8 s en equipos con WMI lento (Get-PhysicalDisk). Se lee una vez;
+# las siguientes solo se actualiza el espacio libre, que es instantáneo.
+_tipos_unidad_cache = None
+
+
+def listar_unidades_optimizables():
+    global _tipos_unidad_cache
+    if _tipos_unidad_cache is not None:
+        unidades = []
+        for part in psutil.disk_partitions(all=False):
+            if "fixed" not in (part.opts or ""):
+                continue
+            letra = _letra_unidad(part.mountpoint)
+            if letra is None:
+                continue
+            try:
+                uso = psutil.disk_usage(part.mountpoint)
+            except OSError:
+                continue
+            unidades.append({"letra": letra, "tipo": _tipos_unidad_cache.get(letra, "?"),
+                             "tamano": uso.total, "libre": uso.free})
+        if unidades:
+            return sorted(unidades, key=lambda u: u["letra"])
+    unidades = _listar_unidades_powershell()
+    if unidades:
+        _tipos_unidad_cache = {u["letra"]: u["tipo"] for u in unidades}
+    return unidades
+
+
+def _listar_unidades_powershell():
+    """Unidades fijas con su tipo de disco. Devuelve una lista de
+    {"letra", "tipo" ("SSD"|"HDD"|"?"), "tamano", "libre"}.
+
+    El tipo importa para decirle al usuario qué va a pasar: en un SSD se
+    hace TRIM (segundos) y en un disco mecánico se desfragmenta (puede
+    tardar más de una hora). Desfragmentar un SSD no sirve de nada y lo
+    gasta; por eso la acción la decide Optimize-Volume, que mira el tipo
+    él mismo, igual que la herramienta "Desfragmentar y optimizar unidades"
+    de Windows."""
+    ps = (
+        "Get-Volume | Where-Object { $_.DriveLetter -and $_.DriveType -eq 'Fixed' } | ForEach-Object { "
+        "$letra = [string]$_.DriveLetter; $tipo = '?'; "
+        "try { $disco = Get-Partition -DriveLetter $letra -ErrorAction Stop | Get-Disk -ErrorAction Stop; "
+        "$fisico = Get-PhysicalDisk | Where-Object { $_.DeviceId -eq [string]$disco.Number }; "
+        "if ($fisico) { $tipo = [string]$fisico.MediaType } } catch {} ; "
+        "[pscustomobject]@{ letra = $letra; tipo = $tipo; tamano = [int64]$_.Size; libre = [int64]$_.SizeRemaining } "
+        "} | ConvertTo-Json -Compress"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                           timeout=30)
+        datos = json.loads((r.stdout or "").strip() or "[]")
+    except Exception:
+        return []
+    if isinstance(datos, dict):
+        datos = [datos]
+    unidades = []
+    for d in datos if isinstance(datos, list) else []:
+        letra = str(d.get("letra") or "").strip().upper()[:1]
+        if not letra.isalpha():
+            continue
+        tipo = str(d.get("tipo") or "").upper()
+        unidades.append({"letra": letra, "tipo": tipo if tipo in ("SSD", "HDD") else "?",
+                         "tamano": int(d.get("tamano") or 0), "libre": int(d.get("libre") or 0)})
+    unidades.sort(key=lambda u: u["letra"])
+    return unidades
+
+
+def _letra_unidad(texto):
+    """La letra de unidad, o None. Va dentro de un comando de PowerShell:
+    de lo que llegue solo se queda UNA letra de la A a la Z, nada más."""
+    letra = str(texto or "").strip().upper()[:1]
+    return letra if len(letra) == 1 and "A" <= letra <= "Z" else None
+
+
+def optimizar_unidad(letra, callback_progreso=None, evento_cancelar=None):
+    """Optimize-Volume con la acción por defecto para el tipo de disco
+    (TRIM en SSD, desfragmentar en HDD). Devuelve (exito, resumen, cancelado)."""
+    letra = _letra_unidad(letra)
+    if letra is None:
+        return False, t("unid_letra_invalida"), False
+    return _ejecutar_reparacion_cancelable(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+         f"Optimize-Volume -DriveLetter {letra} -Verbose 4>&1"],
+        timeout_seg=4 * 3600, callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+
+
+# ---------------- DNS: medir y elegir el más rápido ----------------
+
+# Direcciones publicadas por cada proveedor. Las de IPv6 van también: si
+# solo se cambian las de IPv4, Windows puede seguir preguntando al DNS de
+# IPv6 que da el router y el cambio no surte efecto.
+PROVEEDORES_DNS = {
+    "cloudflare": {"nombre": "Cloudflare", "v4": ["1.1.1.1", "1.0.0.1"],
+                   "v6": ["2606:4700:4700::1111", "2606:4700:4700::1001"]},
+    "google": {"nombre": "Google", "v4": ["8.8.8.8", "8.8.4.4"],
+               "v6": ["2001:4860:4860::8888", "2001:4860:4860::8844"]},
+    "quad9": {"nombre": "Quad9", "v4": ["9.9.9.9", "149.112.112.112"],
+              "v6": ["2620:fe::fe", "2620:fe::9"]},
+    "opendns": {"nombre": "OpenDNS", "v4": ["208.67.222.222", "208.67.220.220"],
+                "v6": ["2620:119:35::35", "2620:119:53::53"]},
+}
+
+DOMINIOS_PRUEBA_DNS = ["google.com", "youtube.com", "facebook.com", "microsoft.com",
+                       "wikipedia.org", "amazon.com", "whatsapp.net", "netflix.com"]
+
+
+def _paquete_dns(dominio, ident):
+    """Una consulta DNS de tipo A, armada a mano (RFC 1035): no hace falta
+    ninguna librería para algo de 30 bytes."""
+    import struct
+    cabecera = struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0)   # recursión deseada, 1 pregunta
+    nombre = b"".join(bytes([len(p)]) + p.encode("ascii") for p in dominio.split(".")) + b"\x00"
+    return cabecera + nombre + struct.pack(">HH", 1, 1)               # tipo A, clase IN
+
+
+def medir_servidor_dns(ip, dominios=None, timeout=2.0):
+    """Tiempo de respuesta de un servidor DNS, en milisegundos (la mediana
+    de varias consultas), o None si no contesta a la mayoría.
+
+    La mediana y no la media: una sola consulta lenta (el servidor no
+    tenía ese dominio en caché) no debe hundir a un servidor bueno."""
+    import socket
+    import statistics
+    dominios = dominios or DOMINIOS_PRUEBA_DNS
+    tiempos = []
+    familia = socket.AF_INET6 if ":" in ip else socket.AF_INET
+    for dominio in dominios:
+        ident = int.from_bytes(os.urandom(2), "big")
+        try:
+            with socket.socket(familia, socket.SOCK_DGRAM) as s:
+                s.settimeout(timeout)
+                inicio = time.perf_counter()
+                s.sendto(_paquete_dns(dominio, ident), (ip, 53))
+                while True:
+                    datos, _ = s.recvfrom(1500)
+                    # Solo cuenta la respuesta a ESTA pregunta.
+                    if len(datos) >= 2 and int.from_bytes(datos[:2], "big") == ident:
+                        break
+                tiempos.append((time.perf_counter() - inicio) * 1000)
+        except OSError:
+            continue
+    if len(tiempos) < len(dominios) / 2:
+        return None
+    return statistics.median(tiempos)
+
+
+def leer_dns_actual():
+    """Los adaptadores conectados a internet (con puerta de enlace) y su
+    DNS. Devuelve una lista de {"indice", "nombre", "dns", "fijos_v4",
+    "fijos_v6"}.
+
+    "fijos" son los que alguien escribió a mano (registro NameServer). Si
+    están vacíos, el DNS lo da el router (DHCP). Hace falta saberlo para
+    deshacer: volver a "automático" no es lo mismo que volver a 8.8.8.8 si
+    eso era lo que el usuario tenía puesto."""
+    ps = (
+        "Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' } | "
+        "ForEach-Object { $guid = $_.NetAdapter.InterfaceGuid; "
+        "$v4 = (Get-ItemProperty \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\$guid\" "
+        "-ErrorAction SilentlyContinue).NameServer; "
+        "$v6 = (Get-ItemProperty \"HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters\\Interfaces\\$guid\" "
+        "-ErrorAction SilentlyContinue).NameServer; "
+        "[pscustomobject]@{ indice = $_.InterfaceIndex; nombre = $_.InterfaceAlias; "
+        "dns = @($_.DNSServer | Where-Object AddressFamily -eq 2 | ForEach-Object { $_.ServerAddresses }); "
+        "fijos_v4 = [string]$v4; fijos_v6 = [string]$v6 } } | ConvertTo-Json -Compress -Depth 3"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                           timeout=30)
+        datos = json.loads((r.stdout or "").strip() or "[]")
+    except Exception:
+        return []
+    if isinstance(datos, dict):
+        datos = [datos]
+
+    def separar(texto):
+        return [x for x in re.split(r"[,\s]+", texto or "") if x]
+
+    adaptadores = []
+    for d in datos if isinstance(datos, list) else []:
+        try:
+            indice = int(d.get("indice"))
+        except (TypeError, ValueError):
+            continue
+        dns = d.get("dns") or []
+        if isinstance(dns, str):
+            dns = [dns]
+        adaptadores.append({"indice": indice, "nombre": str(d.get("nombre") or ""),
+                            "dns": [str(x) for x in dns],
+                            "fijos_v4": separar(d.get("fijos_v4")), "fijos_v6": separar(d.get("fijos_v6"))})
+    return adaptadores
+
+
+def comparar_dns(callback_progreso=None):
+    """Mide el DNS actual y los cuatro públicos. Devuelve una lista de
+    {"clave", "nombre", "ip", "ms"} ordenada de más rápido a más lento
+    (los que no contestan, al final con ms=None). clave="actual" es el
+    que el equipo usa ahora."""
+    candidatos = []
+    actuales = []
+    for a in leer_dns_actual():
+        for ip in a["dns"]:
+            if ip not in actuales:
+                actuales.append(ip)
+    if actuales:
+        candidatos.append(("actual", t("dns_actual"), actuales[0]))
+    for clave, p in PROVEEDORES_DNS.items():
+        candidatos.append((clave, p["nombre"], p["v4"][0]))
+
+    resultados = []
+    for i, (clave, nombre, ip) in enumerate(candidatos):
+        if callback_progreso:
+            try:
+                callback_progreso(i, len(candidatos), nombre)
+            except Exception:
+                pass
+        resultados.append({"clave": clave, "nombre": nombre, "ip": ip, "ms": medir_servidor_dns(ip)})
+    resultados.sort(key=lambda r: (r["ms"] is None, r["ms"] or 0))
+    return resultados
+
+
+def _ps_lista(direcciones):
+    # Solo direcciones IP (dígitos, letras hex, puntos y dos puntos): van
+    # dentro de un comando de PowerShell.
+    limpias = [d for d in direcciones if re.fullmatch(r"[0-9A-Fa-f:.]+", d or "")]
+    return ",".join(f"'{d}'" for d in limpias)
+
+
+def _ps(comando, timeout=30):
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", comando],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                           timeout=timeout)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def aplicar_dns(clave):
+    """Pone el DNS de un proveedor en todos los adaptadores conectados.
+    Devuelve (exito, comando, estado_anterior). estado_anterior es lo que
+    hace falta para deshacerlo.
+
+    "Exito" es que el DNS que Windows tiene puesto DESPUÉS sea el pedido,
+    releído, no que el comando no haya dado error."""
+    if clave not in PROVEEDORES_DNS:
+        return False, "N/A", []
+    p = PROVEEDORES_DNS[clave]
+    direcciones = p["v4"] + p["v6"]
+    anteriores = leer_dns_actual()
+    if not anteriores:
+        return False, "N/A", []
+    comandos = []
+    for a in anteriores:
+        comando = (f"Set-DnsClientServerAddress -InterfaceIndex {int(a['indice'])} "
+                   f"-ServerAddresses ({_ps_lista(direcciones)})")
+        comandos.append(comando)
+        if not _ps(comando):
+            # Con IPv6 desactivado en el adaptador, Windows puede rechazar la
+            # lista entera por las direcciones IPv6. Entonces, solo IPv4.
+            comando = (f"Set-DnsClientServerAddress -InterfaceIndex {int(a['indice'])} "
+                       f"-ServerAddresses ({_ps_lista(p['v4'])})")
+            comandos.append(comando)
+            _ps(comando)
+    _ps("Clear-DnsClientCache")
+
+    despues = {a["indice"]: a["dns"] for a in leer_dns_actual()}
+    exito = all(despues.get(a["indice"], [])[:1] == [p["v4"][0]] for a in anteriores)
+    estado = [{"indice": a["indice"], "nombre": a["nombre"],
+               "fijos_v4": a["fijos_v4"], "fijos_v6": a["fijos_v6"]} for a in anteriores]
+    return exito, "; ".join(comandos), estado
+
+
+def restaurar_dns(estado):
+    """Deshace aplicar_dns: cada adaptador vuelve a lo que tenía. Si no
+    tenía nada escrito a mano, vuelve a automático (lo que dé el router)."""
+    comandos = []
+    exito = bool(estado)
+    for a in estado or []:
+        try:
+            indice = int(a.get("indice"))
+        except (TypeError, ValueError):
+            exito = False
+            continue
+        comando = f"Set-DnsClientServerAddress -InterfaceIndex {indice} -ResetServerAddresses"
+        comandos.append(comando)
+        exito = _ps(comando) and exito
+        fijos = list(a.get("fijos_v4") or []) + list(a.get("fijos_v6") or [])
+        if fijos:
+            comando = f"Set-DnsClientServerAddress -InterfaceIndex {indice} -ServerAddresses ({_ps_lista(fijos)})"
+            comandos.append(comando)
+            exito = _ps(comando) and exito
+    _ps("Clear-DnsClientCache")
+    return exito, "; ".join(comandos)
 
 
 # ---------------- Drivers (solo canales oficiales) ----------------
