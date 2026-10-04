@@ -27,6 +27,7 @@ Lo que sí se puede deshacer:
   * Inicio automático de la app-> volver a como estaba
   * Limpieza programada        -> volver a como estaba
   * Servidor DNS               -> volver al de antes (o a automático)
+  * Ajustes de Windows para juegos -> cada clave a su valor anterior
 
 Lo que NO, y la app lo dice claro:
 
@@ -69,6 +70,8 @@ TIPOS = {
     "inicio_automatico": "desh_tipo_inicio_automatico",
     "limpieza_programada": "desh_tipo_limpieza_programada",
     "dns": "desh_tipo_dns",
+    "ajuste_juego": "desh_tipo_ajuste_juego",
+    "ajuste_privacidad": "desh_tipo_ajuste_privacidad",
 }
 
 
@@ -223,6 +226,12 @@ class RegistroDeshacer:
 
         elif tipo == "dns":
             exito, comando = opt.restaurar_dns(datos.get("adaptadores") or [])
+
+        elif tipo == "ajuste_juego":
+            exito, comando = opt.restaurar_ajuste_juego(datos.get("clave", ""), datos.get("anteriores") or [])
+
+        elif tipo == "ajuste_privacidad":
+            exito, comando = opt.restaurar_ajuste_privacidad(datos.get("clave", ""), datos.get("anteriores") or [])
 
         elif tipo == "app_inicio":
             # Se guardó si estaba activa ANTES; deshacer es devolverla a eso.

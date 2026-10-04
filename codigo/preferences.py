@@ -46,6 +46,8 @@ _DEFAULTS = {
     "avisar_disco_lleno": True,                              # notificar unidades por encima de umbral_salud_disco
     "avisos_disco": {},                                      # {unidad: hora del último aviso}, para no repetir al reiniciar
     "tecnico_nombre": "",                                    # para los informes al cliente (edición admin)
+    "apps_cerrar_al_jugar": [],                              # procesos que el Modo Juego cierra y reabre al terminar
+    "cerrar_apps_al_jugar": False,                           # interruptor general de lo anterior (apagado de fábrica)
     "umbral_salud_ram": 75,                                  # % de RAM al que el semáforo de salud (Inicio) empieza a avisar
     "umbral_salud_disco": 85,                                # % de disco lleno al que el semáforo de salud empieza a avisar
 }

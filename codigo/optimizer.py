@@ -1493,13 +1493,96 @@ def crear_punto_restauracion(descripcion="TechClean - antes de reparar"):
     comando = f'Checkpoint-Computer -Description "{descripcion}" -RestorePointType "MODIFY_SETTINGS"'
     if not IS_WINDOWS:
         return False, comando
+    # BUG corregido: con un punto creado en las últimas 24 h, Windows NO
+    # crea otro, pero Checkpoint-Computer solo avisa y termina con código
+    # 0: la app decía "punto creado" antes de un sfc/DISM sin haberlo. Se
+    # cuentan los puntos antes y después.
+    antes = listar_puntos_restauracion()
     try:
         r = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", comando],
             capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
-        return r.returncode == 0, comando
+        if r.returncode != 0:
+            return False, comando
     except Exception:
         return False, comando
+    despues = listar_puntos_restauracion()
+    if antes is not None and despues is not None:
+        return len(despues) > len(antes), comando
+    return True, comando
+
+
+def listar_puntos_restauracion():
+    """[{numero, descripcion, fecha}] del más nuevo al más viejo, o None si
+    no se pudo leer (hace falta administrador)."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                            "Get-ComputerRestorePoint -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ "
+                            "numero = $_.SequenceNumber; descripcion = $_.Description; fecha = "
+                            "[Management.ManagementDateTimeConverter]::ToDateTime($_.CreationTime).ToString('yyyy-MM-dd HH:mm') "
+                            "} } | ConvertTo-Json -Compress"],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+        if r.returncode != 0:
+            return None
+        datos = json.loads((r.stdout or "").strip() or "[]")
+    except Exception:
+        return None
+    if isinstance(datos, dict):
+        datos = [datos]
+    puntos = [{"numero": d.get("numero"), "descripcion": d.get("descripcion") or "", "fecha": d.get("fecha") or ""}
+              for d in datos if isinstance(d, dict)]
+    puntos.sort(key=lambda p: p["numero"] or 0, reverse=True)
+    return puntos
+
+
+def espacio_puntos_restauracion():
+    """(usado, maximo) en bytes del espacio de instantáneas (donde viven los
+    puntos), sumando todas las unidades. (None, None) si no se puede leer."""
+    datos = _cim("Win32_ShadowStorage", ["UsedSpace", "MaxSpace"], timeout=20)
+    if not datos:
+        return None, None
+    try:
+        return sum(int(d.get("UsedSpace") or 0) for d in datos), sum(int(d.get("MaxSpace") or 0) for d in datos)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def borrar_puntos_antiguos():
+    """Borra todos los puntos de restauración MENOS el más reciente, con
+    vssadmin (los puntos son instantáneas de volumen). Devuelve
+    (borrados, restantes, comando). No se puede deshacer: la interfaz lo
+    confirma antes."""
+    antes = listar_puntos_restauracion()
+    comando = "vssadmin delete shadows /for=C: /oldest /quiet"
+    if not antes or len(antes) < 2:
+        return 0, len(antes or []), comando
+    unidad = os.path.splitdrive(_carpeta_windows())[0] or "C:"
+    for _ in range(len(antes) - 1):
+        try:
+            subprocess.run(["vssadmin", "delete", "shadows", f"/for={unidad}", "/oldest", "/quiet"],
+                           capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
+        except Exception:
+            break
+    despues = listar_puntos_restauracion() or []
+    return max(0, len(antes) - len(despues)), len(despues), comando.replace("C:", unidad)
+
+
+def informe_energia(carpeta, callback_progreso=None, evento_cancelar=None):
+    """powercfg /energy: observa el equipo 60 s y genera un informe HTML con
+    lo que impide suspender o gasta energía (dispositivos USB que no se
+    duermen, procesos que no dejan bajar la CPU...). Necesita
+    administrador. Devuelve (exito, ruta, resumen, cancelado)."""
+    ruta = os.path.join(carpeta, "informe_energia_windows.html")
+    exito, resumen, cancelado = _ejecutar_reparacion_cancelable(
+        ["powercfg", "/energy", "/output", ruta, "/duration", "60"], timeout_seg=300,
+        callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+    # powercfg /energy sale con código distinto de 0 cuando ENCUENTRA
+    # errores de energía (que es justo lo que se busca). El éxito real es
+    # que el informe exista.
+    existe = os.path.exists(ruta)
+    return existe and not cancelado, ruta if existe else None, resumen, cancelado
 
 
 # ---------------- Buscar actualizaciones de Windows (informativo) ----------------
@@ -2858,6 +2941,284 @@ def restaurar_dns(estado):
     return exito, "; ".join(comandos)
 
 
+# ---------------- Ajustes de Windows para juegos ----------------
+# Los mismos interruptores que Configuración > Juegos y Configuración >
+# Pantalla > Gráficos, escritos donde los escribe la propia Configuración.
+# Cada ajuste puede tocar VARIAS claves (la grabación en segundo plano vive
+# en dos sitios); por eso cada uno es una lista de (raíz, ruta, valor).
+# "on"/"off" son los valores que pone Windows en cada estado; "defecto" es
+# lo que Windows hace si la clave no existe todavía.
+
+AJUSTES_JUEGO = {
+    "modo_juego": {
+        "claves": [("HKCU", r"Software\Microsoft\GameBar", "AutoGameModeEnabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": True, "reinicio": False,
+    },
+    "grabacion_fondo": {
+        # Captura en segundo plano de Xbox Game Bar: graba los últimos
+        # minutos SIEMPRE, por si quieres guardarlos. Cuesta rendimiento.
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\GameDVR", "AppCaptureEnabled"),
+                   ("HKCU", r"System\GameConfigStore", "GameDVR_Enabled")],
+        "on": 1, "off": 0, "defecto": 0, "recomendado": False, "reinicio": False,
+    },
+    "gpu_hags": {
+        # Programación de GPU acelerada por hardware. 2 = activada, 1 =
+        # desactivada. Solo surte efecto con GPU y controlador compatibles,
+        # y tras reiniciar.
+        "claves": [("HKLM", r"SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode")],
+        "on": 2, "off": 1, "defecto": None, "recomendado": True, "reinicio": True,
+    },
+}
+
+
+def _raiz_registro(nombre):
+    import winreg
+    return {"HKCU": winreg.HKEY_CURRENT_USER, "HKLM": winreg.HKEY_LOCAL_MACHINE}[nombre]
+
+
+def _leer_dword(raiz, ruta, nombre):
+    """El valor DWORD, o None si la clave o el valor no existen."""
+    if not IS_WINDOWS:
+        return None
+    import winreg
+    try:
+        with winreg.OpenKey(_raiz_registro(raiz), ruta) as k:
+            valor, tipo = winreg.QueryValueEx(k, nombre)
+            return int(valor) if tipo == winreg.REG_DWORD else None
+    except (OSError, ValueError):
+        return None
+
+
+def _escribir_dword(raiz, ruta, nombre, valor):
+    """Escribe el DWORD, o BORRA el valor si `valor` es None (para volver a
+    como estaba cuando la clave no existía)."""
+    import winreg
+    try:
+        with winreg.CreateKeyEx(_raiz_registro(raiz), ruta, 0, winreg.KEY_SET_VALUE) as k:
+            if valor is None:
+                try:
+                    winreg.DeleteValue(k, nombre)
+                except FileNotFoundError:
+                    pass
+            else:
+                winreg.SetValueEx(k, nombre, 0, winreg.REG_DWORD, int(valor))
+        return True
+    except OSError:
+        return False
+
+
+def leer_ajustes_juego(tabla=None):
+    """{clave: True | False | None}. None = no se sabe (no existe y Windows
+    no tiene un valor por defecto fijo, como la GPU)."""
+    tabla = tabla or AJUSTES_JUEGO
+    estado = {}
+    for clave, a in tabla.items():
+        r, ruta, nombre = a["claves"][0]
+        valor = _leer_dword(r, ruta, nombre)
+        if valor is None:
+            valor = a["defecto"]
+        estado[clave] = None if valor is None else (valor == a["on"])
+    return estado
+
+
+def set_ajuste_juego(clave, activar, tabla=None):
+    """Cambia un ajuste. Devuelve (exito, comando, anteriores) donde
+    `anteriores` son los valores CRUDOS de cada clave antes del cambio (None
+    = no existía), que es lo que hace falta para deshacerlo.
+
+    Éxito = releer el registro y ver el valor pedido."""
+    tabla = tabla or AJUSTES_JUEGO
+    if clave not in tabla or not IS_WINDOWS:
+        return False, "N/A", []
+    a = tabla[clave]
+    valor = a["on"] if activar else a["off"]
+    anteriores = [_leer_dword(r, ruta, nombre) for r, ruta, nombre in a["claves"]]
+    for r, ruta, nombre in a["claves"]:
+        _escribir_dword(r, ruta, nombre, valor)
+    exito = all(_leer_dword(r, ruta, nombre) == valor for r, ruta, nombre in a["claves"])
+    comando = "; ".join(f"reg add {r}\\{ruta} /v {nombre} /t REG_DWORD /d {valor} /f" for r, ruta, nombre in a["claves"])
+    return exito, comando, anteriores
+
+
+def restaurar_ajuste_juego(clave, anteriores, tabla=None):
+    """Deshace set_ajuste_juego: cada clave vuelve a su valor crudo (o se
+    borra si no existía)."""
+    tabla = tabla or AJUSTES_JUEGO
+    if clave not in tabla or len(anteriores or []) != len(tabla[clave]["claves"]):
+        return False, "N/A"
+    claves = tabla[clave]["claves"]
+    for (r, ruta, nombre), valor in zip(claves, anteriores):
+        _escribir_dword(r, ruta, nombre, valor)
+    exito = all(_leer_dword(r, ruta, nombre) == valor for (r, ruta, nombre), valor in zip(claves, anteriores))
+    return exito, f"restaurar {clave}: {anteriores}"
+
+
+# ---------------- Privacidad de Windows ----------------
+# Mismo mecanismo que AJUSTES_JUEGO (leer_ajustes_juego / set_ajuste_juego /
+# restaurar_ajuste_juego aceptan otra tabla). "on" = la función de Windows
+# ENCENDIDA; lo recomendado aquí es casi siempre apagarla. Solo claves que
+# escribe la propia Configuración de Windows (o la directiva documentada
+# de Bing en el buscador), nada adivinado.
+AJUSTES_PRIVACIDAD = {
+    "publicidad": {
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo", "Enabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": False, "reinicio": False,
+    },
+    "sugerencias_inicio": {
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SystemPaneSuggestionsEnabled"),
+                   ("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338388Enabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": False, "reinicio": False,
+    },
+    "sugerencias_configuracion": {
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338393Enabled"),
+                   ("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-353694Enabled"),
+                   ("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-353696Enabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": False, "reinicio": False,
+    },
+    "consejos": {
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338389Enabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": False, "reinicio": False,
+    },
+    "experiencias": {
+        "claves": [("HKCU", r"Software\Microsoft\Windows\CurrentVersion\Privacy", "TailoredExperiencesWithDiagnosticDataEnabled")],
+        "on": 1, "off": 0, "defecto": 1, "recomendado": False, "reinicio": False,
+    },
+    "bing_inicio": {
+        # Directiva: 1 = DESACTIVA los resultados web en el buscador del
+        # menú Inicio. Por eso "on" (Bing encendido) es 0. Explorer la lee
+        # al arrancar: hace falta cerrar sesión o reiniciar el Explorador.
+        "claves": [("HKCU", r"Software\Policies\Microsoft\Windows\Explorer", "DisableSearchBoxSuggestions")],
+        "on": 0, "off": 1, "defecto": 0, "recomendado": False, "reinicio": True,
+    },
+}
+
+
+def leer_ajustes_privacidad():
+    return leer_ajustes_juego(AJUSTES_PRIVACIDAD)
+
+
+def set_ajuste_privacidad(clave, activar):
+    return set_ajuste_juego(clave, activar, AJUSTES_PRIVACIDAD)
+
+
+def restaurar_ajuste_privacidad(clave, anteriores):
+    return restaurar_ajuste_juego(clave, anteriores, AJUSTES_PRIVACIDAD)
+
+
+# ---------------- Medidor de lag (ping, variación, pérdida) ----------------
+
+if IS_WINDOWS:
+    class _OpcionesIP(ctypes.Structure):
+        _fields_ = [("Ttl", ctypes.c_ubyte), ("Tos", ctypes.c_ubyte), ("Flags", ctypes.c_ubyte),
+                    ("OptionsSize", ctypes.c_ubyte), ("OptionsData", ctypes.c_void_p)]
+
+    class _RespuestaEco(ctypes.Structure):
+        # ICMP_ECHO_REPLY (iphlpapi, documentada en MSDN)
+        _fields_ = [("Address", ctypes.c_ulong), ("Status", ctypes.c_ulong), ("RoundTripTime", ctypes.c_ulong),
+                    ("DataSize", ctypes.c_ushort), ("Reserved", ctypes.c_ushort), ("Data", ctypes.c_void_p),
+                    ("Options", _OpcionesIP)]
+
+
+def _ping_una_vez(ip, timeout_ms=1000):
+    """Un ping con IcmpSendEcho: no necesita administrador ni lanzar
+    ping.exe (cuya salida, además, está traducida). Devuelve ms o None."""
+    import socket
+    iphlpapi = ctypes.WinDLL("iphlpapi")
+    iphlpapi.IcmpCreateFile.restype = ctypes.wintypes.HANDLE
+    iphlpapi.IcmpSendEcho.argtypes = [ctypes.wintypes.HANDLE, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ushort,
+                                      ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong]
+    iphlpapi.IcmpCloseHandle.argtypes = [ctypes.wintypes.HANDLE]
+    manejador = iphlpapi.IcmpCreateFile()
+    if not manejador:
+        return None
+    try:
+        datos = b"TechClean-ping-32bytes-de-relleno"[:32]
+        tam = ctypes.sizeof(_RespuestaEco) + len(datos) + 8
+        respuesta = ctypes.create_string_buffer(tam)
+        destino = int.from_bytes(socket.inet_aton(ip), "little")
+        n = iphlpapi.IcmpSendEcho(manejador, destino, datos, len(datos), None, respuesta, tam, timeout_ms)
+        if n == 0:
+            return None
+        r = _RespuestaEco.from_buffer(respuesta)
+        # RoundTripTime viene en ms enteros: una red local da 0-1 ms.
+        return float(r.RoundTripTime) if r.Status == 0 else None
+    finally:
+        iphlpapi.IcmpCloseHandle(manejador)
+
+
+def estadisticas_ping(tiempos):
+    """De una lista de ms (None = perdido) saca media, mínimo, máximo,
+    variación (jitter: media de la diferencia entre pings seguidos, que es
+    lo que se nota como tirones) y pérdida. Función pura."""
+    recibidos = [x for x in tiempos if x is not None]
+    total = len(tiempos)
+    if not recibidos:
+        return {"enviados": total, "recibidos": 0, "perdida_pct": 100.0,
+                "media_ms": None, "min_ms": None, "max_ms": None, "jitter_ms": None}
+    saltos = [abs(b - a) for a, b in zip(recibidos, recibidos[1:])]
+    return {"enviados": total, "recibidos": len(recibidos),
+            "perdida_pct": round((total - len(recibidos)) * 100 / total, 1),
+            "media_ms": round(sum(recibidos) / len(recibidos), 1),
+            "min_ms": min(recibidos), "max_ms": max(recibidos),
+            "jitter_ms": round(sum(saltos) / len(saltos), 1) if saltos else 0.0}
+
+
+def medir_ping(ip, cantidad=30, intervalo=0.2, callback=None):
+    tiempos = []
+    for i in range(cantidad):
+        inicio = time.perf_counter()
+        tiempos.append(_ping_una_vez(ip))
+        if callback:
+            try:
+                callback(i + 1, cantidad)
+            except Exception:
+                pass
+        espera = intervalo - (time.perf_counter() - inicio)
+        if espera > 0:
+            time.sleep(espera)
+    return estadisticas_ping(tiempos)
+
+
+def puerta_de_enlace():
+    """La IP del router de la conexión activa, o None."""
+    salida = ""
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                            "(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and "
+                            "$_.NetAdapter.Status -eq 'Up' } | Select-Object -First 1).IPv4DefaultGateway.NextHop"],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
+        salida = (r.stdout or "").strip().splitlines()[0] if (r.stdout or "").strip() else ""
+    except Exception:
+        return None
+    return salida if re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", salida) else None
+
+
+def veredicto_lag(router, internet):
+    """De dónde viene el lag: "bien", "local" (Wi-Fi / cable / router) o
+    "proveedor" (de tu router hacia afuera). Si el tramo local ya va mal,
+    el de internet lo arrastra, así que se mira primero. Función pura."""
+    def malo(s, media, jitter):
+        return (s is None or s["recibidos"] == 0 or s["perdida_pct"] >= 2
+                or (s["media_ms"] or 0) >= media or (s["jitter_ms"] or 0) >= jitter)
+    if router is not None and malo(router, 15, 8):
+        return "local"
+    if malo(internet, 80, 20):
+        return "proveedor"
+    return "bien"
+
+
+def diagnosticar_lag(callback=None):
+    """Mide el router y un servidor de internet (1.1.1.1). Devuelve
+    {"router": stats|None, "router_ip", "internet": stats, "veredicto"}."""
+    router_ip = puerta_de_enlace()
+    router = None
+    if router_ip:
+        router = medir_ping(router_ip, callback=(lambda i, n: callback("router", i, n)) if callback else None)
+    internet = medir_ping("1.1.1.1", callback=(lambda i, n: callback("internet", i, n)) if callback else None)
+    return {"router": router, "router_ip": router_ip, "internet": internet,
+            "veredicto": veredicto_lag(router, internet)}
+
+
 # ---------------- Drivers (solo canales oficiales) ----------------
 # Deliberadamente NO se instala nada automáticamente aquí. Solo se informa
 # y se dan enlaces/accesos oficiales — la razón está explicada en el README.
@@ -3255,36 +3616,217 @@ def winget_disponible():
 
 def listar_actualizaciones_winget():
     """Apps con actualización disponible según winget. Puede tardar
-    30-60 segundos. Devuelve (exito, lista, comando)."""
+    30-60 segundos. Devuelve (exito, lista, comando): cada elemento de la
+    lista es la fila tal cual (nombre, id, versión, disponible, origen)
+    unida con espacios, como antes."""
     comando = "winget upgrade --include-unknown"
     if not IS_WINDOWS:
         return False, [], comando
     try:
         r = subprocess.run(["winget", "upgrade", "--include-unknown", "--accept-source-agreements"],
-                            capture_output=True, text=True,
-                            creationflags=subprocess.CREATE_NO_WINDOW, timeout=90)
-        lineas = (r.stdout or "").splitlines()
-        apps = []
-        empezo = False
-        for linea in lineas:
-            texto = linea.strip()
-            if texto.startswith("Name") and "Id" in texto:
-                empezo = True
-                continue
-            if not empezo or not texto or texto.startswith("-"):
-                continue
-            # Winget termina la lista con una línea de resumen tipo "3 upgrades
-            # available." — no es una app, se filtra para no mostrarla como una.
-            if "upgrades available" in texto.lower() or texto.lower().startswith("no "):
-                continue
-            partes = texto.split()
-            if len(partes) >= 2:
-                apps.append(texto)
-        return True, apps, comando
-    except subprocess.TimeoutExpired:
-        return False, [], comando
+                           capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
+        filas = _filas_tabla_winget(_decodificar_salida_consola(r.stdout))
+        return True, ["   ".join(c for c in fila if c) for fila in filas], comando
     except Exception:
         return False, [], comando
+
+
+def _filas_tabla_winget(texto):
+    """Las filas de una tabla de winget, sin depender del idioma.
+
+    BUG corregido: se buscaba una cabecera que empezara por "Name". Con
+    winget en español la cabecera es "Nombre  Id  Versión  Disponible
+    Origen", no se encontraba nunca, y la lista salía vacía como si no
+    hubiera nada que actualizar. La cabecera es SIEMPRE la línea de encima
+    de la de guiones; eso no se traduce."""
+    lineas = [l.rstrip() for l in (texto or "").replace("\r", "").split("\n")]
+    for i, linea in enumerate(lineas):
+        if i > 0 and re.fullmatch(r"-{10,}", linea.strip()):
+            cabecera = lineas[i - 1]
+            # Inicio de cada columna = donde empieza cada palabra de la
+            # cabecera. Las cabeceras de winget son de una palabra ("Nombre",
+            # "Disponible"...), pero entre dos de ellas puede haber UN solo
+            # espacio ("Disponible Origen"): no se puede exigir dos.
+            inicios = [m.start() for m in re.finditer(r"\S+", cabecera)]
+            if not inicios:
+                continue
+            filas = []
+            for fila in lineas[i + 1:]:
+                # El resumen del final ("18 upgrades available.") es más
+                # corto que el inicio de la última columna: no es una fila.
+                if not fila.strip() or len(fila) <= inicios[-1]:
+                    continue
+                filas.append([fila[a:b].strip() for a, b in zip(inicios, inicios[1:] + [None])])
+            return filas
+    return []
+
+
+def actualizar_todo_winget(callback_progreso=None, evento_cancelar=None):
+    """winget upgrade --all. Puede tardar mucho (descarga e instala cada
+    una). Devuelve (exito, resumen, cancelado)."""
+    return _ejecutar_reparacion_cancelable(
+        ["winget", "upgrade", "--all", "--silent", "--include-unknown",
+         "--accept-package-agreements", "--accept-source-agreements", "--disable-interactivity"],
+        timeout_seg=3 * 3600, callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
+
+
+# ---------------- Bloatware (apps preinstaladas de la Tienda) ----------------
+# Solo apps que vienen de serie o que Windows instala solo para promocionar
+# algo. Nunca: Tienda, Fotos, Calculadora, Bloc de notas, Terminal, Recortes,
+# Xbox ni sus servicios (los juegos de Game Pass dependen de ellos),
+# códecs, ni el propio motor de apps. Prefijos de PackageFamilyName.
+BLOATWARE = {
+    "king.com.": "bloat_juegos_promocion",              # Candy Crush y compañía
+    "Microsoft.MicrosoftSolitaireCollection": "bloat_juegos_promocion",
+    "Microsoft.BingNews": "bloat_noticias",
+    "Microsoft.BingWeather": "bloat_noticias",
+    "Microsoft.BingFinance": "bloat_noticias",
+    "Microsoft.BingSports": "bloat_noticias",
+    "Microsoft.GetHelp": "bloat_ayuda",
+    "Microsoft.Getstarted": "bloat_ayuda",
+    "Microsoft.WindowsFeedbackHub": "bloat_ayuda",
+    "Microsoft.MicrosoftOfficeHub": "bloat_promocion",
+    "Microsoft.SkypeApp": "bloat_promocion",
+    "Microsoft.People": "bloat_promocion",
+    "Microsoft.WindowsMaps": "bloat_promocion",
+    "Microsoft.MixedReality.Portal": "bloat_promocion",
+    "Microsoft.Microsoft3DViewer": "bloat_promocion",
+    "Microsoft.Print3D": "bloat_promocion",
+    "Microsoft.3DBuilder": "bloat_promocion",
+    "Clipchamp.Clipchamp": "bloat_promocion",
+    "MicrosoftCorporationII.MicrosoftFamily": "bloat_promocion",
+    "Microsoft.Todos": "bloat_promocion",
+    "Microsoft.PowerAutomateDesktop": "bloat_promocion",
+    "SpotifyAB.SpotifyMusic": "bloat_terceros",
+    "Disney.": "bloat_terceros",
+    "Facebook.": "bloat_terceros",
+    "BytedancePte.Ltd.TikTok": "bloat_terceros",
+    "AmazonVideo.PrimeVideo": "bloat_terceros",
+    "4DF9E0F8.Netflix": "bloat_terceros",
+}
+
+
+def listar_bloatware():
+    """[{nombre, familia, paquete, categoria (clave de idiomas)}] de las
+    apps de la lista que están instaladas para este usuario."""
+    salida = ""
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                            "Get-AppxPackage | Select-Object Name, PackageFamilyName, PackageFullName, NonRemovable "
+                            "| ConvertTo-Json -Compress"],
+                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+        salida = (r.stdout or "").strip()
+        datos = json.loads(salida or "[]")
+    except Exception:
+        return []
+    if isinstance(datos, dict):
+        datos = [datos]
+    encontrados = []
+    for d in datos if isinstance(datos, list) else []:
+        familia = d.get("PackageFamilyName") or ""
+        if d.get("NonRemovable"):
+            continue
+        for prefijo, categoria in BLOATWARE.items():
+            if familia.startswith(prefijo):
+                encontrados.append({"nombre": d.get("Name") or familia, "familia": familia,
+                                    "paquete": d.get("PackageFullName") or "", "categoria": categoria})
+                break
+    encontrados.sort(key=lambda x: x["nombre"].lower())
+    return encontrados
+
+
+def quitar_bloatware(paquetes):
+    """Remove-AppxPackage para cada paquete (solo para este usuario). Se
+    pueden volver a instalar desde la Tienda. Devuelve (quitados, fallidos,
+    comando). Solo acepta paquetes de la lista BLOATWARE: aunque alguien
+    pase otro nombre, no se toca."""
+    quitados, fallidos = [], []
+    for p in paquetes:
+        if not any(p.startswith(prefijo) for prefijo in BLOATWARE) or not re.fullmatch(r"[\w.\-~ ]+", p):
+            fallidos.append(p)
+            continue
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                                f"Remove-AppxPackage -Package '{p}' -ErrorAction Stop"],
+                               capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                               timeout=180)
+            (quitados if r.returncode == 0 else fallidos).append(p)
+        except Exception:
+            fallidos.append(p)
+    return quitados, fallidos, "Remove-AppxPackage -Package <paquete>"
+
+
+# ---------------- Archivos duplicados ----------------
+
+def buscar_duplicados(carpeta, min_bytes=1024 * 1024, presupuesto_seg=90, callback=None, evento_cancelar=None):
+    """Grupos de archivos con el MISMO contenido (no solo el mismo nombre).
+
+    En tres pasadas, de barata a cara, para no leer GB de disco sin
+    necesidad: 1) agrupar por tamaño (gratis), 2) entre los de igual tamaño,
+    comparar los primeros 64 KB, 3) solo los que sigan iguales, el
+    contenido entero (BLAKE2). Nunca entra en enlaces ni uniones.
+
+    Devuelve (grupos, completo). grupos = [{"bytes", "rutas"[...]}] ordenados
+    por espacio desperdiciado; completo=False si se acabó el tiempo."""
+    import hashlib
+    inicio = time.time()
+    por_tamano = {}
+    completo = True
+    for raiz, _dirs, archivos in _recorrer(carpeta):
+        if evento_cancelar is not None and evento_cancelar.is_set() or time.time() - inicio > presupuesto_seg:
+            completo = False
+            break
+        for a in archivos:
+            ruta = os.path.join(raiz, a)
+            try:
+                tam = os.path.getsize(ruta)
+            except OSError:
+                continue
+            if tam >= min_bytes:
+                por_tamano.setdefault(tam, []).append(ruta)
+
+    def huella(ruta, limite=None):
+        h = hashlib.blake2b(digest_size=20)
+        leidos = 0
+        try:
+            with open(ruta, "rb") as f:
+                while True:
+                    bloque = f.read(1024 * 1024 if limite is None else min(65536, limite - leidos))
+                    if not bloque:
+                        break
+                    h.update(bloque)
+                    leidos += len(bloque)
+                    if limite is not None and leidos >= limite:
+                        break
+        except OSError:
+            return None
+        return h.hexdigest()
+
+    grupos = []
+    candidatos = [(tam, rutas) for tam, rutas in por_tamano.items() if len(rutas) > 1]
+    for n, (tam, rutas) in enumerate(candidatos):
+        if evento_cancelar is not None and evento_cancelar.is_set() or time.time() - inicio > presupuesto_seg:
+            completo = False
+            break
+        if callback:
+            try:
+                callback(n + 1, len(candidatos))
+            except Exception:
+                pass
+        parciales = {}
+        for r in rutas:
+            parciales.setdefault(huella(r, 65536), []).append(r)
+        for clave, iguales in parciales.items():
+            if clave is None or len(iguales) < 2:
+                continue
+            completos = {}
+            for r in iguales:
+                completos.setdefault(huella(r), []).append(r)
+            for clave2, mismos in completos.items():
+                if clave2 is not None and len(mismos) > 1:
+                    grupos.append({"bytes": tam, "rutas": sorted(mismos, key=lambda x: (len(x), x))})
+    grupos.sort(key=lambda g: g["bytes"] * (len(g["rutas"]) - 1), reverse=True)
+    return grupos, completo
 
 
 def actualizar_app_winget(id_o_nombre):
@@ -3502,107 +4044,6 @@ def abrir_configuracion_enfoque_asistido():
 # Solo LEE lo que cada launcher (Steam/Epic/GOG) ya tiene guardado en su
 # propio registro/carpetas — no se inventa nada, no se instala nada.
 
-def _tamano_carpeta_con_presupuesto(ruta, limite_tiempo):
-    """Suma tamaños de archivos con presupuesto de tiempo compartido — las
-    carpetas de juegos pueden ser enormes (50-100+ GB), así que se corta
-    si se acaba el tiempo en vez de tardar minutos por un solo juego."""
-    total = 0
-    try:
-        for carpeta_actual, _sub, archivos in os.walk(ruta, onerror=lambda e: None):
-            if time.time() > limite_tiempo:
-                break
-            for a in archivos:
-                try:
-                    total += os.path.getsize(os.path.join(carpeta_actual, a))
-                except OSError:
-                    continue
-    except Exception:
-        pass
-    return total
-
-
-def detectar_juegos_instalados(calcular_tamano=True, presupuesto_seg=20):
-    """
-    Detecta juegos instalados de Steam, Epic Games y GOG. El tamaño es
-    aproximado y comparte un presupuesto de tiempo entre todos los juegos
-    (por defecto 20s en total) — en bibliotecas grandes, los últimos
-    juegos pueden quedar sin tamaño calculado en vez de tardar minutos.
-    """
-    if not IS_WINDOWS:
-        return []
-    juegos = []
-    limite_tiempo = time.time() + presupuesto_seg
-
-    def _tamano_si_hay_tiempo(ruta):
-        if calcular_tamano and time.time() < limite_tiempo:
-            return _tamano_carpeta_con_presupuesto(ruta, limite_tiempo)
-        return None
-
-    # ---- Steam ----
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-            steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-        steam_path = steam_path.replace("/", os.sep)
-        bibliotecas = {steam_path}
-        vdf_path = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
-        if os.path.isfile(vdf_path):
-            with open(vdf_path, "r", encoding="utf-8", errors="ignore") as f:
-                contenido = f.read()
-            for ruta_encontrada in re.findall(r'"path"\s*"([^"]+)"', contenido):
-                bibliotecas.add(ruta_encontrada.replace("\\\\", "\\"))
-        for biblioteca in bibliotecas:
-            carpeta_common = os.path.join(biblioteca, "steamapps", "common")
-            if not os.path.isdir(carpeta_common):
-                continue
-            with os.scandir(carpeta_common) as it:
-                for entrada in it:
-                    if entrada.is_dir(follow_symlinks=False):
-                        juegos.append({"nombre": entrada.name, "plataforma": "Steam",
-                                       "ruta": entrada.path, "bytes": _tamano_si_hay_tiempo(entrada.path)})
-    except Exception:
-        pass
-
-    # ---- Epic Games ----
-    try:
-        for base in (r"C:\Program Files\Epic Games", r"C:\Program Files (x86)\Epic Games"):
-            if not os.path.isdir(base):
-                continue
-            with os.scandir(base) as it:
-                for entrada in it:
-                    if entrada.is_dir(follow_symlinks=False) and entrada.name.lower() != "launcher":
-                        juegos.append({"nombre": entrada.name, "plataforma": "Epic Games",
-                                       "ruta": entrada.path, "bytes": _tamano_si_hay_tiempo(entrada.path)})
-    except Exception:
-        pass
-
-    # ---- GOG ----
-    try:
-        import winreg
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\GOG.com\Games") as key:
-            i = 0
-            while True:
-                try:
-                    subclave = winreg.EnumKey(key, i)
-                except OSError:
-                    break
-                i += 1
-                try:
-                    with winreg.OpenKey(key, subclave) as gamekey:
-                        nombre, _ = winreg.QueryValueEx(gamekey, "gameName")
-                        ruta, _ = winreg.QueryValueEx(gamekey, "path")
-                        if os.path.isdir(ruta):
-                            juegos.append({"nombre": nombre, "plataforma": "GOG",
-                                           "ruta": ruta, "bytes": _tamano_si_hay_tiempo(ruta)})
-                except Exception:
-                    continue
-    except Exception:
-        pass
-
-    juegos.sort(key=lambda j: j["bytes"] or 0, reverse=True)
-    return juegos
-
-
 # ---------------- Gaming: biblioteca de juegos instalados ----------------
 # Solo lectura de los propios archivos de manifiesto de cada plataforma
 # (Steam/Epic/GOG) — nada de inyección, nada de tocar el juego en sí.
@@ -3685,11 +4126,15 @@ def _juegos_epic():
     return resultados
 
 
-def _juegos_gog():
-    if not IS_WINDOWS:
-        return []
+GALAXY_DB = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "GOG.com", "Galaxy", "storage",
+                         "galaxy-2.0.db")
+
+
+def _gog_registro():
+    """Juegos con el instalador clásico de GOG (sin Galaxy): cada uno deja
+    una clave en el registro con su nombre y su carpeta."""
     import winreg
-    resultados = []
+    juegos = []
     for ruta in (r"SOFTWARE\WOW6432Node\GOG.com\Games", r"SOFTWARE\GOG.com\Games"):
         try:
             with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, ruta) as key_padre:
@@ -3703,11 +4148,124 @@ def _juegos_gog():
                     try:
                         with winreg.OpenKey(key_padre, subclave) as sub:
                             nombre = winreg.QueryValueEx(sub, "gameName")[0]
-                            resultados.append({"nombre": nombre, "plataforma": "GOG", "bytes": None})
-                    except Exception:
+                            try:
+                                carpeta = winreg.QueryValueEx(sub, "path")[0]
+                            except OSError:
+                                carpeta = ""
+                            juegos.append({"id": str(subclave), "nombre": nombre, "ruta": carpeta})
+                    except OSError:
                         continue
-        except Exception:
+        except OSError:
             continue
+    return juegos
+
+
+def _gog_galaxy(ruta_db=None):
+    """Juegos instalados con GOG Galaxy 2.0, que NO siempre escribe en el
+    registro: su lista está en su propia base de datos SQLite.
+
+    Se lee una COPIA: con Galaxy abierto la base está en uso, y abrir el
+    original podría bloquearla. Tablas: InstalledBaseProducts (productId,
+    installationPath) y LimitedDetails (productId, title). Si Galaxy cambia
+    el esquema, se devuelve vacío en vez de reventar."""
+    import shutil
+    import sqlite3
+    ruta_db = ruta_db or GALAXY_DB
+    if not os.path.isfile(ruta_db):
+        return []
+    copia = os.path.join(tempfile.gettempdir(), f"techclean_galaxy_{os.getpid()}.db")
+    juegos = []
+    try:
+        shutil.copy2(ruta_db, copia)
+        con = sqlite3.connect(f"file:{copia}?mode=ro", uri=True)
+        try:
+            filas = con.execute(
+                "SELECT i.productId, i.installationPath, d.title FROM InstalledBaseProducts i "
+                "LEFT JOIN LimitedDetails d ON d.productId = i.productId").fetchall()
+        finally:
+            con.close()
+        for producto, carpeta, titulo in filas:
+            carpeta = carpeta or ""
+            juegos.append({"id": str(producto), "nombre": titulo or os.path.basename(carpeta.rstrip("\\/")) or str(producto),
+                           "ruta": carpeta})
+    except Exception:
+        return []
+    finally:
+        try:
+            os.remove(copia)
+        except OSError:
+            pass
+    return juegos
+
+
+def _gog_carpetas_juegos():
+    """Donde GOG suele instalar: la biblioteca por defecto de Galaxy y
+    "GOG Games" en la raíz de cada unidad fija."""
+    raices = [os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "GOG Galaxy", "Games")]
+    try:
+        for part in psutil.disk_partitions(all=False):
+            if "fixed" in (part.opts or ""):
+                raices.append(os.path.join(part.mountpoint, "GOG Games"))
+    except Exception:
+        pass
+    return raices
+
+
+def _gog_archivos_info(raices=None):
+    """Cada juego de GOG deja un goggame-<id>.info (JSON) en su carpeta, con
+    su nombre. Así se encuentran también los copiados de otro disco o de
+    otro equipo, que no están ni en el registro ni en Galaxy. Solo se mira
+    un nivel (raíz/Juego/goggame-*.info): nada de recorrer discos enteros."""
+    juegos = []
+    for raiz in raices if raices is not None else _gog_carpetas_juegos():
+        try:
+            carpetas = [e.path for e in os.scandir(raiz) if e.is_dir(follow_symlinks=False)]
+        except OSError:
+            continue
+        for carpeta in carpetas:
+            try:
+                infos = [e.path for e in os.scandir(carpeta)
+                         if e.is_file() and e.name.lower().startswith("goggame-") and e.name.lower().endswith(".info")]
+            except OSError:
+                continue
+            for info in infos:
+                try:
+                    with open(info, encoding="utf-8-sig") as f:
+                        datos = json.load(f)
+                except (OSError, ValueError):
+                    continue
+                # Los DLC traen su propio .info con rootGameId distinto: no
+                # son juegos aparte.
+                if datos.get("rootGameId") and str(datos.get("rootGameId")) != str(datos.get("gameId")):
+                    continue
+                juegos.append({"id": str(datos.get("gameId") or ""), "nombre": datos.get("name") or os.path.basename(carpeta),
+                               "ruta": carpeta})
+    return juegos
+
+
+def _juegos_gog(fuentes=None):
+    """Junta las tres fuentes sin repetir (por id de GOG o por carpeta)."""
+    if not IS_WINDOWS and fuentes is None:
+        return []
+    if fuentes is None:
+        fuentes = []
+        for f in (_gog_registro, _gog_galaxy, _gog_archivos_info):
+            try:
+                fuentes.append(f())
+            except Exception:
+                fuentes.append([])
+    vistos_id, vistas_rutas = set(), set()
+    resultados = []
+    for fuente in fuentes:
+        for j in fuente:
+            ruta = os.path.normcase(os.path.normpath(j.get("ruta") or "")) if j.get("ruta") else ""
+            if (j.get("id") and j["id"] in vistos_id) or (ruta and ruta in vistas_rutas):
+                continue
+            if j.get("id"):
+                vistos_id.add(j["id"])
+            if ruta:
+                vistas_rutas.add(ruta)
+            resultados.append({"nombre": j["nombre"], "plataforma": "GOG", "bytes": None})
     return resultados
 
 

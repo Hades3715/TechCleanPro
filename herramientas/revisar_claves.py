@@ -37,7 +37,7 @@ BASE = _rutas.CODIGO
 PRODUCTORES = ["optimizer.py", "system_monitor.py", "privacy.py", "report.py",
                "preferences.py", "deshacer.py", "tecnico.py",
                # autopilot.py: el vigilante entrega self.fugas a la lista de procesos.
-               "autopilot.py"]
+               "autopilot.py", "seguridad.py"]
 CONSUMIDOR = "main.py"
 
 

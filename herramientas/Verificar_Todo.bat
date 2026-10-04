@@ -81,13 +81,16 @@ call :comprobar "27. Liberacion automatica de RAM (umbral, intervalo, Modo Juego
 call :comprobar "28. Limpieza a fondo (uniones, bloqueados, filtros)" herramientas/prueba_limpieza_fondo.py
 call :comprobar "29. Vigilante (fugas de memoria y disco lleno)" herramientas/prueba_vigilante.py
 call :comprobar "30. DNS, unidades y plan Maximo (sin cambiar nada)" herramientas/prueba_dns_unidades.py
-call :comprobar "31. Errores que la app registro durante el banco" herramientas/revisar_errores_banco.py
+call :comprobar "31. Gaming: cerrar apps, ajustes de juego, lag" herramientas/prueba_gaming.py
+call :comprobar "32. Auditor de seguridad (el malware real y sin falsos positivos)" herramientas/prueba_seguridad.py
+call :comprobar "33. Apps de serie, duplicados, winget y puntos de restauracion" herramientas/prueba_apps_sistema.py
+call :comprobar "34. Errores que la app registro durante el banco" herramientas/revisar_errores_banco.py
 
-echo ---------- 32. Velocidad de internet (necesita conexion) ----------
+echo ---------- 35. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause
-call :comprobar "32. Velocidad de internet" herramientas/prueba_velocidad.py
+call :comprobar "35. Velocidad de internet" herramientas/prueba_velocidad.py
 
 echo ==========================================================
 echo   Termino: %TOTAL% comprobaciones, %FALLOS% con fallo.

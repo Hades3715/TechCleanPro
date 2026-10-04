@@ -593,7 +593,7 @@ arreglo llega a una sola.**
 ## Rutina de auditoría — correr SIEMPRE antes de dar algo por terminado
 
 Ya no es a mano: doble clic en **`herramientas\Verificar_Todo.bat`**, que
-corre las 32 comprobaciones seguidas y espera una tecla al final. Los
+corre las 35 comprobaciones seguidas y espera una tecla al final. Los
 `.py` sueltos imprimen y salen, así que al hacerles doble clic la ventana se
 cierra antes de poder leer nada — para eso está el `.bat`.
 
@@ -627,6 +627,9 @@ cierra antes de poder leer nada — para eso está el `.bat`.
 | `prueba_limpieza_fondo.py` | Borrado seguro: no entrar en uniones, no contar lo bloqueado, filtros, salida de sfc/DISM y que no se cuelgue con mucha salida |
 | `prueba_vigilante.py` | Qué es y qué no es una fuga, avisos sin repetir, PIDs reciclados, disco lleno, y la lectura rápida de procesos contra psutil |
 | `prueba_dns_unidades.py` | Consulta DNS contra un servidor de mentira local, filtrado de lo que llega a PowerShell, proveedores y plan Máximo. No cambia nada |
+| `prueba_gaming.py` | Cerrar/reabrir apps (nunca el juego ni lo intocable), ajustes de juego contra una clave de prueba propia, cuentas del lag |
+| `prueba_seguridad.py` | El malware real se detecta; Lenovo/Discord/OneDrive no; mineros, exclusiones, antivirus |
+| `prueba_apps_sistema.py` | Tabla de winget en cualquier idioma, bloatware solo de la lista, duplicados, puntos de restauración con Windows sustituido |
 | `revisar_errores_banco.py` | Los errores que la APP registró durante el banco (`ultimo_error.txt` de cada prueba). Va al final, tras marcar el inicio |
 
 Ninguna muestra ventanas ni toca las preferencias reales: apuntan `APPDATA`
@@ -1073,6 +1076,91 @@ código. Se le vio fallar con los 24 registros viejos.
 
 Y cinco etiquetas del Historial seguían en español a mano (`_log_dev("...")`
 como argumento posicional, que el ast de `verificar_idiomas` no mira).
+
+## Cuatro paquetes más para la 1.6.0
+
+### Gaming
+- **Cerrar apps al jugar y reabrirlas al salir** (`Autopilot._cerrar_apps` /
+  `_reabrir_apps`). Nunca el juego, ni TechClean, ni lo "bloqueado" por
+  `evaluar_riesgo_proceso`, aunque el usuario lo marque. Se reabren con
+  `explorer.exe <app>`: TechClean es administrador y lanzar Discord desde
+  ella lo abriría elevado. La lista para elegir excluye lanzadores de juegos
+  (muchos juegos mueren sin ellos) y todo lo que corre desde %SystemRoot%
+  (applicationframehost, textinputhost...: cerrarlos rompe Windows).
+- **Ajustes de Windows para juegos** (`AJUSTES_JUEGO`): Modo de juego,
+  grabación en segundo plano de Game Bar, HAGS. Cada uno = lista de claves
+  de registro con valores on/off; `set_ajuste_juego` devuelve los valores
+  CRUDOS anteriores y `restaurar_ajuste_juego` BORRA el valor si antes no
+  existía (no lo deja a 0: no es lo mismo para Windows).
+- **Cerrar apps al jugar es OPCIONAL**: interruptor general
+  `cerrar_apps_al_jugar`, apagado de fábrica. Las apps marcadas se guardan
+  aparte (`apps_cerrar_al_jugar`) para que apagar la función no obligue a
+  desmarcarlas: hay quien juega con el navegador o Discord abiertos a
+  propósito. `_apps_a_cerrar_al_jugar()` es lo único que lee el autopiloto.
+- **Juegos de GOG, tres fuentes** (`_juegos_gog`): el registro (instalador
+  clásico), la base SQLite de GOG Galaxy 2.0 (`InstalledBaseProducts` +
+  `LimitedDetails`, leída sobre una COPIA porque Galaxy la tiene abierta) y
+  los `goggame-<id>.info` de cada carpeta de juego (juegos copiados de otro
+  disco). Sin repetir por id o carpeta; los DLC (rootGameId distinto) no
+  cuentan. Antes solo miraba el registro, y lo instalado con Galaxy no
+  salía. Se quitó `detectar_juegos_instalados`: un segundo detector de
+  juegos que no usaba nadie (101 líneas).
+- **Medidor de lag**: `IcmpSendEcho` (iphlpapi, sin admin y sin depender de
+  la salida traducida de ping.exe). Mide el router y 1.1.1.1 por separado
+  para decir si el problema es la red local o el proveedor.
+
+### Privacidad y seguridad
+- **Privacidad de Windows** (`AJUSTES_PRIVACIDAD`, mismo mecanismo que los
+  de juego): ID de publicidad, sugerencias de Inicio y Configuración,
+  consejos, experiencias personalizadas y Bing en el buscador de Inicio.
+- **`seguridad.py` — auditor que SOLO LEE.** Nació del malware real del
+  equipo del desarrollador (ver más abajo). `recolectar()` pregunta al
+  sistema; `evaluar()` es pura. La señal más fuerte: **un intérprete firmado
+  pero renombrado** (OriginalFilename de la versión ≠ nombre del archivo)
+  en una carpeta de usuario. Renombrado + firmado NO basta: Lenovo instala
+  un mismo UdcPluginHost.exe con varios nombres y Roblox compila RobloxApp.exe
+  como RobloxPlayerBeta.exe; marcarlos era ruido. `prueba_seguridad.py`
+  tiene el malware real como primer caso.
+- **Programas en la red**: lo que escucha fuera de 127.0.0.1 y las
+  conexiones establecidas, por programa.
+
+### Aplicaciones y disco
+- **Bloatware** (`BLOATWARE`, prefijos de PackageFamilyName): solo esa
+  lista; `quitar_bloatware` rechaza cualquier otro paquete y cualquier
+  nombre con caracteres raros ANTES de llamar a PowerShell.
+- **Actualizar todas** con `winget upgrade --all`.
+- **`listar_actualizaciones_winget` buscaba la cabecera "Name"**: con winget
+  en español ("Nombre ... Disponible Origen") la lista salía vacía sin
+  aviso. `_filas_tabla_winget` toma como cabecera la línea de encima de los
+  guiones y una columna por palabra (entre "Disponible" y "Origen" hay UN
+  espacio).
+- **Duplicados**: tamaño → primeros 64 KB → contenido completo (BLAKE2), sin
+  entrar en uniones. La interfaz deja desmarcada una copia por grupo y, si
+  el usuario marca todas, `_accion_enviar_duplicados` salva la primera.
+
+### Sistema
+- **Puntos de restauración**: lista, espacio (`Win32_ShadowStorage`), crear
+  y borrar todos menos el más reciente (`vssadmin delete shadows /oldest`
+  n-1 veces). En la laptop del desarrollador: 2 puntos, 4.25 GB.
+- **`crear_punto_restauracion` mentía**: con un punto de las últimas 24 h,
+  Windows no crea otro pero `Checkpoint-Computer` sale con código 0. Se
+  usaba antes de sfc/DISM y en el mantenimiento. Ahora cuenta los puntos
+  antes y después.
+- **Informe de energía** (`powercfg /energy`, 60 s). powercfg sale con
+  código de error cuando ENCUENTRA problemas: el éxito es que exista el
+  informe.
+
+## Malware encontrado en el equipo del desarrollador (2026-10-04)
+
+Durante un escaneo de solo lectura apareció un malware en Python instalado
+el 2026-04-16: tarea programada "\Orion Terrorist Ghana 32308-S-1-5-21-…"
+(al iniciar sesión, sin autor) que lanza `gep.exe` = **pythonw.exe
+renombrado** desde `%APPDATA%\Autodesk\Inventor Interoperability 2026\FileCache`
+(carpeta falsa; Autodesk real está instalado) con `node_modules.asar` =
+`exec(b85decode(...))` → capa RC4 → capa ofuscada. McAfee (activo y al día)
+no lo detectó en seis meses. **El desarrollador decidió NO borrarlo todavía**
+para usarlo como muestra al construir el antivirus; no tocarlo sin
+preguntar. Es el caso real de `prueba_seguridad.py`.
 
 ## Ideas ya discutidas y descartadas (para no proponerlas de nuevo sin repensar)
 

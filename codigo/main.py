@@ -12,6 +12,7 @@ Requiere:  pip install -r requirements.txt
 
 import os
 import sys
+import subprocess
 import time
 import json
 import math
@@ -36,6 +37,7 @@ from idiomas import t
 import report as rep
 import deshacer as desh
 import tecnico as tec
+import seguridad as seg
 import widget as widget_mod
 import tray as tray_mod
 import autopilot as autopilot_mod
@@ -1282,7 +1284,8 @@ class TechCleanApp(ctk.CTk):
         # ---- Segundo plano: widget flotante, bandeja del sistema, autopiloto ----
         self.performance_widget = None
         self.autopilot = autopilot_mod.Autopilot(log_callback=self._log_dev, intervalo_seg=8,
-                                                   umbral_ram=self.prefs.get("umbral_ram_auto", 85))
+                                                   umbral_ram=self.prefs.get("umbral_ram_auto", 85),
+                                                   apps_cerrar=self._apps_a_cerrar_al_jugar)
         # Liberación automática de RAM, con o sin Modo Juego. Cuando el Modo
         # Juego está encendido se aparta sola: el autopiloto ya libera RAM
         # excluyendo el juego.
@@ -3053,7 +3056,8 @@ class TechCleanApp(ctk.CTk):
         self.pestana_disco = ctk.CTkSegmentedButton(
             self.contenido,
             values=[t("disco_tab_carpetas"), t("disco_tab_archivos"),
-                    t("disco_tab_instaladores"), t("disco_tab_cache"), t("disco_tab_fondo")],
+                    t("disco_tab_instaladores"), t("disco_tab_cache"), t("disco_tab_fondo"),
+                    t("disco_tab_duplicados")],
             command=self._cambiar_pestana_disco)
         self.pestana_disco.set(t("disco_tab_carpetas"))
         self.pestana_disco.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 12))
@@ -3081,6 +3085,8 @@ class TechCleanApp(ctk.CTk):
             self._mostrar_cache_apps()
         elif valor == t("disco_tab_fondo"):
             self._mostrar_limpieza_fondo()
+        elif valor == t("disco_tab_duplicados"):
+            self._mostrar_duplicados()
         else:
             self._mostrar_carpetas_pesadas()
 
@@ -3794,6 +3800,21 @@ class TechCleanApp(ctk.CTk):
             self._boton_ver_reporte(panel)
 
         # ---- Otras huellas de actividad (independiente de navegadores) ----
+        panel_win = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_win.pack(fill="x", padx=8, pady=8)
+        cab = ctk.CTkFrame(panel_win, fg_color="transparent")
+        cab.pack(fill="x", padx=16, pady=(16, 4))
+        ctk.CTkLabel(cab, text=t("privw_titulo"), font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        ctk.CTkButton(cab, text=t("privw_btn_todo"), width=200, command=self._accion_todo_privado).pack(side="right")
+        ctk.CTkLabel(panel_win, text=t("privw_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        self.lista_privacidad_win = ctk.CTkFrame(panel_win, fg_color="transparent")
+        self.lista_privacidad_win.pack(fill="x", padx=16)
+        self.lbl_privacidad_win = ctk.CTkLabel(panel_win, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                               wraplength=850, justify="left")
+        self.lbl_privacidad_win.pack(fill="x", padx=16, pady=(4, 14))
+        self._pintar_ajustes_privacidad(opt.leer_ajustes_privacidad())
+
         panel_otros = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_otros.pack(fill="x", padx=8, pady=8)
         ctk.CTkLabel(panel_otros, text=t("priv_otras_titulo"),
@@ -3811,6 +3832,214 @@ class TechCleanApp(ctk.CTk):
                      text=t("priv_otras_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=850, justify="left").pack(
             padx=16, pady=(0, 16), anchor="w")
+
+    # ---- Privacidad de Windows (interruptores con deshacer) ----
+    TEXTOS_PRIVACIDAD = {
+        "publicidad": ("privw_publicidad", "privw_publicidad_desc"),
+        "sugerencias_inicio": ("privw_sug_inicio", "privw_sug_inicio_desc"),
+        "sugerencias_configuracion": ("privw_sug_config", "privw_sug_config_desc"),
+        "consejos": ("privw_consejos", "privw_consejos_desc"),
+        "experiencias": ("privw_experiencias", "privw_experiencias_desc"),
+        "bing_inicio": ("privw_bing", "privw_bing_desc"),
+    }
+
+    def _pintar_ajustes_privacidad(self, estado):
+        if not (hasattr(self, "lista_privacidad_win") and self.lista_privacidad_win.winfo_exists()):
+            return
+        for w in self.lista_privacidad_win.winfo_children():
+            w.destroy()
+        for clave, (titulo, desc) in self.TEXTOS_PRIVACIDAD.items():
+            fila = ctk.CTkFrame(self.lista_privacidad_win, fg_color="#141720", corner_radius=10)
+            fila.pack(fill="x", pady=3)
+            arriba = ctk.CTkFrame(fila, fg_color="transparent")
+            arriba.pack(fill="x", padx=12, pady=(8, 0))
+            ctk.CTkLabel(arriba, text=t(titulo), font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+            switch = ctk.CTkSwitch(arriba, text="")
+            switch.configure(command=lambda c=clave, s=switch: self._accion_ajuste_privacidad(c, bool(s.get())))
+            switch.pack(side="right")
+            if estado.get(clave):
+                switch.select()
+            ctk.CTkLabel(fila, text=t(desc), font=ctk.CTkFont(size=11), text_color="gray60",
+                         wraplength=820, justify="left", anchor="w").pack(fill="x", padx=12, pady=(2, 8))
+
+    def _accion_ajuste_privacidad(self, clave, activar):
+        nombre = t(self.TEXTOS_PRIVACIDAD[clave][0])
+
+        def worker():
+            exito, comando, anteriores = opt.set_ajuste_privacidad(clave, activar)
+            if exito:
+                self.deshacer.anotar("ajuste_privacidad", {"clave": clave, "anteriores": anteriores},
+                                     t("desh_desc_ajuste_juego", ajuste=nombre))
+                msg = t("privw_ok_reinicio" if opt.AJUSTES_PRIVACIDAD[clave]["reinicio"] else "gjuego_aj_ok",
+                        ajuste=nombre)
+            else:
+                msg = t("gjuego_aj_error", ajuste=nombre)
+            self._log_dev(t("privw_log", ajuste=nombre), comando, msg, seccion=t("seccion_privacidad"), exito=exito)
+
+            def terminar():
+                self._actualizar_label("lbl_privacidad_win", msg)
+                if not exito:
+                    self._pintar_ajustes_privacidad(opt.leer_ajustes_privacidad())
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _accion_todo_privado(self):
+        """Apaga los seis de una vez. Cada uno queda en Historial con su
+        propio deshacer: así se puede volver atrás de uno solo."""
+        def worker():
+            hechos = 0
+            for clave in self.TEXTOS_PRIVACIDAD:
+                exito, comando, anteriores = opt.set_ajuste_privacidad(clave, False)
+                if exito:
+                    hechos += 1
+                    nombre = t(self.TEXTOS_PRIVACIDAD[clave][0])
+                    self.deshacer.anotar("ajuste_privacidad", {"clave": clave, "anteriores": anteriores},
+                                         t("desh_desc_ajuste_juego", ajuste=nombre))
+                    self._log_dev(t("privw_log", ajuste=nombre), comando, "OK",
+                                  seccion=t("seccion_privacidad"), exito=True)
+            msg = t("privw_todo_ok", hechos=hechos, total=len(self.TEXTOS_PRIVACIDAD))
+
+            def terminar():
+                self._actualizar_label("lbl_privacidad_win", msg)
+                self._pintar_ajustes_privacidad(opt.leer_ajustes_privacidad())
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ---- Seguridad: auditoría (solo lectura) ----
+    def _mostrar_auditoria(self):
+        self._limpiar_contenedor_seguridad()
+        cabecera = ctk.CTkFrame(self.contenedor_seguridad, fg_color="transparent")
+        cabecera.grid(row=0, column=0, sticky="we")
+        ctk.CTkLabel(cabecera, text=t("aud_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 6))
+        fila = ctk.CTkFrame(cabecera, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 6))
+        self.btn_auditar = ctk.CTkButton(fila, text=t("aud_btn"), width=220, command=self._accion_auditar)
+        self.btn_auditar.pack(side="left")
+        self.lbl_auditoria = ctk.CTkLabel(fila, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                          wraplength=650, justify="left")
+        self.lbl_auditoria.pack(side="left", padx=12, fill="x", expand=True)
+        self.lista_auditoria = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL,
+                                                      corner_radius=16)
+        self.lista_auditoria.grid(row=1, column=0, sticky="nswe")
+        if getattr(self, "_auditoria_cache", None) is not None:
+            self._pintar_auditoria(self._auditoria_cache)
+
+    def _accion_auditar(self):
+        if getattr(self, "_auditando", False):
+            return
+        self._auditando = True
+        self.btn_auditar.configure(state="disabled")
+        self.lbl_auditoria.configure(text=t("aud_analizando"))
+
+        def worker():
+            try:
+                hallazgos = seg.evaluar(seg.recolectar())
+            except Exception as e:
+                hallazgos = None
+                self._log_dev(t("aud_log"), "seguridad.recolectar/evaluar", str(e),
+                              seccion=t("seccion_seguridad"), exito=False)
+            if hallazgos is not None:
+                self._auditoria_cache = hallazgos
+                altos = sum(1 for h in hallazgos if h["nivel"] == "alto")
+                self._log_dev(t("aud_log"), "seguridad.recolectar/evaluar",
+                              t("aud_resumen", altos=altos, total=len(hallazgos)),
+                              seccion=t("seccion_seguridad"), exito=True)
+            self.after(0, lambda: self._pintar_auditoria(hallazgos))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_auditoria(self, hallazgos):
+        self._auditando = False
+        if not (hasattr(self, "lista_auditoria") and self.lista_auditoria.winfo_exists()):
+            return
+        self.btn_auditar.configure(state="normal")
+        for w in self.lista_auditoria.winfo_children():
+            w.destroy()
+        if hallazgos is None:
+            self.lbl_auditoria.configure(text=t("aud_error"))
+            return
+        if not hallazgos:
+            self.lbl_auditoria.configure(text=t("aud_limpio"), text_color=COLOR_OK)
+            return
+        altos = sum(1 for h in hallazgos if h["nivel"] == "alto")
+        self.lbl_auditoria.configure(text=t("aud_resumen", altos=altos, total=len(hallazgos)),
+                                     text_color=COLOR_CRIT if altos else COLOR_WARN)
+        colores = {"alto": COLOR_CRIT, "medio": COLOR_WARN, "info": "gray60"}
+        etiquetas = {"alto": "aud_nivel_alto", "medio": "aud_nivel_medio", "info": "aud_nivel_info"}
+        for h in hallazgos:
+            caja = ctk.CTkFrame(self.lista_auditoria, fg_color="#141720", corner_radius=10)
+            caja.pack(fill="x", padx=8, pady=4)
+            arriba = ctk.CTkFrame(caja, fg_color="transparent")
+            arriba.pack(fill="x", padx=12, pady=(8, 2))
+            ctk.CTkLabel(arriba, text=t(etiquetas[h["nivel"]]), font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color=colores[h["nivel"]], width=90, anchor="w").pack(side="left")
+            ctk.CTkLabel(arriba, text=t(h["clave"]), font=ctk.CTkFont(size=13, weight="bold"),
+                         anchor="w").pack(side="left", padx=6)
+            ruta = h.get("ruta")
+            if ruta and os.path.exists(ruta):
+                ctk.CTkButton(arriba, text=t("aud_btn_ubicacion"), width=150, fg_color="#2a2d36",
+                              hover_color="#3a3e4a",
+                              command=lambda r=ruta: self._abrir_ubicacion(r)).pack(side="right")
+            for m in h.get("motivos") or []:
+                texto = t(m, original=h.get("original") or "?") if m == "seg_motivo_interprete_renombrado" else t(m)
+                ctk.CTkLabel(caja, text="• " + texto, font=ctk.CTkFont(size=11), text_color="gray70",
+                             wraplength=840, justify="left", anchor="w").pack(fill="x", padx=12)
+            ctk.CTkLabel(caja, text=h.get("detalle") or "", font=ctk.CTkFont(size=10), text_color="gray50",
+                         wraplength=840, justify="left", anchor="w").pack(fill="x", padx=12, pady=(2, 8))
+        ctk.CTkLabel(self.lista_auditoria, text=t("aud_que_hacer"), font=ctk.CTkFont(size=11),
+                     text_color="gray60", wraplength=860, justify="left", anchor="w").pack(fill="x", padx=12, pady=10)
+
+    def _abrir_ubicacion(self, ruta):
+        """Abre el Explorador con el archivo SELECCIONADO. Solo mostrar: no
+        ejecuta ni toca el archivo."""
+        try:
+            subprocess.Popen(["explorer.exe", "/select,", os.path.normpath(ruta)])
+        except Exception:
+            pass
+
+    # ---- Seguridad: programas en la red ----
+    def _mostrar_red_programas(self):
+        self._limpiar_contenedor_seguridad()
+        cabecera = ctk.CTkFrame(self.contenedor_seguridad, fg_color="transparent")
+        cabecera.grid(row=0, column=0, sticky="we")
+        ctk.CTkLabel(cabecera, text=t("red_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 6))
+        ctk.CTkButton(cabecera, text=t("opt_btn_actualizar"), width=140,
+                      command=self._mostrar_red_programas).pack(anchor="w", pady=(0, 6))
+        self.lista_red = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_red.grid(row=1, column=0, sticky="nswe")
+        ctk.CTkLabel(self.lista_red, text=t("comun_cargando"), text_color="gray60").pack(padx=16, pady=16)
+
+        def worker():
+            programas = seg.programas_en_red()
+            self.after(0, lambda: self._pintar_red_programas(programas))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_red_programas(self, programas):
+        if not (hasattr(self, "lista_red") and self.lista_red.winfo_exists()):
+            return
+        for w in self.lista_red.winfo_children():
+            w.destroy()
+        if not programas:
+            ctk.CTkLabel(self.lista_red, text=t("red_nada"), text_color="gray60").pack(padx=16, pady=16)
+            return
+        for p in programas:
+            fila = ctk.CTkFrame(self.lista_red, fg_color="#141720", corner_radius=8)
+            fila.pack(fill="x", padx=8, pady=2)
+            aviso = p["de_usuario"] and p["escucha"]
+            ctk.CTkLabel(fila, text=("⚠ " if aviso else "") + p["nombre"], width=220, anchor="w",
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color=COLOR_WARN if aviso else None).pack(side="left", padx=10, pady=6)
+            partes = []
+            if p["escucha"]:
+                partes.append(t("red_escucha", puertos=", ".join(str(x) for x in p["escucha"][:8])))
+            if p["conexiones"]:
+                partes.append(t("red_conexiones", n=p["conexiones"]))
+            ctk.CTkLabel(fila, text="  ·  ".join(partes), font=ctk.CTkFont(size=11), text_color="gray65",
+                         anchor="w").pack(side="left", padx=6)
+            if p["exe"]:
+                ctk.CTkLabel(fila, text=p["exe"], font=ctk.CTkFont(size=10), text_color="gray45",
+                             anchor="e").pack(side="right", padx=10)
 
     def _accion_limpiar_recientes(self):
         def worker():
@@ -3892,7 +4121,7 @@ class TechCleanApp(ctk.CTk):
 
         self.pestana_seguridad = ctk.CTkSegmentedButton(
             self.contenido,
-            values=[t("seg_tab_antivirus"), t("seg_tab_permisos"),
+            values=[t("seg_tab_antivirus"), t("seg_tab_auditoria"), t("seg_tab_red"), t("seg_tab_permisos"),
                     t("seg_tab_firewall"), t("seg_tab_usuarios")],
             command=self._cambiar_pestana_seguridad)
         self.pestana_seguridad.set(t("seg_tab_antivirus"))
@@ -3910,7 +4139,11 @@ class TechCleanApp(ctk.CTk):
         """El texto de la pestaña está traducido: se resuelve contra las
         mismas claves con las que se construyó, y el `else` cae en Antivirus,
         que es la pestaña por defecto — nunca en una rama arbitraria."""
-        if valor == t("seg_tab_permisos"):
+        if valor == t("seg_tab_auditoria"):
+            self._mostrar_auditoria()
+        elif valor == t("seg_tab_red"):
+            self._mostrar_red_programas()
+        elif valor == t("seg_tab_permisos"):
             self._mostrar_permisos_privacidad()
         elif valor == t("seg_tab_firewall"):
             self._mostrar_firewall()
@@ -4425,6 +4658,26 @@ class TechCleanApp(ctk.CTk):
                                     wraplength=850, justify="left")
         self.lbl_dns.pack(fill="x", padx=16, pady=(4, 14))
 
+        panel_puntos = ctk.CTkFrame(panel, fg_color="#141720", corner_radius=10)
+        panel_puntos.pack(fill="x", padx=16, pady=6)
+        cab_puntos = ctk.CTkFrame(panel_puntos, fg_color="transparent")
+        cab_puntos.pack(fill="x", padx=16, pady=(14, 4))
+        ctk.CTkLabel(cab_puntos, text=t("puntos_titulo"), font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+        self.btn_borrar_puntos = ctk.CTkButton(cab_puntos, text=t("puntos_btn_borrar"), width=200, fg_color="#2a2d36",
+                                               hover_color="#3a3e4a", state="disabled",
+                                               command=self._confirmar_borrar_puntos)
+        self.btn_borrar_puntos.pack(side="right")
+        ctk.CTkButton(cab_puntos, text=t("puntos_btn_crear"), width=160,
+                      command=self._accion_crear_punto).pack(side="right", padx=8)
+        ctk.CTkLabel(panel_puntos, text=t("puntos_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 6))
+        self.lista_puntos = ctk.CTkFrame(panel_puntos, fg_color="transparent")
+        self.lista_puntos.pack(fill="x", padx=16)
+        self.lbl_puntos = ctk.CTkLabel(panel_puntos, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                       wraplength=850, justify="left")
+        self.lbl_puntos.pack(fill="x", padx=16, pady=(4, 14))
+        self._cargar_puntos()
+
         sep_rend = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
         sep_rend.pack(fill="x", padx=16, pady=8)
 
@@ -4788,7 +5041,7 @@ class TechCleanApp(ctk.CTk):
 
         self.pestana_apps = ctk.CTkSegmentedButton(
             self.contenido,
-            values=[t("apps_tab_inicio"), t("apps_tab_desinstalar"), t("apps_tab_servicios"),
+            values=[t("apps_tab_inicio"), t("apps_tab_desinstalar"), t("apps_tab_bloat"), t("apps_tab_servicios"),
                     t("apps_tab_actualizar"), t("apps_tab_tareas")],
             command=self._cambiar_pestana_apps)
         self.pestana_apps.set(t("apps_tab_inicio"))
@@ -4808,6 +5061,8 @@ class TechCleanApp(ctk.CTk):
         Windows, que es la pestaña por defecto."""
         if valor == t("apps_tab_desinstalar"):
             self._mostrar_desinstalador()
+        elif valor == t("apps_tab_bloat"):
+            self._mostrar_bloatware()
         elif valor == t("apps_tab_servicios"):
             self._mostrar_servicios()
         elif valor == t("apps_tab_actualizar"):
@@ -5159,6 +5414,13 @@ class TechCleanApp(ctk.CTk):
         fila.pack(fill="x", pady=(0, 8))
         ctk.CTkButton(fila, text=t("apps_btn_buscar_act"),
                       command=self._accion_buscar_winget).pack(side="left")
+        self.btn_winget_todo = ctk.CTkButton(
+            fila, text=t("fondo_dism_cancelar") if getattr(self, "_winget_todo_en_curso", False) else t("apps_btn_todo"),
+            fg_color="#2a2d36", hover_color="#3a3e4a", command=self._accion_actualizar_todo_winget)
+        self.btn_winget_todo.pack(side="left", padx=8)
+        self.lbl_winget_todo = ctk.CTkLabel(fila, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                            wraplength=600, justify="left")
+        self.lbl_winget_todo.pack(side="left", padx=8, fill="x", expand=True)
 
         self.lista_winget = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
         self.lista_winget.pack(fill="both", expand=True)
@@ -5210,6 +5472,228 @@ class TechCleanApp(ctk.CTk):
             fila.pack(fill="x", padx=8, pady=3)
             ctk.CTkLabel(fila, text=linea, font=ctk.CTkFont(family="Consolas", size=11), anchor="w",
                          wraplength=750, justify="left").pack(side="left", padx=12, pady=8, fill="x", expand=True)
+
+    # ---- Aplicaciones: actualizar todas con winget ----
+    def _accion_actualizar_todo_winget(self):
+        if getattr(self, "_winget_todo_en_curso", False):
+            self._evento_winget_todo.set()
+            self._actualizar_label("lbl_winget_todo", t("fondo_dism_cancelando"))
+            return
+        self._winget_todo_en_curso = True
+        self._evento_winget_todo = threading.Event()
+        boton = getattr(self, "btn_winget_todo", None)
+        if boton is not None and boton.winfo_exists():
+            boton.configure(text=t("fondo_dism_cancelar"))
+        self._actualizar_label("lbl_winget_todo", t("apps_todo_en_curso", minutos=0))
+
+        def progreso(seg):
+            texto = t("apps_todo_en_curso", minutos=int(seg // 60))
+            self.after(0, lambda: self._actualizar_label("lbl_winget_todo", texto))
+
+        def worker():
+            exito, resumen, cancelado = opt.actualizar_todo_winget(progreso, self._evento_winget_todo)
+            msg = (t("fondo_dism_cancelado") if cancelado else
+                   t("apps_todo_ok") if exito else t("apps_todo_parcial"))
+            self._log_dev(t("apps_log_todo"), "winget upgrade --all --silent", msg + "\n" + resumen[-500:],
+                          seccion=t("seccion_aplicaciones"), exito=exito)
+
+            def terminar():
+                self._winget_todo_en_curso = False
+                self._actualizar_label("lbl_winget_todo", msg)
+                b = getattr(self, "btn_winget_todo", None)
+                if b is not None and b.winfo_exists():
+                    b.configure(text=t("apps_btn_todo"))
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ---- Aplicaciones: apps de serie (bloatware) ----
+    def _mostrar_bloatware(self):
+        self._limpiar_contenedor_apps()
+        ctk.CTkLabel(self.contenedor_apps, text=t("bloat_intro"), font=ctk.CTkFont(size=12), text_color="gray60",
+                     wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 10))
+        self.lista_bloat = ctk.CTkScrollableFrame(self.contenedor_apps, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_bloat.pack(fill="both", expand=True)
+        barra = ctk.CTkFrame(self.contenedor_apps, fg_color="transparent")
+        barra.pack(fill="x", pady=(8, 0))
+        self.lbl_bloat = ctk.CTkLabel(barra, text="", font=ctk.CTkFont(size=12), anchor="w", wraplength=650,
+                                      justify="left")
+        self.lbl_bloat.pack(side="left", fill="x", expand=True)
+        self.btn_bloat = ctk.CTkButton(barra, text=t("bloat_btn_quitar"), fg_color=COLOR_CRIT, hover_color="#c0392b",
+                                       state="disabled", command=self._confirmar_quitar_bloat)
+        self.btn_bloat.pack(side="right")
+        self._checks_bloat = {}
+        ctk.CTkLabel(self.lista_bloat, text=t("comun_cargando"), text_color="gray60").pack(padx=16, pady=16)
+
+        def worker():
+            apps = opt.listar_bloatware()
+            self.after(0, lambda: self._pintar_bloatware(apps))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_bloatware(self, apps):
+        if not (hasattr(self, "lista_bloat") and self.lista_bloat.winfo_exists()):
+            return
+        for w in self.lista_bloat.winfo_children():
+            w.destroy()
+        self._checks_bloat = {}
+        if not apps:
+            ctk.CTkLabel(self.lista_bloat, text=t("bloat_nada"), text_color="gray60").pack(padx=16, pady=16)
+            return
+        for app in apps:
+            fila = ctk.CTkFrame(self.lista_bloat, fg_color="#141720", corner_radius=8)
+            fila.pack(fill="x", padx=8, pady=2)
+            # Ninguna marcada de entrada: quitar algo es decisión del usuario.
+            var = ctk.BooleanVar(value=False)
+            self._checks_bloat[app["paquete"]] = (var, app["nombre"])
+            ctk.CTkCheckBox(fila, text=app["nombre"].split(".")[-1] if app["nombre"].count(".") else app["nombre"],
+                            variable=var, command=self._actualizar_boton_bloat,
+                            font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10, pady=6)
+            ctk.CTkLabel(fila, text=t(app["categoria"]), font=ctk.CTkFont(size=11), text_color="gray60").pack(
+                side="left", padx=8)
+            ctk.CTkLabel(fila, text=app["familia"].split("_")[0], font=ctk.CTkFont(size=10),
+                         text_color="gray45").pack(side="right", padx=10)
+        self._actualizar_boton_bloat()
+
+    def _actualizar_boton_bloat(self):
+        marcadas = sum(1 for var, _ in self._checks_bloat.values() if var.get())
+        if hasattr(self, "btn_bloat") and self.btn_bloat.winfo_exists():
+            self.btn_bloat.configure(state="normal" if marcadas else "disabled",
+                                     text=t("bloat_btn_quitar_n", n=marcadas) if marcadas else t("bloat_btn_quitar"))
+
+    def _confirmar_quitar_bloat(self):
+        elegidas = [(p, n) for p, (var, n) in self._checks_bloat.items() if var.get()]
+        if not elegidas:
+            return
+        dialogo = ctk.CTkToplevel(self)
+        dialogo.title(t("comun_confirmar_titulo"))
+        dialogo.geometry("480x260")
+        dialogo.grab_set()
+        ctk.CTkLabel(dialogo, text=t("bloat_confirmar", n=len(elegidas),
+                                     lista=", ".join(n.split(".")[-1] for _, n in elegidas[:8])),
+                     font=ctk.CTkFont(size=13), wraplength=440, justify="left").pack(padx=20, pady=(20, 10))
+        fila = ctk.CTkFrame(dialogo, fg_color="transparent")
+        fila.pack(pady=10)
+
+        def confirmar():
+            dialogo.destroy()
+            self.btn_bloat.configure(state="disabled")
+            self.lbl_bloat.configure(text=t("bloat_quitando"))
+
+            def worker():
+                quitados, fallidos, comando = opt.quitar_bloatware([p for p, _ in elegidas])
+                msg = t("bloat_resultado", quitados=len(quitados), fallidos=len(fallidos))
+                self._log_dev(t("bloat_log"), comando, msg + ("\n" + "\n".join(quitados) if quitados else ""),
+                              seccion=t("seccion_aplicaciones"), exito=not fallidos)
+
+                apps_restantes = opt.listar_bloatware()
+
+                def terminar():
+                    self._pintar_bloatware(apps_restantes)
+                    self._actualizar_label("lbl_bloat", msg)
+                self.after(0, terminar)
+            threading.Thread(target=worker, daemon=True).start()
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("bloat_btn_quitar"), fg_color=COLOR_CRIT, hover_color="#c0392b",
+                      command=confirmar).pack(side="left", padx=8)
+
+    # ---- Disco: archivos duplicados ----
+    def _mostrar_duplicados(self):
+        self._limpiar_contenedor_disco()
+        ctk.CTkLabel(self.contenedor_disco, text=t("dup_intro"), font=ctk.CTkFont(size=12), text_color="gray60",
+                     wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 8))
+        fila = ctk.CTkFrame(self.contenedor_disco, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 8))
+        self._carpeta_duplicados = getattr(self, "_carpeta_duplicados", None) or os.path.expanduser("~")
+        self.lbl_carpeta_dup = ctk.CTkLabel(fila, text=self._carpeta_duplicados, font=ctk.CTkFont(size=12),
+                                            anchor="w")
+        ctk.CTkButton(fila, text=t("dup_btn_carpeta"), width=150, fg_color="#2a2d36", hover_color="#3a3e4a",
+                      command=self._elegir_carpeta_duplicados).pack(side="left")
+        self.lbl_carpeta_dup.pack(side="left", padx=10)
+        self.btn_buscar_dup = ctk.CTkButton(fila, text=t("dup_btn_buscar"), width=150,
+                                            command=self._accion_buscar_duplicados)
+        self.btn_buscar_dup.pack(side="right")
+        self.lista_dup = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        self.lista_dup.pack(fill="both", expand=True)
+        barra = ctk.CTkFrame(self.contenedor_disco, fg_color="transparent")
+        barra.pack(fill="x", pady=(8, 0))
+        self.lbl_dup = ctk.CTkLabel(barra, text="", font=ctk.CTkFont(size=12), anchor="w", wraplength=650,
+                                    justify="left")
+        self.lbl_dup.pack(side="left", fill="x", expand=True)
+        self.btn_borrar_dup = ctk.CTkButton(barra, text=t("dup_btn_papelera"), state="disabled",
+                                            command=self._accion_enviar_duplicados)
+        self.btn_borrar_dup.pack(side="right")
+        self._checks_dup = []
+
+    def _elegir_carpeta_duplicados(self):
+        from tkinter import filedialog
+        carpeta = filedialog.askdirectory(title=t("dup_btn_carpeta"), initialdir=self._carpeta_duplicados)
+        if carpeta:
+            self._carpeta_duplicados = os.path.normpath(carpeta)
+            self.lbl_carpeta_dup.configure(text=self._carpeta_duplicados)
+
+    def _accion_buscar_duplicados(self):
+        self.btn_buscar_dup.configure(state="disabled")
+        self.btn_borrar_dup.configure(state="disabled")
+        for w in self.lista_dup.winfo_children():
+            w.destroy()
+        self.lbl_dup.configure(text=t("dup_buscando"))
+        carpeta = self._carpeta_duplicados
+
+        def progreso(i, n):
+            texto = t("dup_comparando", i=i, n=n)
+            self.after(0, lambda: self._actualizar_label("lbl_dup", texto))
+
+        def worker():
+            grupos, completo = opt.buscar_duplicados(carpeta, callback=progreso)
+            self.after(0, lambda: self._pintar_duplicados(grupos, completo))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_duplicados(self, grupos, completo):
+        if not (hasattr(self, "lista_dup") and self.lista_dup.winfo_exists()):
+            return
+        self.btn_buscar_dup.configure(state="normal")
+        for w in self.lista_dup.winfo_children():
+            w.destroy()
+        self._checks_dup = []
+        if not grupos:
+            self.lbl_dup.configure(text=t("dup_nada") if completo else t("dup_nada_parcial"))
+            return
+        desperdicio = sum(g["bytes"] * (len(g["rutas"]) - 1) for g in grupos)
+        self.lbl_dup.configure(text=t("dup_resumen", grupos=len(grupos), tamano=opt.format_bytes(desperdicio))
+                               + ("" if completo else " " + t("dup_parcial")))
+        for g in grupos[:150]:
+            caja = ctk.CTkFrame(self.lista_dup, fg_color="#141720", corner_radius=10)
+            caja.pack(fill="x", padx=8, pady=3)
+            ctk.CTkLabel(caja, text=t("dup_grupo", copias=len(g["rutas"]), tamano=opt.format_bytes(g["bytes"])),
+                         font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(fill="x", padx=12, pady=(6, 2))
+            grupo_vars = []
+            for i, ruta in enumerate(g["rutas"]):
+                # La primera (ruta más corta) se queda desmarcada: por
+                # defecto siempre sobrevive una copia.
+                var = ctk.BooleanVar(value=i > 0)
+                grupo_vars.append((var, ruta))
+                ctk.CTkCheckBox(caja, text=ruta, variable=var, font=ctk.CTkFont(size=11),
+                                command=self._actualizar_boton_dup).pack(anchor="w", padx=24, pady=1)
+            self._checks_dup.append(grupo_vars)
+            ctk.CTkFrame(caja, height=4, fg_color="transparent").pack()
+        self._actualizar_boton_dup()
+
+    def _actualizar_boton_dup(self):
+        n = sum(1 for grupo in self._checks_dup for var, _ in grupo if var.get())
+        if hasattr(self, "btn_borrar_dup") and self.btn_borrar_dup.winfo_exists():
+            self.btn_borrar_dup.configure(state="normal" if n else "disabled",
+                                          text=t("dup_btn_papelera_n", n=n) if n else t("dup_btn_papelera"))
+
+    def _accion_enviar_duplicados(self):
+        rutas = []
+        for grupo in self._checks_dup:
+            marcadas = [r for var, r in grupo if var.get()]
+            # Nunca todas las copias de un mismo archivo, aunque el usuario
+            # las marque todas: se perdería el archivo. Se salva la primera.
+            if len(marcadas) == len(grupo):
+                marcadas = marcadas[1:]
+            rutas += marcadas
+        if rutas:
+            self._confirmar_borrar_archivos(rutas)
 
     # ---- Tareas programadas (de terceros, no la nuestra) ----
     def _mostrar_tareas_programadas(self):
@@ -5401,6 +5885,60 @@ class TechCleanApp(ctk.CTk):
             fill="x", padx=20, pady=(0, 16), anchor="w")
 
         # ---- Tarjeta: biblioteca de juegos ----
+        # ---- Cerrar apps al jugar ----
+        panel_cerrar = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_cerrar.pack(fill="x", padx=8, pady=8)
+        cab_cerrar = ctk.CTkFrame(panel_cerrar, fg_color="transparent")
+        cab_cerrar.pack(fill="x", padx=16, pady=(16, 4))
+        ctk.CTkLabel(cab_cerrar, text=t("gjuego_cerrar_titulo"),
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(side="left")
+        # Interruptor general, APAGADO de fábrica: las apps marcadas se
+        # quedan guardadas, pero no se cierra nada hasta encenderlo. Así,
+        # el día que se juega con el navegador o Discord abiertos a
+        # propósito, basta con apagarlo en vez de desmarcar todo.
+        self.switch_cerrar_jugar = ctk.CTkSwitch(cab_cerrar, text="", command=self._toggle_cerrar_al_jugar)
+        self.switch_cerrar_jugar.pack(side="right")
+        if self.prefs.get("cerrar_apps_al_jugar", False):
+            self.switch_cerrar_jugar.select()
+        ctk.CTkLabel(panel_cerrar, text=t("gjuego_cerrar_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        self.lista_cerrar_jugar = ctk.CTkFrame(panel_cerrar, fg_color="#141720", corner_radius=10)
+        self.lista_cerrar_jugar.pack(fill="x", padx=16, pady=(0, 16))
+        ctk.CTkLabel(self.lista_cerrar_jugar, text=t("comun_cargando"), text_color="gray60").grid(padx=8, pady=8)
+
+        def worker_candidatas():
+            candidatas = self._candidatas_cerrar_al_jugar()
+            self.after(0, lambda: self._pintar_cerrar_al_jugar(candidatas))
+        threading.Thread(target=worker_candidatas, daemon=True).start()
+
+        # ---- Ajustes de Windows para juegos ----
+        panel_ajustes = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_ajustes.pack(fill="x", padx=8, pady=8)
+        ctk.CTkLabel(panel_ajustes, text=t("gjuego_ajustes_titulo"),
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
+        ctk.CTkLabel(panel_ajustes, text=t("gjuego_ajustes_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        self.lista_ajustes_juego = ctk.CTkFrame(panel_ajustes, fg_color="transparent")
+        self.lista_ajustes_juego.pack(fill="x", padx=16)
+        self.lbl_ajustes_juego = ctk.CTkLabel(panel_ajustes, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                              wraplength=850, justify="left")
+        self.lbl_ajustes_juego.pack(fill="x", padx=16, pady=(4, 14))
+        self._pintar_ajustes_juego(opt.leer_ajustes_juego())
+
+        # ---- Medidor de lag ----
+        panel_lag = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_lag.pack(fill="x", padx=8, pady=8)
+        ctk.CTkLabel(panel_lag, text=t("gjuego_lag_titulo"),
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
+        ctk.CTkLabel(panel_lag, text=t("gjuego_lag_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        self.btn_medir_lag = ctk.CTkButton(panel_lag, text=t("gjuego_lag_btn"), width=220,
+                                           command=self._accion_medir_lag)
+        self.btn_medir_lag.pack(anchor="w", padx=16)
+        self.lbl_lag = ctk.CTkLabel(panel_lag, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                    wraplength=850, justify="left")
+        self.lbl_lag.pack(fill="x", padx=16, pady=(6, 16))
+
         panel_biblioteca = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_biblioteca.pack(fill="x", padx=8, pady=8)
         ctk.CTkLabel(panel_biblioteca, text=t("gaming_biblioteca_titulo"),
@@ -5420,6 +5958,178 @@ class TechCleanApp(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
         self._actualizar_tarjeta_gaming()
+
+    # ---- Gaming: cerrar apps al jugar ----
+    # Apps que suelen quedarse abiertas de fondo y gastan RAM, CPU o red
+    # mientras se juega. NO van lanzadores de juegos (Steam, Epic, Battle.net,
+    # EA...): muchos juegos dejan de funcionar si se les cierra el lanzador.
+    APPS_FONDO_CONOCIDAS = (
+        "discord.exe", "spotify.exe", "onedrive.exe", "ms-teams.exe", "teams.exe", "chrome.exe", "msedge.exe",
+        "firefox.exe", "opera.exe", "brave.exe", "skype.exe", "zoom.exe", "dropbox.exe", "googledrivefs.exe",
+        "slack.exe", "whatsapp.exe", "telegram.exe", "outlook.exe", "olk.exe", "notion.exe",
+    )
+    LANZADORES_JUEGOS = ("steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "battle.net.exe",
+                         "eadesktop.exe", "origin.exe", "ubisoftconnect.exe", "upc.exe", "riotclientservices.exe",
+                         "robloxplayerbeta.exe", "gog galaxy.exe", "galaxyclient.exe", "xboxpcapp.exe")
+
+    def _candidatas_cerrar_al_jugar(self):
+        """Nombres de proceso para elegir: las elegidas antes, las de fondo
+        conocidas que estén abiertas, y cualquier app con ventana abierta."""
+        abiertos = {}
+        de_windows = set()
+        carpeta_windows = os.path.normcase(os.environ.get("SystemRoot", r"C:\Windows")) + os.sep
+        for p in psutil.process_iter(["name", "exe"]):
+            nombre = (p.info.get("name") or "").lower()
+            if nombre:
+                abiertos[nombre] = p.info.get("exe")
+                # Piezas del propio Windows con ventana (applicationframehost,
+                # textinputhost, systemsettings...): cerrarlas rompe cosas.
+                if os.path.normcase(p.info.get("exe") or "").startswith(carpeta_windows):
+                    de_windows.add(nombre)
+        candidatas = {n.lower() for n in self.prefs.get("apps_cerrar_al_jugar", [])}
+        candidatas |= {n for n in self.APPS_FONDO_CONOCIDAS if n in abiertos}
+        for v in opt.listar_ventanas_abiertas():
+            nombre = (v.get("proceso") or "").lower()
+            if nombre:
+                candidatas.add(nombre)
+        propio = os.path.basename(sys.executable).lower()
+        return sorted(n for n in candidatas
+                      if n not in self.LANZADORES_JUEGOS and n != propio and n not in de_windows
+                      and opt.evaluar_riesgo_proceso(n)[0] != "bloqueado")
+
+    def _pintar_cerrar_al_jugar(self, candidatas):
+        if not (hasattr(self, "lista_cerrar_jugar") and self.lista_cerrar_jugar.winfo_exists()):
+            return
+        for w in self.lista_cerrar_jugar.winfo_children():
+            w.destroy()
+        elegidas = {n.lower() for n in self.prefs.get("apps_cerrar_al_jugar", [])}
+        if not candidatas:
+            ctk.CTkLabel(self.lista_cerrar_jugar, text=t("gjuego_sin_candidatas"), text_color="gray60").pack(
+                padx=8, pady=8)
+            return
+        for i, nombre in enumerate(candidatas):
+            var = ctk.BooleanVar(value=nombre in elegidas)
+            ctk.CTkCheckBox(self.lista_cerrar_jugar, text=nombre, variable=var,
+                            command=lambda n=nombre, v=var: self._guardar_app_cerrar(n, v.get())).grid(
+                row=i // 3, column=i % 3, sticky="w", padx=10, pady=4)
+
+    def _apps_a_cerrar_al_jugar(self):
+        """Lo que el Modo Juego debe cerrar AHORA: las apps marcadas, pero
+        solo si el interruptor general está encendido."""
+        if not self.prefs.get("cerrar_apps_al_jugar", False):
+            return []
+        return list(self.prefs.get("apps_cerrar_al_jugar", []))
+
+    def _toggle_cerrar_al_jugar(self):
+        activo = bool(self.switch_cerrar_jugar.get())
+        self.prefs["cerrar_apps_al_jugar"] = activo
+        prefs.guardar({"cerrar_apps_al_jugar": activo})
+        self._log_dev(t("gjuego_cerrar_titulo"), "N/A",
+                      t("gjuego_cerrar_on") if activo else t("gjuego_cerrar_off"),
+                      seccion=t("seccion_gaming"), exito=True)
+
+    def _guardar_app_cerrar(self, nombre, marcada):
+        actuales = [n.lower() for n in self.prefs.get("apps_cerrar_al_jugar", [])]
+        if marcada and nombre not in actuales:
+            actuales.append(nombre)
+        if not marcada and nombre in actuales:
+            actuales.remove(nombre)
+        self.prefs["apps_cerrar_al_jugar"] = actuales
+        prefs.guardar({"apps_cerrar_al_jugar": actuales})
+
+    # ---- Gaming: ajustes de Windows para juegos ----
+    def _pintar_ajustes_juego(self, estado):
+        if not (hasattr(self, "lista_ajustes_juego") and self.lista_ajustes_juego.winfo_exists()):
+            return
+        for w in self.lista_ajustes_juego.winfo_children():
+            w.destroy()
+        textos = {"modo_juego": ("gjuego_aj_modo", "gjuego_aj_modo_desc"),
+                  "grabacion_fondo": ("gjuego_aj_grabacion", "gjuego_aj_grabacion_desc"),
+                  "gpu_hags": ("gjuego_aj_hags", "gjuego_aj_hags_desc")}
+        for clave, (titulo, desc) in textos.items():
+            fila = ctk.CTkFrame(self.lista_ajustes_juego, fg_color="#141720", corner_radius=10)
+            fila.pack(fill="x", pady=3)
+            arriba = ctk.CTkFrame(fila, fg_color="transparent")
+            arriba.pack(fill="x", padx=12, pady=(8, 0))
+            ctk.CTkLabel(arriba, text=t(titulo), font=ctk.CTkFont(size=13, weight="bold")).pack(side="left")
+            switch = ctk.CTkSwitch(arriba, text="")
+            switch.configure(command=lambda c=clave, s=switch: self._accion_ajuste_juego(c, bool(s.get())))
+            switch.pack(side="right")
+            valor = estado.get(clave)
+            if valor:
+                switch.select()
+            recomendado = opt.AJUSTES_JUEGO[clave]["recomendado"]
+            marca = t("gjuego_recomendado_on") if recomendado else t("gjuego_recomendado_off")
+            if valor is None:
+                marca += "  ·  " + t("gjuego_estado_desconocido")
+            ctk.CTkLabel(fila, text=t(desc) + "\n" + marca, font=ctk.CTkFont(size=11), text_color="gray60",
+                         wraplength=820, justify="left", anchor="w").pack(fill="x", padx=12, pady=(2, 8))
+
+    def _accion_ajuste_juego(self, clave, activar):
+        nombre = t({"modo_juego": "gjuego_aj_modo", "grabacion_fondo": "gjuego_aj_grabacion",
+                    "gpu_hags": "gjuego_aj_hags"}[clave])
+
+        def worker():
+            exito, comando, anteriores = opt.set_ajuste_juego(clave, activar)
+            if exito:
+                self.deshacer.anotar("ajuste_juego", {"clave": clave, "anteriores": anteriores},
+                                     t("desh_desc_ajuste_juego", ajuste=nombre))
+                msg = t("gjuego_aj_ok_reinicio" if opt.AJUSTES_JUEGO[clave]["reinicio"] else "gjuego_aj_ok",
+                        ajuste=nombre)
+            else:
+                msg = t("gjuego_aj_error", ajuste=nombre)
+            self._log_dev(t("gjuego_log_ajuste", ajuste=nombre), comando, msg,
+                          seccion=t("seccion_gaming"), exito=exito)
+
+            def terminar():
+                self._actualizar_label("lbl_ajustes_juego", msg)
+                if not exito:
+                    self._pintar_ajustes_juego(opt.leer_ajustes_juego())
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    # ---- Gaming: medidor de lag ----
+    def _accion_medir_lag(self):
+        if getattr(self, "_midiendo_lag", False):
+            return
+        self._midiendo_lag = True
+        self.btn_medir_lag.configure(state="disabled")
+        self.lbl_lag.configure(text=t("gjuego_lag_midiendo", tramo=t("gjuego_lag_router"), i=0, n=30))
+
+        def progreso(tramo, i, n):
+            texto = t("gjuego_lag_midiendo", tramo=t("gjuego_lag_router" if tramo == "router" else "gjuego_lag_internet"),
+                      i=i, n=n)
+            self.after(0, lambda: self._actualizar_label("lbl_lag", texto))
+
+        def worker():
+            r = opt.diagnosticar_lag(callback=progreso)
+            self._log_dev(t("gjuego_log_lag"), "IcmpSendEcho x30 (router + 1.1.1.1)",
+                          t({"bien": "gjuego_lag_v_bien", "local": "gjuego_lag_v_local",
+                             "proveedor": "gjuego_lag_v_proveedor"}[r["veredicto"]]),
+                          seccion=t("seccion_gaming"), exito=True)
+            self.after(0, lambda: self._pintar_lag(r))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_lag(self, r):
+        self._midiendo_lag = False
+        if not (hasattr(self, "lbl_lag") and self.lbl_lag.winfo_exists()):
+            return
+        self.btn_medir_lag.configure(state="normal")
+
+        def linea(etiqueta, s):
+            if s is None:
+                return t("gjuego_lag_linea_nd", tramo=etiqueta)
+            if not s["recibidos"]:
+                return t("gjuego_lag_linea_sin", tramo=etiqueta)
+            return t("gjuego_lag_linea", tramo=etiqueta, media=s["media_ms"], jitter=s["jitter_ms"],
+                     perdida=s["perdida_pct"], min=s["min_ms"], max=s["max_ms"])
+        veredicto = t({"bien": "gjuego_lag_v_bien", "local": "gjuego_lag_v_local",
+                       "proveedor": "gjuego_lag_v_proveedor"}[r["veredicto"]])
+        self.lbl_lag.configure(
+            text="\n".join([linea(t("gjuego_lag_router") + (f' ({r["router_ip"]})' if r["router_ip"] else ""),
+                                  r["router"]),
+                            linea(t("gjuego_lag_internet") + " (1.1.1.1)", r["internet"]), "", veredicto]),
+            text_color=COLOR_OK if r["veredicto"] == "bien" else COLOR_WARN)
 
     def _actualizar_tarjeta_gaming(self):
         if not (hasattr(self, "lbl_estado_gaming") and self.lbl_estado_gaming.winfo_exists()):
@@ -7289,7 +7999,129 @@ class TechCleanApp(ctk.CTk):
             ctk.CTkLabel(fila, text=descripcion, font=ctk.CTkFont(size=11), text_color="gray60",
                          wraplength=560, justify="left", anchor="w").pack(side="left", padx=10, fill="x")
 
+        fila_inf = ctk.CTkFrame(panel, fg_color="#141720", corner_radius=10)
+        fila_inf.pack(fill="x", padx=20, pady=6)
+        ctk.CTkButton(fila_inf, text=t("energia_inf_btn"), width=220,
+                      command=self._accion_informe_energia).pack(side="left", padx=12, pady=12)
+        caja_inf = ctk.CTkFrame(fila_inf, fg_color="transparent")
+        caja_inf.pack(side="left", padx=10, fill="x", expand=True)
+        ctk.CTkLabel(caja_inf, text=t("energia_inf_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=560, justify="left", anchor="w").pack(fill="x")
+        self.lbl_informe_energia = ctk.CTkLabel(caja_inf, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                                wraplength=560, justify="left")
+        self.lbl_informe_energia.pack(fill="x")
+
         ctk.CTkLabel(panel, text="", font=ctk.CTkFont(size=1)).pack(pady=6)
+
+    # ---- Reparar: puntos de restauración ----
+    def _cargar_puntos(self):
+        if not (hasattr(self, "lista_puntos") and self.lista_puntos.winfo_exists()):
+            return
+        for w in self.lista_puntos.winfo_children():
+            w.destroy()
+        ctk.CTkLabel(self.lista_puntos, text=t("comun_cargando"), text_color="gray60").pack(anchor="w")
+
+        def worker():
+            puntos = opt.listar_puntos_restauracion()
+            usado, maximo = opt.espacio_puntos_restauracion()
+            self.after(0, lambda: self._pintar_puntos(puntos, usado, maximo))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_puntos(self, puntos, usado, maximo):
+        if not (hasattr(self, "lista_puntos") and self.lista_puntos.winfo_exists()):
+            return
+        for w in self.lista_puntos.winfo_children():
+            w.destroy()
+        if puntos is None:
+            ctk.CTkLabel(self.lista_puntos, text=t("puntos_sin_permiso"), text_color="gray60", wraplength=820,
+                         justify="left").pack(anchor="w")
+            self.btn_borrar_puntos.configure(state="disabled")
+            return
+        if usado is not None:
+            ctk.CTkLabel(self.lista_puntos, text=t("puntos_espacio", usado=opt.format_bytes(usado),
+                                                   maximo=opt.format_bytes(maximo or 0)),
+                         font=ctk.CTkFont(size=12, weight="bold"), anchor="w").pack(anchor="w", pady=(0, 4))
+        if not puntos:
+            ctk.CTkLabel(self.lista_puntos, text=t("puntos_ninguno"), text_color="gray60").pack(anchor="w")
+        for p in puntos[:20]:
+            ctk.CTkLabel(self.lista_puntos, text=f'{p["fecha"]}   {p["descripcion"]}', font=ctk.CTkFont(size=11),
+                         text_color="gray70", anchor="w").pack(anchor="w")
+        self.btn_borrar_puntos.configure(state="normal" if len(puntos) > 1 else "disabled")
+
+    def _accion_crear_punto(self):
+        self._actualizar_label("lbl_puntos", t("puntos_creando"))
+
+        def worker():
+            exito, comando = opt.crear_punto_restauracion(t("puntos_desc_manual"))
+            msg = t("puntos_creado") if exito else t("puntos_no_creado")
+            self._log_dev(t("rep_log_punto"), comando, msg, seccion=t("seccion_reparar"), exito=exito)
+
+            def terminar():
+                self._actualizar_label("lbl_puntos", msg)
+                self._cargar_puntos()
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _confirmar_borrar_puntos(self):
+        dialogo = ctk.CTkToplevel(self)
+        dialogo.title(t("comun_confirmar_titulo"))
+        dialogo.geometry("480x220")
+        dialogo.grab_set()
+        ctk.CTkLabel(dialogo, text=t("puntos_confirmar"), font=ctk.CTkFont(size=13), wraplength=440,
+                     justify="left").pack(padx=20, pady=(20, 10))
+        fila = ctk.CTkFrame(dialogo, fg_color="transparent")
+        fila.pack(pady=10)
+
+        def confirmar():
+            dialogo.destroy()
+            self._actualizar_label("lbl_puntos", t("puntos_borrando"))
+
+            def worker():
+                borrados, restantes, comando = opt.borrar_puntos_antiguos()
+                msg = t("puntos_borrados", borrados=borrados, restantes=restantes)
+                self._log_dev(t("puntos_log_borrar"), comando, msg, seccion=t("seccion_reparar"),
+                              exito=borrados > 0)
+
+                def terminar():
+                    self._actualizar_label("lbl_puntos", msg)
+                    self._cargar_puntos()
+                self.after(0, terminar)
+            threading.Thread(target=worker, daemon=True).start()
+        ctk.CTkButton(fila, text=t("comun_cancelar"), fg_color="gray40", command=dialogo.destroy).pack(side="left", padx=8)
+        ctk.CTkButton(fila, text=t("puntos_btn_borrar"), fg_color=COLOR_CRIT, hover_color="#c0392b",
+                      command=confirmar).pack(side="left", padx=8)
+
+    # ---- Energía: informe de energía de Windows ----
+    def _accion_informe_energia(self):
+        if getattr(self, "_energia_en_curso", False):
+            self._evento_energia.set()
+            return
+        self._energia_en_curso = True
+        self._evento_energia = threading.Event()
+        self._actualizar_label("lbl_informe_energia", t("energia_inf_en_curso", segundos=0))
+
+        def progreso(seg):
+            texto = t("energia_inf_en_curso", segundos=int(seg))
+            self.after(0, lambda: self._actualizar_label("lbl_informe_energia", texto))
+
+        def worker():
+            carpeta = opt.carpeta_conocida("escritorio") or prefs.carpeta_datos()
+            exito, ruta, resumen, cancelado = opt.informe_energia(carpeta, progreso, self._evento_energia)
+            if exito:
+                try:
+                    os.startfile(ruta)
+                except Exception:
+                    pass
+            msg = (t("fondo_dism_cancelado") if cancelado else
+                   t("energia_inf_ok", ruta=ruta) if exito else t("energia_inf_error"))
+            self._log_dev(t("energia_inf_log"), "powercfg /energy /duration 60", msg + "\n" + resumen[-400:],
+                          seccion=t("seccion_energia"), exito=exito)
+
+            def terminar():
+                self._energia_en_curso = False
+                self._actualizar_label("lbl_informe_energia", msg)
+            self.after(0, terminar)
+        threading.Thread(target=worker, daemon=True).start()
 
     def _confirmar_apagar(self):
         self._pedir_confirmacion(

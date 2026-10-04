@@ -10,6 +10,7 @@ Hace dos cosas:
 """
 
 import os
+import subprocess
 import platform
 import threading
 import time
@@ -141,9 +142,51 @@ def _get_foreground_fullscreen_pid():
         return None
 
 
+def _listar_procesos_basico():
+    for p in psutil.process_iter(["pid", "name", "exe"]):
+        yield p.info["pid"], p.info.get("name") or "", p.info.get("exe") or ""
+
+
+def _terminar_proceso(pid):
+    try:
+        proceso = psutil.Process(pid)
+        proceso.terminate()
+        try:
+            proceso.wait(timeout=3)
+        except psutil.TimeoutExpired:
+            proceso.kill()
+        return True
+    except psutil.NoSuchProcess:
+        return True
+    except Exception:
+        return False
+
+
+def _lanzar_sin_elevar(exe):
+    """TechClean corre como administrador, y todo lo que lance hereda eso.
+    Abrir Discord o el navegador como administrador es justo lo que no se
+    quiere: se lanza a través de explorer.exe, que lo abre como el usuario
+    normal. (Se pierden los argumentos de arranque; para reabrir una app
+    tal cual el usuario la abriría, no hacen falta.)"""
+    try:
+        subprocess.Popen(["explorer.exe", exe], creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return True
+    except Exception:
+        return False
+
+
 class Autopilot:
-    def __init__(self, log_callback=None, intervalo_seg=8, umbral_ram=85):
+    def __init__(self, log_callback=None, intervalo_seg=8, umbral_ram=85, apps_cerrar=None,
+                 listar_procesos=None, terminar=None, lanzar=None):
         self.activo = False
+        # Apps que el usuario eligió cerrar mientras juega (nombres de
+        # proceso). Se lee en cada juego, así el cambio en la pantalla de
+        # Gaming vale sin reiniciar nada.
+        self.apps_cerrar = apps_cerrar or (lambda: [])
+        self._listar_procesos = listar_procesos or _listar_procesos_basico
+        self._terminar = terminar or _terminar_proceso
+        self._lanzar = lanzar or _lanzar_sin_elevar
+        self._cerradas = []      # rutas de .exe cerradas, para reabrirlas
         self.intervalo_seg = intervalo_seg
         self.umbral_ram = umbral_ram
         self.log_callback = log_callback or (lambda *a, **k: None)
@@ -170,6 +213,8 @@ class Autopilot:
     def detener(self):
         self.activo = False
         self._restaurar_prioridad()
+        # Apagar el Modo Juego a mitad de partida también devuelve las apps.
+        self._reabrir_apps()
 
     def _loop(self, mi_generacion):
         while self.activo and mi_generacion == self._generacion:
@@ -222,6 +267,50 @@ class Autopilot:
                 )
             except Exception:
                 self._pid_priorizado = None
+            if self._pid_priorizado:
+                self._cerrar_apps(excluir_pid=pid)
+        else:
+            # Se acabó el juego (o se salió a escritorio): de vuelta.
+            self._reabrir_apps()
+
+    def _cerrar_apps(self, excluir_pid=None):
+        """Cierra las apps elegidas, apuntando de dónde se abrieron para
+        devolverlas al terminar. Nunca toca el juego, ni TechClean, ni nada
+        que evaluar_riesgo_proceso marque como intocable."""
+        try:
+            nombres = {n.strip().lower() for n in self.apps_cerrar() if n and n.strip()}
+        except Exception:
+            nombres = set()
+        if not nombres:
+            return []
+        propio = os.getpid()
+        cerradas_ahora = []
+        for pid, nombre, exe in list(self._listar_procesos()):
+            if pid in (excluir_pid, propio) or nombre.lower() not in nombres:
+                continue
+            if opt.evaluar_riesgo_proceso(nombre)[0] == "bloqueado":
+                continue
+            if self._terminar(pid):
+                if exe and exe not in self._cerradas:
+                    self._cerradas.append(exe)
+                if nombre not in cerradas_ahora:
+                    cerradas_ahora.append(nombre)
+        if cerradas_ahora:
+            self.log_callback(t("auto_apps_cerradas_accion"), "TerminateProcess",
+                              t("auto_apps_cerradas_resultado", apps=", ".join(cerradas_ahora)),
+                              seccion=t("seccion_automatico"), exito=True)
+        return cerradas_ahora
+
+    def _reabrir_apps(self):
+        if not self._cerradas:
+            return []
+        reabiertas = [exe for exe in self._cerradas if self._lanzar(exe)]
+        self._cerradas = []
+        self.log_callback(t("auto_apps_reabiertas_accion"), "explorer.exe <app>",
+                          t("auto_apps_reabiertas_resultado",
+                            apps=", ".join(os.path.basename(x) for x in reabiertas) or "-"),
+                          seccion=t("seccion_automatico"), exito=bool(reabiertas))
+        return reabiertas
 
     def _restaurar_prioridad(self):
         if self._pid_priorizado:

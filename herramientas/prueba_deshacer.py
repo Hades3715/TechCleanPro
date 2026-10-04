@@ -77,6 +77,12 @@ class OptimizerFalso:
     def restaurar_dns(self, adaptadores):
         return self._apuntar("restaurar_dns", adaptadores)
 
+    def restaurar_ajuste_juego(self, clave, anteriores):
+        return self._apuntar("restaurar_ajuste_juego", clave, anteriores)
+
+    def restaurar_ajuste_privacidad(self, clave, anteriores):
+        return self._apuntar("restaurar_ajuste_privacidad", clave, anteriores)
+
 
 carpeta = tempfile.mkdtemp(prefix="tcp_desh_")
 reg = deshacer.RegistroDeshacer(carpeta_datos=carpeta)
@@ -130,6 +136,10 @@ casos = [
      ("set_power_plan", ("silencioso",), {})),
     ("dns", {"adaptadores": [{"indice": 7, "fijos_v4": ["8.8.8.8"], "fijos_v6": []}]},
      ("restaurar_dns", ([{"indice": 7, "fijos_v4": ["8.8.8.8"], "fijos_v6": []}],), {})),
+    ("ajuste_juego", {"clave": "grabacion_fondo", "anteriores": [1, None]},
+     ("restaurar_ajuste_juego", ("grabacion_fondo", [1, None]), {})),
+    ("ajuste_privacidad", {"clave": "publicidad", "anteriores": [None]},
+     ("restaurar_ajuste_privacidad", ("publicidad", [None]), {})),
 ]
 for tipo, datos, esperado in casos:
     identificador = reg.anotar(tipo, datos, f"prueba {tipo}")
