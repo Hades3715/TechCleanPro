@@ -62,7 +62,7 @@ COLOR_DONAR = "#ff5e5b"   # calido, para que la tarjeta de apoyo no se pierda en
 
 DEV_NAME = "Edwin Javier Cortez Cardoza"
 DEV_ALIAS = "Hades"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 # ---------------------------------------------------------------------------
 # EDICIÓN: "cliente" (por defecto) oculta todo lo administrativo/técnico y

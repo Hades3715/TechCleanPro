@@ -128,7 +128,7 @@ y sirve para revisar cómo queda todo en ambos idiomas sin recompilar.
 
 ### Qué trae la Edición Administrador que no trae la de cliente
 
-Una pestaña **🧰 Técnico** con tres herramientas pensadas para quien arregla
+Una pestaña **🧰 Técnico** con herramientas pensadas para quien arregla
 computadoras ajenas:
 
 - **📸 Antes y después** — guarda cómo está el equipo, optimizas, y te
@@ -141,6 +141,16 @@ computadoras ajenas:
 - **📈 Grabar métricas** — apunta CPU, RAM, disco y temperatura a un CSV cada
   pocos segundos. Para el caso de "a veces se pone lento y no sé por qué":
   lo dejas grabando, usas el equipo, y después buscas el pico en Excel.
+- **📄 Informe para el cliente** (1.6.0) — el antes y el después, el trabajo
+  hecho y el estado del hardware, en HTML listo para imprimir o guardar como
+  PDF.
+- **🔧 Mantenimiento completo** (1.6.0) — punto de restauración, RAM,
+  temporales, limpieza a fondo, DNS, sfc/DISM opcional y optimizar discos, en
+  orden, con foto antes/después y el informe al final.
+- **🩺 Salud del equipo** (1.6.0) — desgaste y temperatura de los discos,
+  capacidad de la batería, pantallazos azules y apagados inesperados.
+- **📦 Respaldo de controladores** (1.6.0) — exportarlos antes de formatear y
+  reinstalarlos después, sin buscarlos uno por uno.
 
 Además: el comando exacto de cada acción en el Historial, la Consola de
 Desarrollador y el selector de idioma dentro de la app.
@@ -179,7 +189,7 @@ TechClean/
 │   ├── Compilar_Instalador.bat      ← instalador de Windows (necesita Inno Setup)
 │   └── TechClean.iss
 ├── documentacion/               ← contexto del proyecto y notas de cada versión
-├── herramientas/                ← el banco de comprobaciones (ver sección 11)
+├── herramientas/                ← el banco de comprobaciones (ver sección 12)
 └── assets/                      ← icono y sonido
 ```
 
@@ -266,6 +276,19 @@ Se maneja como una consola de verdad:
 | `/limpiar` | Vacía la consola |
 | `/guardar` | Guarda el registro en un archivo de texto |
 | `/salir` | Vuelve a Inicio |
+| `/ramprofunda` | Liberación profunda de RAM (también vacía la caché en espera) |
+| `/autoram` | Enciende o apaga la liberación automática de RAM |
+| `/fondo` | Limpieza a fondo (restos de Windows Update, informes de errores...) |
+| `/fugas` | Programas con posible fuga de memoria |
+| `/procesos` | Los 10 procesos que más RAM usan |
+| `/discos` | Salud de los discos |
+| `/bateria` | Salud de la batería |
+| `/pantallazos` | Pantallazos azules y apagados inesperados |
+| `/unidades` | Discos con su tipo (SSD/HDD) y espacio libre |
+| `/medirdns` | Mide la velocidad de tu DNS y de los públicos |
+| `/plan` | Plan de energía activo |
+| `/red` | Conexiones activas con su IP y DNS |
+| `/tecnico` | Abre Herramientas de técnico (solo edición Administrador) |
 
 Repite los 7 clics para ocultarlo de nuevo.
 
@@ -416,7 +439,52 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 8. Novedades y correcciones de la versión 1.5.0
+## 8. Novedades y correcciones de la versión 1.6.0
+
+**Lo más grande:**
+
+- **🧠 RAM al nivel de Mem Reduct.** Se libera a nivel de sistema (procesos
+  protegidos, caché de archivos, datos pendientes de escribir), no programa
+  por programa. Medido: de 38 % a 25 % de RAM en uso. Botón aparte de
+  **liberación profunda**, y la **liberación automática funciona de verdad**
+  (antes solo con el Modo Juego), con intervalo opcional.
+- **🧹 Limpieza a fondo** en Espacio en disco: lo del Liberador de espacio de
+  Windows con el tamaño real, más limpiar componentes viejos de Windows
+  (DISM). **Duplicados** (siempre queda una copia) y **optimizar unidades**
+  (TRIM en SSD, desfragmentar solo en HDD).
+- **🎮 Gaming:** cerrar apps al jugar y reabrirlas al salir (opcional, viene
+  apagado), ajustes de Windows para juegos con deshacer, medidor de lag
+  (¿Wi-Fi o proveedor?), plan Máximo rendimiento y juegos de GOG Galaxy.
+- **🔎 Auditoría de seguridad** (pestaña en Seguridad, solo lee): intérpretes
+  disfrazados, cosas que arrancan solas con comandos ocultos, mineros,
+  exclusiones de Defender. Más **programas en la red** y un **vigilante** que
+  avisa de fugas de memoria y discos casi llenos.
+- **🔒 Privacidad de Windows:** seis interruptores (publicidad, sugerencias,
+  Bing en Inicio...) con deshacer.
+- **📦 Aplicaciones:** quitar apps de serie (de una lista conocida) y
+  actualizar todas con winget. **🌐 DNS más rápido** con deshacer.
+- **🛟 Puntos de restauración** (espacio, crear, borrar los viejos) e
+  **informe de energía**.
+- **🧰 Edición Administrador:** informe para el cliente, salud de discos y
+  batería, pantallazos azules, respaldo de controladores y mantenimiento
+  completo. Ver la sección 1.
+
+**Errores corregidos que importan:**
+
+- "Limpiar temporales" podía borrar archivos de **fuera** de %TEMP% a través
+  de una unión (junction) de Windows. Comprobado con la 1.5.0.
+- "Punto de restauración creado" sin crearlo (límite de 24 h de Windows).
+- Minimizada en la bandeja seguía dibujando y lanzando procesos: CPU de
+  3.1 % a 1.0 %.
+- sfc/DISM podían colgarse; la lista de winget salía vacía en español;
+  Steam y Discord no aparecían en la caché de apps; 11 sitios tocaban la
+  interfaz desde un hilo; unos 20 textos en español en la build en inglés.
+
+Detalle completo en `documentacion/NOTAS_RELEASE_1.6.0.md`.
+
+---
+
+## 9. Novedades y correcciones de la versión 1.5.0
 
 **Nuevo en esta versión, lo más grande:**
 
@@ -597,7 +665,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 9. Novedades y correcciones de la versión 1.4.0
+## 10. Novedades y correcciones de la versión 1.4.0
 
 **Nuevo:**
 - Ícono propio de la app (ventana, bandeja del sistema y el `.exe` compilado).
@@ -629,7 +697,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 10. Correcciones de la versión 1.3.0
+## 11. Correcciones de la versión 1.3.0
 
 - El autopiloto (y ahora Modo Juego) llamaban a la función que registra
   acciones **desde su propio hilo de fondo**, tocando directamente la
@@ -661,7 +729,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 11. Estructura del proyecto
+## 12. Estructura del proyecto
 
 ```
 codigo/
@@ -680,7 +748,8 @@ codigo/
   report.py          → registro transparente de sesión
   deshacer.py        → registro de cambios reversibles
   tecnico.py         → herramientas de la edición administrador
-  autopilot.py       → motor de Modo Juego (RAM + impulso + energía)
+  seguridad.py       → auditor de seguridad (solo lee): malware, mineros, red
+  autopilot.py       → segundo plano: Modo Juego, RAM automática, vigilante de fugas y disco
   tray.py            → icono en la bandeja del sistema
   widget.py          → barra de rendimiento flotante
 compilar/            → generadores de .exe, instalador y su script de Inno Setup
@@ -693,7 +762,7 @@ herramientas/        → verificaciones (ver abajo)
 ### Herramientas de verificación
 
 Antes de dar un cambio por terminado, doble clic en
-**`herramientas\Verificar_Todo.bat`**: corre las 26 comprobaciones seguidas
+**`herramientas\Verificar_Todo.bat`**: corre las 35 comprobaciones seguidas
 y espera una tecla al final para que puedas leer los resultados. Al terminar
 dice cuántas pasaron y cuántas no — antes solo imprimía "revisa arriba", y
 una comprobación que ni llegaba a arrancar no se distinguía de una que
@@ -707,7 +776,7 @@ pasaba.
 | `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar la app |
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
-| `revisar_comandos.py` | Que los 25 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_comandos.py` | Que los 38 comandos del panel oculto existan, naveguen y aguanten entrada rara |
 | `prueba_consola.py` | La consola entera: historial con las flechas, completar con Tab, tope de líneas, un color por tipo de línea, y que no quede ni una frase escrita a mano sin traducir |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 | `prueba_arranque.py` | Que la app abra y que las 16 pantallas se pinten, en el idioma que le pases |
@@ -724,6 +793,15 @@ pasaba.
 | `prueba_tecnico.py` | Foto antes/después (que sepa que subir no siempre es mejor), inspector de arranque y grabación a CSV |
 | `revisar_instalador.py` | Que el script del instalador no mienta: archivos, versión y nombres de las tareas que borra |
 | `revisar_empaquetado.py` | Que los `.exe` ya compilados lleven dentro todo lo que la app importa. Un módulo que PyInstaller deje fuera funciona perfectamente desde el código y falla solo en la copia que se reparte |
+| `prueba_memoria.py` | Liberación de RAM: estructuras de Windows y, como administrador, que cada paso funcione de verdad |
+| `prueba_auto_ram.py` | Liberación automática: umbral con espera, intervalo, y que se aparte con el Modo Juego |
+| `prueba_limpieza_fondo.py` | Borrado seguro: no entrar en uniones, no contar lo bloqueado, filtros |
+| `prueba_vigilante.py` | Fugas de memoria y disco lleno: qué es y qué no es, sin repetir avisos |
+| `prueba_dns_unidades.py` | Consulta DNS contra un servidor de mentira, y que nada raro llegue a PowerShell |
+| `prueba_gaming.py` | Cerrar/reabrir apps (nunca el juego), ajustes de juego, lag y juegos de GOG |
+| `prueba_seguridad.py` | El auditor detecta un malware real y no marca programas legítimos |
+| `prueba_apps_sistema.py` | Winget en cualquier idioma, apps de serie, duplicados y puntos de restauración |
+| `revisar_errores_banco.py` | Los errores que la app registró mientras corría el banco: una prueba puede decir "ok" aunque dentro haya saltado uno |
 
 Los `.py` sueltos también se pueden correr desde una terminal
 (`python herramientas\auditoria.py`). Al hacerles doble clic la ventana se
@@ -732,7 +810,7 @@ cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 
 ---
 
-## 12. Licencia y autoría
+## 13. Licencia y autoría
 
 TechClean es **gratis** pero **no** es de dominio público ni de código
 abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los

@@ -21,7 +21,7 @@
 ; ============================================================
 
 #define NombreApp "TechClean"
-#define VersionApp "1.5.0"
+#define VersionApp "1.6.0"
 #define Autor "Edwin Javier Cortez Cardoza (Hades)"
 #define WebApp "https://github.com/Hades3715/TechCleanPro"
 
