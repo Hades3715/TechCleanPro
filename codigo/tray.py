@@ -106,32 +106,45 @@ def generar_icono_con_valor(valor, etiqueta=""):
 
 class TrayIcon:
     """
-    on_mostrar_panel, on_toggle_widget, on_toggle_auto, on_salir:
+    on_mostrar_panel, on_toggle_widget, on_toggle_auto, on_salir (y desde
+    la 1.7.0 on_liberar_ram y on_limpieza_rapida, opcionales):
     callbacks SIN argumentos, ya envueltos por quien los pase (usa
     root.after(0, tu_funcion) para que se ejecuten de forma segura
     en el hilo principal de Tkinter).
     """
-    def __init__(self, on_mostrar_panel, on_toggle_widget, on_toggle_auto, on_salir):
+    def __init__(self, on_mostrar_panel, on_toggle_widget, on_toggle_auto, on_salir,
+                 on_liberar_ram=None, on_limpieza_rapida=None):
         self.on_mostrar_panel = on_mostrar_panel
         self.on_toggle_widget = on_toggle_widget
         self.on_toggle_auto = on_toggle_auto
         self.on_salir = on_salir
+        self.on_liberar_ram = on_liberar_ram
+        self.on_limpieza_rapida = on_limpieza_rapida
         self.icon = None
         self.disponible = HAS_PYSTRAY and HAS_PIL
 
     def iniciar(self):
         if not self.disponible:
             return False
-        menu = pystray.Menu(
-            # BUG corregido: ningún ítem estaba marcado como "default", así
-            # que el clic IZQUIERDO en el ícono no hacía nada — solo el
-            # clic derecho (que muestra el menú completo) funcionaba. Ahora
-            # el clic izquierdo abre el panel directo, como se espera.
-            pystray.MenuItem(t("tray_abrir_panel"), lambda: self.on_mostrar_panel(), default=True),
+        # BUG corregido: ningún ítem estaba marcado como "default", así
+        # que el clic IZQUIERDO en el ícono no hacía nada — solo el
+        # clic derecho (que muestra el menú completo) funcionaba. Ahora
+        # el clic izquierdo abre el panel directo, como se espera.
+        items = [pystray.MenuItem(t("tray_abrir_panel"), lambda: self.on_mostrar_panel(), default=True)]
+        # 1.7.0: lo que más se usa, sin tener que abrir la ventana.
+        if self.on_liberar_ram or self.on_limpieza_rapida:
+            items.append(pystray.Menu.SEPARATOR)
+            if self.on_liberar_ram:
+                items.append(pystray.MenuItem(t("tray_liberar_ram"), lambda: self.on_liberar_ram()))
+            if self.on_limpieza_rapida:
+                items.append(pystray.MenuItem(t("tray_limpieza_rapida"), lambda: self.on_limpieza_rapida()))
+            items.append(pystray.Menu.SEPARATOR)
+        items += [
             pystray.MenuItem(t("tray_toggle_widget"), lambda: self.on_toggle_widget()),
             pystray.MenuItem(t("tray_modo_juego"), lambda: self.on_toggle_auto()),
             pystray.MenuItem(t("tray_salir"), lambda: self._salir()),
-        )
+        ]
+        menu = pystray.Menu(*items)
         self.icon = pystray.Icon("TechClean", _crear_icono_imagen(), "TechClean", menu)
         threading.Thread(target=self.icon.run, daemon=True).start()
         return True
@@ -158,6 +171,20 @@ class TrayIcon:
             self.icon.icon = generar_icono_con_valor(valor, etiqueta)
         except Exception:
             pass
+
+    def notificar(self, titulo, texto):
+        """Notificación desde el propio icono de la bandeja. Es instantánea,
+        a diferencia de opt.notificar_windows, que lanza un PowerShell (~1 s
+        y unos 60 MB de RAM durante ese segundo: justo después de liberar
+        RAM, quedaba feo). Devuelve False si no se pudo; quien llama decide
+        si probar la otra vía."""
+        if not self.disponible or self.icon is None or not getattr(self.icon, "HAS_NOTIFICATION", False):
+            return False
+        try:
+            self.icon.notify(texto, titulo)
+            return True
+        except Exception:
+            return False
 
     def restaurar_icono_normal(self):
         if not self.disponible or self.icon is None:

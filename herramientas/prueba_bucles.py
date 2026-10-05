@@ -56,22 +56,22 @@ for _ in range(10):
     app.update()
     time.sleep(0.02)
 
-# Se cuenta cuantas veces ARRANCA de verdad un ciclo de refresco.
+# Se cuenta cuantas CONSULTAS lanza de verdad el refresco. Antes se
+# contaban los tics que pasaban el filtro de generacion, pero el ultimo tic
+# tras salir de la pantalla tambien lo pasa (salir no cambia el numero) y
+# se apaga despues, al ver que el panel ya no existe, sin consultar nada.
+# Con la pantalla mas rapida ese tic caia dentro de la ventana medida y la
+# prueba fallaba sin que la app hiciera nada malo.
 ciclos = {"veces": 0}
-original = app._refrescar_componentes
+consulta_original = main.sysmon.get_cpu_details
 
 
-def espia(generacion=None):
-    # Solo cuentan los tics que pasan el filtro de generacion: los que se
-    # descartan no hacen ninguna consulta.
-    antes = getattr(app, "_generacion_componentes", 0)
-    resultado = original(generacion)
-    if generacion is None or generacion == getattr(app, "_generacion_componentes", antes):
-        ciclos["veces"] += 1
-    return resultado
+def espia(*args, **kwargs):
+    ciclos["veces"] += 1
+    return consulta_original(*args, **kwargs)
 
 
-app._refrescar_componentes = espia
+main.sysmon.get_cpu_details = espia
 
 print("== Entrar y salir de Componentes 5 veces seguidas ==")
 for vuelta in range(5):

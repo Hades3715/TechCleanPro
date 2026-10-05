@@ -1977,24 +1977,64 @@ def test_velocidad_internet(callback_progreso=None, callback_muestra=None):
 
 # ---------------- Prueba de velocidad real de disco ----------------
 
-def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
-    """
-    Prueba real de velocidad de escritura y lectura secuencial — escribe
-    un archivo temporal de tamaño conocido y mide cuánto tarda, luego lo
-    vuelve a leer. El "% de uso en este momento" que ya mostramos en
-    Componentes no dice nada sobre qué tan RÁPIDO es el disco en sí; esto
-    sí da un número concreto y comparable (MB/s).
+_MB = 1024 * 1024
 
-    Con honestidad sobre sus límites: no es tan preciso como un benchmark
-    dedicado (no prueba distintas profundidades de cola como
-    CrystalDiskMark), y la LECTURA puede salir más rápida de lo real
-    porque Windows cachea en RAM lo que acaba de escribir — vaciar esa
-    caché requeriría privilegios que no tiene un script normal. Aun así,
-    refleja bien la diferencia entre un SSD decente y un disco mecánico
-    viejo, que es la pregunta que de verdad importa aquí.
+
+def clase_disco(lectura_mbs, aleatoria_mbs):
+    """Qué tipo de disco se COMPORTA cada resultado: "hdd", "ssd" o "nvme".
+
+    Referencias a profundidad de cola 1 (un pedido a la vez, como esta
+    prueba): un disco mecánico lee unos 80-200 MB/s seguidos y menos de
+    2 MB/s en bloques sueltos de 4 KB; un SSD SATA, unos 400-550 MB/s y
+    20-40 MB/s; un NVMe pasa de 1000 MB/s seguidos."""
+    if lectura_mbs >= 1000:
+        return "nvme"
+    if lectura_mbs >= 250 or aleatoria_mbs >= 8:
+        return "ssd"
+    return "hdd"
+
+
+def _kernel32_sin_cache():
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    from ctypes import wintypes as wt
+    k32.CreateFileW.argtypes = [wt.LPCWSTR, wt.DWORD, wt.DWORD, ctypes.c_void_p, wt.DWORD, wt.DWORD,
+                                wt.HANDLE]
+    k32.CreateFileW.restype = wt.HANDLE
+    k32.WriteFile.argtypes = [wt.HANDLE, ctypes.c_void_p, wt.DWORD, ctypes.POINTER(wt.DWORD), ctypes.c_void_p]
+    k32.ReadFile.argtypes = [wt.HANDLE, ctypes.c_void_p, wt.DWORD, ctypes.POINTER(wt.DWORD), ctypes.c_void_p]
+    k32.SetFilePointerEx.argtypes = [wt.HANDLE, ctypes.c_longlong, ctypes.c_void_p, wt.DWORD]
+    k32.FlushFileBuffers.argtypes = [wt.HANDLE]
+    k32.CloseHandle.argtypes = [wt.HANDLE]
+    k32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wt.DWORD, wt.DWORD]
+    k32.VirtualAlloc.restype = ctypes.c_void_p
+    k32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, wt.DWORD]
+    return k32
+
+
+def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None, carpeta=None, segundos_aleatoria=3):
+    """
+    Velocidad REAL del disco: escritura y lectura seguidas (copiar archivos
+    grandes) y lectura de bloques sueltos de 4 KB (lo que más se nota al
+    abrir programas y arrancar Windows).
+
+    BUG corregido (1.7.0): se leía con open() normal y Windows servía la
+    lectura desde la caché de la RAM, porque acababa de escribir ese mismo
+    archivo: salían miles de MB/s también en un disco mecánico. El
+    comentario de entonces decía que evitarlo "requería privilegios"; no:
+    basta con abrir el archivo con FILE_FLAG_NO_BUFFERING, que cualquier
+    usuario puede usar. Así se mide el disco y no la RAM.
+
+    El archivo se abre con FILE_FLAG_DELETE_ON_CLOSE: Windows lo borra al
+    cerrarlo, aunque la app se cierre de golpe a mitad de la prueba.
+
+    Devuelve escritura_mbs, lectura_mbs, aleatoria_mbs, iops, clase
+    ("hdd"/"ssd"/"nvme", ver clase_disco), unidad y tamano_probado_mb; o
+    {"error": texto}. None fuera de Windows.
     """
     if not IS_WINDOWS:
         return None
+    import random
+    from ctypes import wintypes as wt
 
     def _avisar(texto):
         if callback_progreso:
@@ -2003,39 +2043,89 @@ def prueba_velocidad_disco(tamano_mb=256, callback_progreso=None):
             except Exception:
                 pass
 
-    ruta_prueba = os.path.join(tempfile.gettempdir(), "techclean_prueba_disco.tmp")
-    bloque = os.urandom(1024 * 1024)  # 1 MB de datos aleatorios — no comprimibles, prueba más honesta
+    carpeta = carpeta or tempfile.gettempdir()
+    unidad = os.path.splitdrive(os.path.abspath(carpeta))[0] or carpeta
     try:
+        libre = shutil.disk_usage(carpeta).free
+    except OSError as e:
+        return {"error": str(e)}
+    # El doble de lo que se escribe y 1 GB de margen: con el disco casi
+    # lleno la prueba no debe ser la que lo termine de llenar.
+    if libre < tamano_mb * _MB * 2 + 1024 * _MB:
+        return {"error": t("comp_disco_sin_espacio", libre=format_bytes(libre))}
+
+    k32 = _kernel32_sin_cache()
+    invalido = wt.HANDLE(-1).value
+    buffer = k32.VirtualAlloc(None, _MB, 0x3000, 0x04)       # MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE
+    if not buffer:
+        return {"error": t("comp_disco_error_simple")}
+    ruta = os.path.join(carpeta, f"techclean_prueba_disco_{os.getpid()}.tmp")
+    manejador = invalido
+    try:
+        # Datos al azar: un disco que comprime (algunos SSD) no puede hacer trampa.
+        ctypes.memmove(buffer, os.urandom(_MB), _MB)
+        manejador = k32.CreateFileW(
+            ruta, 0x80000000 | 0x40000000, 0, None, 2,           # GENERIC_READ|WRITE, CREATE_ALWAYS
+            0x20000000 | 0x80000000 | 0x04000000, None)          # NO_BUFFERING|WRITE_THROUGH|DELETE_ON_CLOSE
+        if manejador in (invalido, None):
+            return {"error": t("comp_disco_no_crear", error=ctypes.get_last_error())}
+        hechos = wt.DWORD()
+
         _avisar(t("comp_disco_fase_escribiendo"))
-        inicio = time.time()
-        with open(ruta_prueba, "wb") as f:
-            for _ in range(tamano_mb):
-                f.write(bloque)
-            f.flush()
-            os.fsync(f.fileno())
-        duracion_escritura = time.time() - inicio
-        velocidad_escritura = tamano_mb / duracion_escritura if duracion_escritura > 0 else 0
+        inicio = time.perf_counter()
+        for _ in range(tamano_mb):
+            if not k32.WriteFile(manejador, buffer, _MB, ctypes.byref(hechos), None) or hechos.value != _MB:
+                return {"error": t("comp_disco_no_escribir", error=ctypes.get_last_error())}
+        k32.FlushFileBuffers(manejador)
+        escritura = tamano_mb / max(time.perf_counter() - inicio, 1e-6)
 
         _avisar(t("comp_disco_fase_leyendo"))
-        inicio = time.time()
-        with open(ruta_prueba, "rb") as f:
-            while f.read(1024 * 1024):
-                pass
-        duracion_lectura = time.time() - inicio
-        velocidad_lectura = tamano_mb / duracion_lectura if duracion_lectura > 0 else 0
+        k32.SetFilePointerEx(manejador, 0, None, 0)
+        inicio = time.perf_counter()
+        for _ in range(tamano_mb):
+            if not k32.ReadFile(manejador, buffer, _MB, ctypes.byref(hechos), None) or hechos.value != _MB:
+                return {"error": t("comp_disco_no_leer", error=ctypes.get_last_error())}
+        lectura = tamano_mb / max(time.perf_counter() - inicio, 1e-6)
+
+        # Bloques de 4 KB en posiciones al azar, durante unos segundos. Es
+        # múltiplo del tamaño de sector de cualquier disco actual (512 o
+        # 4096 bytes), que es lo que exige NO_BUFFERING.
+        _avisar(t("comp_disco_fase_aleatoria"))
+        bloques = tamano_mb * _MB // 4096
+        azar = random.Random()
+        lecturas = 0
+        inicio = time.perf_counter()
+        fin = inicio + segundos_aleatoria
+        while time.perf_counter() < fin and lecturas < 200000:
+            k32.SetFilePointerEx(manejador, azar.randrange(bloques) * 4096, None, 0)
+            if not k32.ReadFile(manejador, buffer, 4096, ctypes.byref(hechos), None):
+                break
+            lecturas += 1
+        duracion = max(time.perf_counter() - inicio, 1e-6)
+        iops = lecturas / duracion
+        aleatoria = iops * 4096 / _MB
 
         _avisar(t("comp_disco_fase_listo"))
         return {
-            "escritura_mbs": round(velocidad_escritura, 1),
-            "lectura_mbs": round(velocidad_lectura, 1),
+            "escritura_mbs": round(escritura, 1),
+            "lectura_mbs": round(lectura, 1),
+            "aleatoria_mbs": round(aleatoria, 1),
+            "iops": int(iops),
+            "clase": clase_disco(lectura, aleatoria),
+            "unidad": unidad,
             "tamano_probado_mb": tamano_mb,
         }
     except Exception as e:
         return {"error": str(e)}
     finally:
+        if manejador not in (invalido, None):
+            k32.CloseHandle(manejador)              # DELETE_ON_CLOSE: aquí desaparece el archivo
+        k32.VirtualFree(buffer, 0, 0x8000)          # MEM_RELEASE
+        # Por si CreateFileW falló a medias y dejó algo (no debería).
         try:
-            os.remove(ruta_prueba)
-        except Exception:
+            if os.path.exists(ruta):
+                os.remove(ruta)
+        except OSError:
             pass
 
 
@@ -4470,6 +4560,11 @@ REPO_ACTUALIZACIONES = REPOS_ACTUALIZACIONES[-1]
 _FOLDERID = {
     "escritorio": "B4BFCC3A-DB2C-424C-B029-7FE99A87C641",
     "descargas": "374DE290-123F-4565-9164-39C4925E467B",
+    "escritorio_publico": "C4AA340D-F20F-4863-AFEF-F87EF2E6BA25",
+    "programas": "A77F5D77-2E2B-44C3-A6A2-ABA601054A51",          # menú Inicio del usuario
+    "programas_comunes": "0139D44E-6AFE-49F2-8690-3DAFCAE6FFB8",  # menú Inicio de todos
+    "arranque": "B97D20BB-F46A-4C97-BA10-5E3608430854",           # Inicio > Programas > Inicio
+    "arranque_comun": "82A5EA35-D9CD-47C5-9629-E15D2F714E6E",
 }
 
 
@@ -4502,6 +4597,170 @@ def carpeta_conocida(cual, respaldos=()):
         if r and os.path.isdir(r):
             return r
     return ""
+
+
+# ---------------- Accesos directos rotos (1.7.0) ----------------
+# Al desinstalar un programa a veces quedan sus accesos directos en el
+# Escritorio o en el menú Inicio, apuntando a algo que ya no existe. Se leen
+# los .lnk a mano (formato MS-SHLLINK): es rápido y no necesita PowerShell.
+
+_LNK_TAMANO_CABECERA = 0x4C
+_LNK_CON_IDLIST, _LNK_CON_LINKINFO, _LNK_UNICODE = 0x1, 0x2, 0x80
+_LNK_CON_VARIABLES, _LNK_ANUNCIADO = 0x200, 0x1000
+_LNK_BLOQUE_VARIABLES, _LNK_BLOQUE_DARWIN = 0xA0000001, 0xA0000006
+_UNIDAD_FIJA = 3                       # DRIVE_FIXED, en el VolumeID del .lnk
+
+
+def _cadena_c(datos, inicio, unicode=False):
+    """Cadena terminada en cero dentro de `datos`."""
+    if inicio <= 0 or inicio >= len(datos):
+        return ""
+    if unicode:
+        fin = inicio
+        while fin + 1 < len(datos) and datos[fin:fin + 2] != b"\0\0":
+            fin += 2
+        return datos[inicio:fin].decode("utf-16-le", "replace")
+    fin = datos.find(b"\0", inicio)
+    return datos[inicio:fin if fin != -1 else len(datos)].decode("mbcs" if IS_WINDOWS else "latin-1", "replace")
+
+
+def leer_destino_lnk(ruta):
+    """A dónde apunta un acceso directo. Devuelve (tipo, destino):
+
+      ("local", ruta)   — un archivo o carpeta de un disco fijo
+      ("otro", None)    — algo que no se puede comprobar desde aquí: un
+                          programa "anunciado" de un instalador MSI (Office),
+                          una app de la Tienda, el Panel de control, una
+                          unidad de red o un USB
+      ("invalido", None) — no es un .lnk o está dañado
+
+    Solo un "local" puede darse por roto: ante la duda, nunca se marca."""
+    try:
+        with open(ruta, "rb") as f:
+            datos = f.read(1024 * 1024)
+    except OSError:
+        return "invalido", None
+    if len(datos) < _LNK_TAMANO_CABECERA or int.from_bytes(datos[0:4], "little") != _LNK_TAMANO_CABECERA:
+        return "invalido", None
+    banderas = int.from_bytes(datos[0x14:0x18], "little")
+    if banderas & _LNK_ANUNCIADO:
+        return "otro", None
+    pos = _LNK_TAMANO_CABECERA
+    try:
+        if banderas & _LNK_CON_IDLIST:
+            pos += 2 + int.from_bytes(datos[pos:pos + 2], "little")
+        destino = None
+        tipo_unidad = None
+        if banderas & _LNK_CON_LINKINFO:
+            info = datos[pos:]
+            tam_info = int.from_bytes(info[0:4], "little")
+            tam_cabecera = int.from_bytes(info[4:8], "little")
+            banderas_info = int.from_bytes(info[8:12], "little")
+            if banderas_info & 0x1:                     # VolumeIDAndLocalBasePath
+                volumen = int.from_bytes(info[12:16], "little")
+                tipo_unidad = int.from_bytes(info[volumen + 4:volumen + 8], "little")
+                if tam_cabecera >= 0x24:
+                    base = _cadena_c(info, int.from_bytes(info[28:32], "little"), unicode=True)
+                    sufijo = _cadena_c(info, int.from_bytes(info[32:36], "little"), unicode=True)
+                else:
+                    base = _cadena_c(info, int.from_bytes(info[16:20], "little"))
+                    sufijo = _cadena_c(info, int.from_bytes(info[24:28], "little"))
+                if base:
+                    destino = os.path.join(base, sufijo) if sufijo else base
+            pos += tam_info
+        # Saltar las cadenas (nombre, ruta relativa, carpeta de trabajo,
+        # argumentos, icono) para llegar a los bloques extra.
+        ancho = 2 if banderas & _LNK_UNICODE else 1
+        for bit in (0x4, 0x8, 0x10, 0x20, 0x40):
+            if banderas & bit:
+                pos += 2 + int.from_bytes(datos[pos:pos + 2], "little") * ancho
+        con_variables = None
+        while pos + 8 <= len(datos):
+            tam = int.from_bytes(datos[pos:pos + 4], "little")
+            if tam < 8:
+                break
+            firma = int.from_bytes(datos[pos + 4:pos + 8], "little")
+            if firma == _LNK_BLOQUE_DARWIN:
+                return "otro", None
+            if firma == _LNK_BLOQUE_VARIABLES and banderas & _LNK_CON_VARIABLES and tam >= 0x314:
+                con_variables = (_cadena_c(datos, pos + 268, unicode=True)
+                                 or _cadena_c(datos, pos + 8))
+            pos += tam
+    except (IndexError, ValueError):
+        return "invalido", None
+    if con_variables:
+        # Un destino con %ProgramFiles% y similares: es el que manda.
+        return "local", os.path.expandvars(con_variables)
+    if destino and tipo_unidad == _UNIDAD_FIJA:
+        return "local", destino
+    return "otro", None
+
+
+def _destino_existe(destino):
+    if os.path.exists(destino):
+        return True
+    # Un acceso creado por un programa de 32 bits con %ProgramFiles% apunta
+    # a "Program Files (x86)" aunque la variable diga otra cosa.
+    bajo = destino.lower()
+    for a, b in (("\\program files\\", "\\program files (x86)\\"),
+                 ("\\program files (x86)\\", "\\program files\\")):
+        i = bajo.find(a)
+        if i != -1 and os.path.exists(destino[:i] + b + destino[i + len(a):]):
+            return True
+    return False
+
+
+def buscar_accesos_rotos(carpetas=None):
+    """Accesos directos del Escritorio y del menú Inicio cuyo destino ya
+    no existe. Cada uno: ruta, nombre, destino, lugar ("escritorio",
+    "inicio" o "arranque", la carpeta de lo que se abre al encender) y comun (True si es de todos los usuarios: hace falta ser
+    administrador para quitarlo).
+
+    Solo se marca lo que se puede comprobar de verdad: un destino en un
+    disco fijo que SÍ está conectado. Si la unidad entera no existe (un
+    disco externo desenchufado), no se toca."""
+    if carpetas is None:
+        carpetas = [
+            (carpeta_conocida("escritorio"), "escritorio", False, False),
+            (carpeta_conocida("escritorio_publico"), "escritorio", True, False),
+            (carpeta_conocida("programas"), "inicio", False, True),
+            (carpeta_conocida("programas_comunes"), "inicio", True, True),
+        ]
+    rotos = []
+    vistos = set()
+    arranque = tuple(os.path.normcase(c) + os.sep for c in
+                     (carpeta_conocida("arranque"), carpeta_conocida("arranque_comun")) if c)
+    for carpeta, lugar, comun, recursivo in carpetas:
+        if not carpeta or not os.path.isdir(carpeta):
+            continue
+        if recursivo:
+            recorrido = _recorrer(carpeta)
+        else:
+            try:
+                recorrido = [(carpeta, [], os.listdir(carpeta))]
+            except OSError:
+                continue
+        for raiz, _, archivos in recorrido:
+            for nombre in archivos:
+                if not nombre.lower().endswith(".lnk"):
+                    continue
+                ruta = os.path.join(raiz, nombre)
+                clave = os.path.normcase(ruta)
+                if clave in vistos:
+                    continue
+                vistos.add(clave)
+                tipo, destino = leer_destino_lnk(ruta)
+                if tipo != "local" or not destino:
+                    continue
+                unidad = os.path.splitdrive(destino)[0]
+                if not unidad or not os.path.exists(unidad + os.sep):
+                    continue
+                if not _destino_existe(destino):
+                    en_arranque = bool(arranque) and os.path.normcase(ruta).startswith(arranque)
+                    rotos.append({"ruta": ruta, "nombre": nombre[:-4], "destino": destino,
+                                  "lugar": "arranque" if en_arranque else lugar, "comun": comun})
+    rotos.sort(key=lambda r: (r["lugar"], r["nombre"].lower()))
+    return rotos
 
 
 # ---------------- Apoyar el proyecto (donaciones) ----------------

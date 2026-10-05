@@ -44,7 +44,10 @@ CON_EFECTOS = {"/ram", "/temporales", "/papelera", "/dns", "/rapido",
                # 1.6.0: los que tocan el sistema o lanzan PowerShell/mediciones
                # en un hilo que seguiría vivo al cerrar la app de prueba.
                "/ramprofunda", "/autoram", "/fondo", "/procesos", "/discos", "/bateria",
-               "/pantallazos", "/unidades", "/medirdns", "/plan", "/red"}
+               "/pantallazos", "/unidades", "/medirdns", "/plan", "/red",
+               # 1.7.0: escanean el Wi-Fi, escriben en disco, leen los navegadores
+               # o abren una ventana encima.
+               "/wifi", "/disco", "/extensiones", "/accesos", "/buscar"}
 
 fallos = []
 

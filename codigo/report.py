@@ -33,6 +33,30 @@ LIMITE_ENTRADAS = 3000
 
 NOMBRE_ARCHIVO = "historial.jsonl"
 
+# Rastros que deja en "comando" una liberación de RAM. Solo se usan para
+# clasificar acciones guardadas ANTES de la 1.7.0, que no traían el campo
+# "bytes_ram" (ver _bytes_de).
+_RASTROS_RAM = ("EmptyWorkingSet", "MemoryEmptyWorkingSets", "NtSetSystemInformation")
+
+
+def _bytes_de(entrada):
+    """(bytes de disco, bytes de RAM) de una entrada del historial.
+
+    BUG corregido (1.7.0): la RAM liberada se guardaba en el mismo campo
+    que el espacio de disco, y el Historial lo sumaba todo como "espacio
+    total liberado". Con la liberación automática de RAM cada pocos minutos,
+    la cifra llegaba a cientos de GB que nunca fueron espacio en disco.
+    Ahora cada cosa va en su campo. Para lo guardado antes, se reconoce la
+    RAM por el comando que la liberó; lo que no se puede reconocer se queda
+    como estaba."""
+    disco = entrada.get("bytes_liberados", 0) or 0
+    if "bytes_ram" in entrada:
+        return disco, entrada.get("bytes_ram", 0) or 0
+    comando = str(entrada.get("comando") or "")
+    if disco and any(r in comando for r in _RASTROS_RAM):
+        return 0, disco
+    return disco, 0
+
 
 class SessionReport:
     def __init__(self, carpeta_datos=None):
@@ -55,7 +79,8 @@ class SessionReport:
 
     # ---------------- Sesión actual ----------------
     def add(self, seccion, accion, comando, exito, resultado,
-             bytes_liberados=0, archivos_afectados=0):
+             bytes_liberados=0, archivos_afectados=0, bytes_ram=0):
+        """bytes_liberados: espacio de DISCO. bytes_ram: memoria liberada."""
         entrada = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "seccion": seccion,
@@ -65,13 +90,18 @@ class SessionReport:
             "resultado": resultado,
             "bytes_liberados": bytes_liberados or 0,
             "archivos_afectados": archivos_afectados or 0,
+            "bytes_ram": bytes_ram or 0,
             "sesion": self.sesion_id,
         }
         self.entries.append(entrada)
         self._anotar_en_disco(entrada)
 
     def total_bytes_liberados(self):
-        return sum(e["bytes_liberados"] for e in self.entries)
+        """Espacio de disco liberado en esta sesión (sin la RAM)."""
+        return sum(_bytes_de(e)[0] for e in self.entries)
+
+    def total_bytes_ram(self):
+        return sum(_bytes_de(e)[1] for e in self.entries)
 
     def total_archivos_afectados(self):
         return sum(e["archivos_afectados"] for e in self.entries)
@@ -141,10 +171,17 @@ class SessionReport:
         """Números del historial ENTERO, para la cabecera de la pantalla."""
         entradas = self.historial_completo()
         if not entradas:
-            return {"acciones": 0, "bytes": 0, "archivos": 0, "sesiones": 0, "desde": None}
+            return {"acciones": 0, "bytes": 0, "ram": 0, "archivos": 0, "sesiones": 0, "desde": None,
+                    "mes_bytes": 0, "mes_ram": 0, "mes_acciones": 0}
+        este_mes = datetime.now().strftime("%Y-%m")
+        del_mes = [e for e in entradas if str(e.get("timestamp") or "").startswith(este_mes)]
         return {
             "acciones": len(entradas),
-            "bytes": sum(e.get("bytes_liberados", 0) or 0 for e in entradas),
+            "bytes": sum(_bytes_de(e)[0] for e in entradas),
+            "ram": sum(_bytes_de(e)[1] for e in entradas),
+            "mes_bytes": sum(_bytes_de(e)[0] for e in del_mes),
+            "mes_ram": sum(_bytes_de(e)[1] for e in del_mes),
+            "mes_acciones": len(del_mes),
             "archivos": sum(e.get("archivos_afectados", 0) or 0 for e in entradas),
             "sesiones": len({e.get("sesion") for e in entradas if e.get("sesion")}),
             # `entradas` va de lo más nuevo a lo más viejo: la última es la
@@ -196,7 +233,8 @@ class SessionReport:
             entradas = list(reversed(entradas))     # en el archivo, de viejo a nuevo
         acciones = len(entradas)
         exitosas = sum(1 for e in entradas if e.get("exito"))
-        bytes_totales = sum(e.get("bytes_liberados", 0) or 0 for e in entradas)
+        bytes_totales = sum(_bytes_de(e)[0] for e in entradas)
+        ram_total = sum(_bytes_de(e)[1] for e in entradas)
 
         with open(path, "w", encoding="utf-8") as f:
             f.write(("HISTORIAL COMPLETO" if incluir_historial else "REPORTE DE SESION")
@@ -205,7 +243,8 @@ class SessionReport:
             f.write(f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write(f"Acciones totales: {acciones}  "
                     f"(OK: {exitosas}, Fallidas: {acciones - exitosas})\n")
-            f.write(f"Espacio total liberado: {bytes_totales} bytes\n")
+            f.write(f"Espacio de disco liberado: {bytes_totales} bytes\n")
+            f.write(f"RAM liberada: {ram_total} bytes\n")
             f.write("=" * 60 + "\n\n")
             for e in entradas:
                 estado = "OK" if e.get("exito") else "FALLO"
@@ -213,8 +252,11 @@ class SessionReport:
                 if incluir_comando:
                     f.write(f'   Comando ejecutado : {e.get("comando")}\n')
                 f.write(f'   Resultado         : {e.get("resultado")}\n')
-                if e.get("bytes_liberados"):
-                    f.write(f'   Bytes liberados   : {e["bytes_liberados"]}\n')
+                disco, ram = _bytes_de(e)
+                if disco:
+                    f.write(f'   Bytes liberados   : {disco}\n')
+                if ram:
+                    f.write(f'   RAM liberada      : {ram}\n')
                 if e.get("archivos_afectados"):
                     f.write(f'   Archivos afectados: {e["archivos_afectados"]}\n')
                 f.write("\n")

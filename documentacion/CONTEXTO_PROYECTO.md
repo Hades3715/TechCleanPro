@@ -13,7 +13,7 @@ sistema. Desarrollada por **Edwin Javier Cortez Cardoza**, alias **Hades**
 la instaló en su propia laptop y en la de otra persona con equipo de bajo
 rendimiento, y varios bugs se encontraron así, con uso real.
 
-- **Versión actual**: 1.6.0 (publicada el 2026-10-04) (`APP_VERSION` en `codigo/main.py`)
+- **Versión actual**: 1.7.0 (preparada el 2026-10-04; la 1.6.0 se publicó ese mismo día) (`APP_VERSION` en `codigo/main.py`)
 - **Stack**: Python + customtkinter (tema oscuro), psutil, pystray+Pillow,
   winreg, ctypes, sqlite3, PowerShell (para WMI vía `Get-CimInstance`)
 - **~12,600 líneas** repartidas en `main.py`, `optimizer.py`,
@@ -94,11 +94,11 @@ estaban así y no compilaban nada. Hay un `.gitattributes` con
 - **Plan de distribución**: dos builds separadas por idioma (ES/EN), que se
   eligen por el nombre del archivo en Releases. **Ya implementado**: el
   selector salió de la edición cliente (ver arriba).
-- **Versión**: `APP_VERSION = "1.6.0"` en `codigo/main.py`, unificada con el
+- **Versión**: `APP_VERSION = "1.7.0"` en `codigo/main.py`, unificada con el
   changelog del README (antes decía 1.0.0, un descuido). La etiqueta de la
   release de GitHub debe coincidir: el buscador de actualizaciones compara
   esa constante contra `tag_name`, quitandole la "v" inicial, así que la
-  etiqueta `v1.6.0` es la correcta. Si no coinciden, o avisa de una
+  etiqueta `v1.7.0` es la correcta. Si no coinciden, o avisa de una
   actualización que no existe, o no avisa de una que sí.
 - **Al subir una versión nueva**: cambiar `APP_VERSION`, recompilar las dos
   builds, y recién entonces crear la release con la etiqueta que coincida.
@@ -1149,6 +1149,128 @@ como argumento posicional, que el ast de `verificar_idiomas` no mira).
 - **Informe de energía** (`powercfg /energy`, 60 s). powercfg sale con
   código de error cuando ENCUENTRA problemas: el éxito es que exista el
   informe.
+
+## Versión 1.7.0: rendimiento y la "gran update"
+
+El desarrollador notó la app "un poco lenta" y después pidió una actualización
+grande. Todo lo de abajo está medido en su equipo (Lenovo 83K7, NVMe, Wi-Fi
+Realtek RTL8852BE, Windows 11).
+
+### Por qué iba lenta (medido, no supuesto)
+
+- **Inicio congelado el 15 % del tiempo.** `sysmon.get_cpu_info()` usaba
+  `psutil.cpu_percent(interval=0.3)`, que DUERME 0.3 s, y `_refrescar_gauges`
+  la llama en el hilo de Tk cada 2 s. Ahora `interval=None` (se ceba al
+  importar el módulo). De 300 ms a 11 ms por refresco. `prueba_rendimiento.py`
+  lo vigila.
+- **customtkinter 6.0 recalcula la ventana entera en cada barra de
+  desplazamiento.** `CTkScrollbar._draw` y `CTkOptionMenu._draw` terminan con
+  `self._canvas.update_idletasks()`, que procesa la disposición de TODA la
+  ventana, y eso mueve las barras otra vez: una cascada. Era ~30 % de lo que
+  tardaba abrir una pantalla. Parche en `main.py` (`_sin_redibujo_forzado`):
+  se anula `update_idletasks` SOLO en el canvas de esas dos clases.
+- **Drivers: 300 tarjetas.** Un marco + una etiqueta por driver: 3.3 s
+  congelada al cargar, y otros 3 s por cada letra del buscador (rehacía todo
+  en `<KeyRelease>`). Ahora es un único `CTkTextbox`: 10 ms.
+- **Destruir la pantalla vieja** costaba 0.1-0.3 s ANTES de empezar a dibujar
+  la nueva. Ahora cada pantalla estrena marco (`_limpiar_contenido`) y el
+  viejo se oculta y se destruye después. OJO: con `after_idle` +
+  `after(80)`, no con `after(ms)` a secas: un temporizador ya vencido se
+  atiende ANTES que el dibujado pendiente.
+- **Lo que queda**: abrir una pantalla tarda 0.5-1 s, y es el dibujado de
+  customtkinter (100-260 widgets, cada uno con su canvas). Descartado con
+  medidas: no es el GIL (`sys.setswitchinterval` no cambia nada) ni crear un
+  `CTkFont` por widget (sin diferencia clara). El siguiente paso sería guardar
+  las pantallas ya dibujadas, pero eso arrastra datos viejos y los números de
+  generación de cada bucle: no se hizo sin preguntar.
+- **Consumo con todo lo nuevo encendido** (atajo, aviso de carga): 0.35 % de
+  CPU con la ventana a la vista, 0.09 % en la bandeja, 70 MB.
+
+### Funciones nuevas y sus decisiones
+
+- **Buscador Ctrl+K**: `buscar_en_paleta()` es pura (se prueba sin ventana):
+  sin tildes ni mayúsculas, sinónimos es/en que no se enseñan (por eso no
+  pasan por `t()`), y con faltas vía `difflib`. Solo acciones que no borran
+  nada sin preguntar; las que borran (papelera) llevan a su pantalla. Ocho
+  botones fijos que se reescriben, no se crean por tecla.
+- **Bandeja**: "Liberar RAM" y "Limpieza rápida". La notificación va por
+  `tray.notificar()` (`pystray.Icon.notify`), instantánea, y no por
+  `opt.notificar_windows`, que lanza un PowerShell (~1 s y ~60 MB justo
+  después de liberar RAM). Si el Modo Juego está activo, se excluye el PID
+  del juego, igual que el autopiloto.
+- **Atajo global** (`atajos.py`): `RegisterHotKey` en un hilo propio con
+  `GetMessageW`; para soltarlo, `PostThreadMessageW(WM_QUIT)` y el propio
+  hilo hace `UnregisterHotKey`. NADA de ganchos de teclado (`keyboard`,
+  `SetWindowsHookEx`): ven cada tecla, que es lo que hace un keylogger. Si
+  otro programa ya tiene la combinación, Windows lo rechaza y la app lo dice
+  ("ocupado"). Apagado de fábrica.
+- **Wi-Fi** (`sysmon.leer_wifi`): `wlanapi.dll` por ctypes, no `netsh` (sale
+  traducido). Tamaños verificados en la prueba: `WLAN_BSS_ENTRY` 360,
+  `WLAN_INTERFACE_INFO` 532, `WLAN_CONNECTION_ATTRIBUTES` 604. **Sin
+  `WlanScan`, Windows 11 solo devuelve la red propia** en
+  `WlanGetNetworkBssList` (comprobado: 1 red sin escaneo, 24 con él), así
+  que `escanear=True` espera 4 s. La banda sale de la frecuencia del BSS
+  propio: los canales de 6 GHz repiten los números de 2.4 y 5. Solo cuentan
+  como vecinas las redes con RSSI ≥ -82 dBm. El SSID no va al Historial.
+- **Prueba de disco**: ver "errores corregidos". En este equipo: 720 MB/s
+  escritura, 1284 lectura, 13 MB/s en bloques de 4 KB.
+- **Extensiones** (`seg.auditar_extensiones`): `Secure Preferences` +
+  `Preferences` de cada perfil, `location` de Chromium (1 tienda; 2/3/6
+  otro programa; 4/8 desde carpeta; 7/9 directiva; 5/10 del navegador, no se
+  listan). **Caso real**: el desarrollador tiene perfiles de su escuela
+  (`clases.edu.sv`) con 10 extensiones forzadas por la organización; el
+  primer borrador las marcó TODAS como riesgo alto. Ahora los perfiles con
+  `is_managed` + `hosted_domain` en `Local State` dan origen "organizacion"
+  (informativo). Lo forzado desde el REGISTRO (`ExtensionInstallForcelist`)
+  sí es alto. En este equipo: 17 extensiones, 3 para revisar (McAfee
+  WebAdvisor, Adobe Acrobat, una VPN gratis en Edge).
+- **Accesos rotos** (`opt.buscar_accesos_rotos`): parser propio de .lnk
+  (MS-SHLLINK). Solo se marca un destino "local" en una unidad FIJA que esté
+  conectada; los programas "anunciados" de MSI (Office), las apps de la
+  Tienda y los de red o USB dan "otro" y no se tocan. Comparado contra
+  `WScript.Shell` en los 147 accesos de este equipo: coinciden. Encontró dos
+  rotos: uno de Roblox y **`server.lnk` del malware** (en la carpeta de
+  Inicio): los de esa carpeta salen SIN marcar y con aviso. No se borró.
+- **Vigilante**: `revisar_reinicio` (una vez por hora; reavisa cada 3 días
+  en el mismo arranque; se guarda en `aviso_reinicio` para no repetir al
+  reabrir) y `revisar_carga` (cada minuto; se rearma al desenchufar o al bajar
+  5 puntos; apagado de fábrica, porque muchas marcas ya cortan la carga solas).
+  Cada revisión del bucle va en su propio try: antes, si fallaba la de fugas,
+  no se miraba el disco.
+- **Salud de Inicio**: -5 con 7 días sin reiniciar, -10 con 14. "Arreglar
+  todo" no lo puede arreglar: hay que decírselo a la persona.
+- **Novedades**: solo si `preferencias.json` existía ANTES de arrancar
+  (`_habia_preferencias`) y `ultima_version_vista` no es esta versión. Si la
+  app arrancó en la bandeja, espera a que se abra la ventana.
+
+### Errores corregidos
+
+- **La prueba de disco medía la RAM.** Leía con `open()` el archivo que
+  acababa de escribir y Windows lo servía desde la caché. El comentario decía
+  que evitarlo "requería privilegios": falso. `FILE_FLAG_NO_BUFFERING` lo
+  puede usar cualquiera (búfer alineado con `VirtualAlloc`, bloques múltiplos
+  de 4096). Con `FILE_FLAG_DELETE_ON_CLOSE` el archivo desaparece aunque la
+  app muera a mitad.
+- **El Historial sumaba la RAM como espacio de disco.** Campo nuevo
+  `bytes_ram` en `report.add` y `_log_dev`; lo guardado antes se clasifica
+  por el comando (`_RASTROS_RAM`). La "Limpieza rápida" y "Arreglar todo"
+  guardan las dos cifras por separado.
+- **Importar ajustes** guardaba el JSON tal cual: `prefs.filtrar_importables`
+  deja solo claves conocidas, del tipo correcto, y nunca los registros de
+  otro equipo (`avisos_disco`, `aviso_reinicio`...).
+- **Fechas de drivers** como `/Date(1150848000000)/` (ConvertTo-Json de
+  PowerShell 5.1): `sysmon._fecha_cim`.
+- **`prueba_bucles.py` daba un falso fallo** al volverse más rápida la
+  pantalla: contaba un tic que luego se apagaba sin consultar nada. Ahora
+  cuenta las consultas de verdad (`get_cpu_details`).
+
+### Lección del entorno: las barras invertidas en Bash
+
+En la herramienta Bash, un heredoc con un script de Python colapsa `\\` en
+`\`: un `"\n"` acaba como un salto de línea real dentro de la cadena y rompe
+el archivo (pasó tres veces en esta sesión: `idiomas.py`, `report.py`,
+`main.py`). Para cualquier cambio que lleve barras invertidas: Edit/Write, o
+un `.py` escrito con Write en el scratchpad.
 
 ## Malware encontrado en el equipo del desarrollador (2026-10-04)
 

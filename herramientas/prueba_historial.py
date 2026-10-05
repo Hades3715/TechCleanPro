@@ -111,5 +111,49 @@ sin_disco.add("Prueba", "algo", "cmd", True, "ok")
 comprobar("guarda en memoria", sin_disco.total_acciones() == 1)
 comprobar("pero no lee ni escribe nada", sin_disco.historial_completo() == [])
 
+print("\n== 9. La RAM no se suma como espacio de disco (1.7.0) ==")
+# El fallo: la RAM liberada iba al mismo campo que el disco, y con la
+# liberacion automatica cada pocos minutos el "espacio total liberado"
+# llegaba a cientos de GB que nunca fueron espacio en disco.
+import json
+from datetime import datetime, timedelta
+
+carpeta3 = tempfile.mkdtemp(prefix="tcp_hist3_")
+s3 = rep.SessionReport(carpeta_datos=carpeta3)
+s3.add("Optimizar", "Liberar RAM", "NtSetSystemInformation(...)", True, "ok", bytes_ram=2_000_000_000)
+s3.add("Optimizar", "Limpiar temporales", "cmd", True, "ok", 50_000_000, 30)
+s3.add("Inicio", "Limpieza rapida", "cmd", True, "ok", bytes_liberados=10_000_000, bytes_ram=500_000_000)
+comprobar("la sesion separa disco", s3.total_bytes_liberados() == 60_000_000, f"{s3.total_bytes_liberados()}")
+comprobar("y RAM", s3.total_bytes_ram() == 2_500_000_000, f"{s3.total_bytes_ram()}")
+r3 = s3.resumen_historial()
+comprobar("el resumen guardado tambien", r3["bytes"] == 60_000_000 and r3["ram"] == 2_500_000_000,
+          f"disco={r3['bytes']} ram={r3['ram']}")
+
+# Acciones guardadas por la 1.6.0 (sin el campo bytes_ram): la RAM se
+# reconoce por el comando que la libero.
+ruta3 = os.path.join(carpeta3, rep.NOMBRE_ARCHIVO)
+hace_dos_meses = (datetime.now() - timedelta(days=62)).strftime("%Y-%m-%d %H:%M:%S")
+with open(ruta3, "a", encoding="utf-8") as f:
+    for comando, b in (("NtSetSystemInformation(SystemMemoryListInformation, MemoryEmptyWorkingSets)", 7_000_000_000),
+                       ("EmptyWorkingSet() via psapi.dll sobre cada proceso accesible", 1_000_000_000),
+                       ("Remove-Item %TEMP%", 40_000_000)):
+        f.write(json.dumps({"timestamp": hace_dos_meses, "seccion": "x", "accion": "vieja", "comando": comando,
+                            "exito": True, "resultado": "ok", "bytes_liberados": b,
+                            "archivos_afectados": 0, "sesion": "vieja"}) + "\n")
+r4 = s3.resumen_historial()
+comprobar("las de la 1.6.0 que liberaron RAM cuentan como RAM", r4["ram"] == 10_500_000_000, f"{r4['ram']}")
+comprobar("y las de disco siguen siendo disco", r4["bytes"] == 100_000_000, f"{r4['bytes']}")
+comprobar("'este mes' deja fuera lo de hace dos meses",
+          r4["mes_bytes"] == 60_000_000 and r4["mes_ram"] == 2_500_000_000 and r4["mes_acciones"] == 3,
+          f"{r4['mes_bytes']} / {r4['mes_ram']} / {r4['mes_acciones']}")
+destino3 = os.path.join(carpeta3, "export.txt")
+s3.export_txt(destino3, incluir_historial=True)
+texto3 = open(destino3, encoding="utf-8").read()
+comprobar("el .txt exportado lo separa igual",
+          "Espacio de disco liberado: 100000000 bytes" in texto3 and "RAM liberada: 10500000000 bytes" in texto3)
+vacio = rep.SessionReport(carpeta_datos=tempfile.mkdtemp(prefix="tcp_hist4_")).resumen_historial()
+comprobar("sin historial, el resumen trae todas las claves a cero",
+          all(vacio[k] == 0 for k in ("bytes", "ram", "mes_bytes", "mes_ram", "mes_acciones")))
+
 print("\nRESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS: " + ", ".join(fallos)))
 sys.exit(1 if fallos else 0)

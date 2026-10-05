@@ -383,3 +383,311 @@ def programas_en_red(procesos=None, conexiones=None):
                        "de_usuario": en_carpeta_de_usuario(r["exe"])})
     salida.sort(key=lambda r: (-len(r["escucha"]), -r["conexiones"]))
     return salida
+
+
+# ============================================================
+#  Extensiones del navegador (1.7.0)
+# ============================================================
+# Una extensión con permiso para "leer y cambiar todos tus datos en todas
+# las webs" ve tus contraseñas al escribirlas, tu banco y tu correo. Es la
+# forma más barata de robar cuentas que hay, y ningún antivirus la mira
+# porque, técnicamente, es una función del navegador. SOLO SE LEE: no se
+# desactiva ni se borra nada (eso se hace desde el propio navegador).
+
+# (nombre, carpeta de datos) de los navegadores basados en Chromium.
+NAVEGADORES_CHROMIUM = (
+    ("Chrome", os.path.join("%LOCALAPPDATA%", "Google", "Chrome", "User Data")),
+    ("Edge", os.path.join("%LOCALAPPDATA%", "Microsoft", "Edge", "User Data")),
+    ("Brave", os.path.join("%LOCALAPPDATA%", "BraveSoftware", "Brave-Browser", "User Data")),
+    ("Vivaldi", os.path.join("%LOCALAPPDATA%", "Vivaldi", "User Data")),
+    ("Opera", os.path.join("%APPDATA%", "Opera Software", "Opera Stable")),
+    ("Opera GX", os.path.join("%APPDATA%", "Opera Software", "Opera GX Stable")),
+)
+
+# Claves de registro de directivas (HKLM y HKCU) de cada navegador.
+DIRECTIVAS_NAVEGADOR = {"Chrome": r"SOFTWARE\Policies\Google\Chrome",
+                        "Edge": r"SOFTWARE\Policies\Microsoft\Edge",
+                        "Brave": r"SOFTWARE\Policies\BraveSoftware\Brave"}
+
+# Manifest::Location de Chromium -> de dónde salió la extensión.
+#   1 tienda · 2/3/6 la instaló otro programa · 4/8 cargada desde una
+#   carpeta (sin tienda) · 7/9 forzada por directiva · 5/10 parte del
+#   propio navegador (no se listan).
+ORIGEN_POR_UBICACION = {1: "tienda", 2: "externa", 3: "externa", 6: "externa",
+                        4: "sin_tienda", 8: "sin_tienda", 7: "directiva", 9: "directiva"}
+UBICACIONES_INTERNAS = {5, 10}
+
+TODAS_LAS_WEBS = {"<all_urls>", "*://*/*", "http://*/*", "https://*/*", "*://*/", "http://*/", "https://*/"}
+# Permisos que, juntos con "todas las webs", dan acceso a cuentas y datos.
+PERMISOS_DATOS = {"cookies", "webRequest", "webRequestBlocking", "history", "clipboardRead"}
+
+
+def _leer_json(ruta):
+    try:
+        with open(ruta, encoding="utf-8-sig") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def _mensaje_extension(carpeta, texto, idioma):
+    """Resuelve "__MSG_appName__" con los _locales de la extensión: el
+    idioma de la app, si la extensión lo trae, y si no el suyo por defecto."""
+    if not isinstance(texto, str) or not texto.startswith("__MSG_") or not texto.endswith("__"):
+        return texto
+    clave = texto[6:-2].lower()
+    manifiesto = _leer_json(os.path.join(carpeta, "manifest.json")) or {}
+    for loc in (idioma, idioma + "_419", manifiesto.get("default_locale"), "en", "en_US"):
+        if not loc:
+            continue
+        mensajes = _leer_json(os.path.join(carpeta, "_locales", loc, "messages.json"))
+        if isinstance(mensajes, dict):
+            for k, v in mensajes.items():
+                if k.lower() == clave and isinstance(v, dict) and v.get("message"):
+                    return v["message"]
+    return texto
+
+
+def _carpeta_version(base_ext):
+    """Carpeta de la versión instalada (Extensions/<id>/<versión>): la más
+    reciente si hubiera varias a medio actualizar."""
+    try:
+        versiones = [d for d in os.listdir(base_ext) if os.path.isdir(os.path.join(base_ext, d))]
+    except OSError:
+        return None
+    return os.path.join(base_ext, sorted(versiones)[-1]) if versiones else None
+
+
+def _permisos_de(manifiesto):
+    permisos = set()
+    for clave in ("permissions", "host_permissions"):
+        for p in manifiesto.get(clave) or []:
+            if isinstance(p, str):
+                permisos.add(p)
+    # Un script de contenido en todas las webs lee las páginas igual que un permiso.
+    for cs in manifiesto.get("content_scripts") or []:
+        if isinstance(cs, dict):
+            for m in cs.get("matches") or []:
+                if isinstance(m, str) and m in TODAS_LAS_WEBS:
+                    permisos.add(m)
+    return permisos
+
+
+def _leer_perfiles_chromium(navegador, carpeta, idioma):
+    """Extensiones de todos los perfiles de un navegador Chromium."""
+    estado_local = _leer_json(os.path.join(carpeta, "Local State")) or {}
+    cache_perfiles = (estado_local.get("profile") or {}).get("info_cache") or {}
+    nombres_perfil = {k: (v or {}).get("name") for k, v in cache_perfiles.items()}
+    # Perfiles con cuenta de una escuela o empresa (Google Workspace,
+    # Microsoft 365): su organización puede instalar extensiones a la
+    # fuerza, y eso es legítimo. Sin distinguirlo, el auditor marcaba como
+    # peligrosas las diez extensiones que pone la escuela.
+    organizacion = {}
+    for k, v in cache_perfiles.items():
+        dominio = (v or {}).get("hosted_domain") or ""
+        if (v or {}).get("is_managed") and dominio and dominio != "NO_HOSTED_DOMAIN":
+            organizacion[k] = dominio
+    # Opera guarda el perfil directamente en la carpeta, sin "Default".
+    perfiles = [carpeta] if navegador.startswith("Opera") else []
+    try:
+        perfiles += [os.path.join(carpeta, d) for d in os.listdir(carpeta)
+                     if d == "Default" or d.startswith("Profile ")]
+    except OSError:
+        return []
+    salida = []
+    for perfil in perfiles:
+        ajustes = {}
+        for archivo in ("Preferences", "Secure Preferences"):
+            datos = _leer_json(os.path.join(perfil, archivo)) or {}
+            for ext_id, v in ((datos.get("extensions") or {}).get("settings") or {}).items():
+                if isinstance(v, dict):
+                    ajustes.setdefault(ext_id, {}).update(v)
+        base = os.path.join(perfil, "Extensions")
+        try:
+            instaladas = [d for d in os.listdir(base) if len(d) == 32 and d.isalpha()]
+        except OSError:
+            instaladas = []
+        nombre_perfil = nombres_perfil.get(os.path.basename(perfil)) or os.path.basename(perfil)
+        dominio = organizacion.get(os.path.basename(perfil))
+        for ext_id in set(instaladas) | {k for k, v in ajustes.items() if v.get("location") in (4, 8)}:
+            v = ajustes.get(ext_id, {})
+            ubicacion = v.get("location")
+            if ubicacion in UBICACIONES_INTERNAS:
+                continue
+            # Las cargadas desde una carpeta no viven en Extensions/: su
+            # ruta es absoluta y apunta a donde estén.
+            ruta = v.get("path") or ""
+            if ruta and not os.path.isabs(ruta):
+                ruta = os.path.join(base, ruta)
+            if not ruta or not os.path.isdir(ruta):
+                ruta = _carpeta_version(os.path.join(base, ext_id))
+            manifiesto = (_leer_json(os.path.join(ruta, "manifest.json")) if ruta else None) \
+                or v.get("manifest") or {}
+            if not manifiesto:
+                continue
+            if manifiesto.get("theme") and not manifiesto.get("permissions"):
+                continue                     # un tema de colores no hace nada
+            desactivada = bool(v.get("disable_reasons")) or v.get("state") == 0
+            origen = ORIGEN_POR_UBICACION.get(ubicacion, "tienda")
+            if origen == "tienda" and v.get("from_webstore") is False:
+                origen = "fuera_tienda"
+            if origen == "directiva" and dominio:
+                origen = "organizacion"
+            salida.append({
+                "navegador": navegador, "perfil": nombre_perfil, "id": ext_id,
+                "nombre": _mensaje_extension(ruta or "", manifiesto.get("name") or ext_id, idioma) or ext_id,
+                "version": manifiesto.get("version") or "?",
+                "activa": not desactivada, "origen": origen,
+                "permisos": sorted(_permisos_de(manifiesto)), "ruta": ruta or "",
+                "organizacion": dominio if origen == "organizacion" else None,
+            })
+    return salida
+
+
+def _leer_firefox():
+    """Extensiones de Firefox, de extensions.json de cada perfil."""
+    raiz = os.path.join(os.environ.get("APPDATA", ""), "Mozilla", "Firefox", "Profiles")
+    salida = []
+    try:
+        perfiles = [os.path.join(raiz, d) for d in os.listdir(raiz)]
+    except OSError:
+        return []
+    for perfil in perfiles:
+        datos = _leer_json(os.path.join(perfil, "extensions.json")) or {}
+        for a in datos.get("addons") or []:
+            if not isinstance(a, dict) or a.get("type") != "extension":
+                continue
+            if a.get("location") in ("app-builtin", "app-system-defaults", "app-system-addons"):
+                continue
+            permisos = (a.get("userPermissions") or {})
+            local = a.get("defaultLocale") or {}
+            origen = "tienda"
+            if a.get("foreignInstall"):
+                origen = "externa"
+            if a.get("signedState") is not None and a.get("signedState") <= 0:
+                origen = "sin_tienda"
+            salida.append({
+                "navegador": "Firefox", "perfil": os.path.basename(perfil), "id": a.get("id") or "?",
+                "nombre": local.get("name") or a.get("id") or "?", "version": a.get("version") or "?",
+                "activa": bool(a.get("active")), "origen": origen,
+                "permisos": sorted(set(permisos.get("permissions") or []) | set(permisos.get("origins") or [])),
+                "ruta": a.get("path") or "", "organizacion": None,
+            })
+    return salida
+
+
+def leer_directivas_extensiones():
+    """{navegador: [(id, url)]} de las extensiones FORZADAS por directiva
+    (ExtensionInstallForcelist), en HKLM y HKCU. Así se instala a la fuerza
+    una extensión que el usuario no puede quitar desde el navegador."""
+    if not IS_WINDOWS:
+        return {}
+    import winreg
+    salida = {}
+    for navegador, clave in DIRECTIVAS_NAVEGADOR.items():
+        for raiz in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            try:
+                with winreg.OpenKey(raiz, clave + r"\ExtensionInstallForcelist") as k:
+                    i = 0
+                    while True:
+                        try:
+                            _, valor, _ = winreg.EnumValue(k, i)
+                        except OSError:
+                            break
+                        i += 1
+                        partes = str(valor).split(";", 1)
+                        salida.setdefault(navegador, []).append(
+                            (partes[0].strip(), partes[1].strip() if len(partes) > 1 else ""))
+            except OSError:
+                continue
+    return salida
+
+
+def evaluar_extension(ext):
+    """(nivel, [claves de motivo]) de una extensión. Pura: se prueba con
+    datos de mentira. Los niveles son los del resto del auditor."""
+    motivos = []
+    nivel = "info"
+    permisos = set(ext.get("permisos") or [])
+    todas = bool(permisos & TODAS_LAS_WEBS)
+    origen = ext.get("origen")
+    if origen == "sin_tienda":
+        motivos.append("ext_mot_sin_tienda")
+        nivel = "alto"
+    elif origen == "directiva":
+        motivos.append("ext_mot_directiva")
+        nivel = "alto"
+    elif origen == "fuera_tienda":
+        motivos.append("ext_mot_fuera_tienda")
+        nivel = "medio"
+    elif origen == "externa":
+        motivos.append("ext_mot_externa")
+    elif origen == "organizacion":
+        motivos.append("ext_mot_organizacion")
+    if "debugger" in permisos:
+        # Con "debugger" puede controlar pestañas enteras; si además llega a
+        # todas las webs, es de lo más peligroso que una extensión puede pedir.
+        motivos.append("ext_mot_debugger")
+        nivel = "alto" if todas or nivel == "alto" else "medio"
+    if "proxy" in permisos:
+        motivos.append("ext_mot_proxy")
+        if nivel == "info":
+            nivel = "medio"
+    if todas:
+        if permisos & PERMISOS_DATOS:
+            motivos.append("ext_mot_todo_y_datos")
+            if nivel == "info":
+                nivel = "medio"
+        else:
+            motivos.append("ext_mot_todas_webs")
+    if "nativeMessaging" in permisos:
+        motivos.append("ext_mot_nativo")
+    # Lo que pone la escuela o la empresa ya lo revisó alguien: se informa
+    # de los permisos, pero no se pinta como amenaza.
+    if origen == "organizacion" and nivel != "alto":
+        nivel = "info"
+    return nivel, motivos
+
+
+def auditar_extensiones(idioma="es"):
+    """Todas las extensiones de todos los navegadores, agrupadas: la misma
+    extensión en varios perfiles del mismo navegador sale UNA vez, con la
+    lista de perfiles. Ordenadas de más a menos preocupante."""
+    crudas = []
+    for navegador, carpeta in NAVEGADORES_CHROMIUM:
+        carpeta = os.path.expandvars(carpeta)
+        if os.path.isdir(carpeta):
+            crudas += _leer_perfiles_chromium(navegador, carpeta, idioma)
+    crudas += _leer_firefox()
+    forzadas = leer_directivas_extensiones()
+
+    grupos = {}
+    for e in crudas:
+        g = grupos.setdefault((e["navegador"], e["id"]), dict(e, perfiles=[]))
+        g["perfiles"].append(e["perfil"])
+        g["activa"] = g["activa"] or e["activa"]
+        g["permisos"] = sorted(set(g["permisos"]) | set(e["permisos"]))
+        # Si en algún perfil llegó por una vía peor, manda esa.
+        peor = ("sin_tienda", "directiva", "fuera_tienda", "externa", "organizacion", "tienda")
+        if peor.index(e["origen"]) < peor.index(g["origen"]):
+            g["origen"] = e["origen"]
+        g["organizacion"] = g.get("organizacion") or e.get("organizacion")
+    # Forzadas por directiva que el auditor no vio en ninguna carpeta:
+    # también cuentan (puede que el navegador aún no las haya descargado).
+    for navegador, lista in forzadas.items():
+        for ext_id, url in lista:
+            g = grupos.get((navegador, ext_id))
+            if g is None:
+                grupos[(navegador, ext_id)] = {
+                    "navegador": navegador, "perfil": "", "perfiles": [], "id": ext_id, "nombre": ext_id,
+                    "version": "?", "activa": True, "origen": "directiva", "permisos": [],
+                    "ruta": url, "organizacion": None}
+            else:
+                g["origen"] = "directiva"
+    salida = []
+    for g in grupos.values():
+        g["nivel"], g["motivos"] = evaluar_extension(g)
+        salida.append(g)
+    orden = {n: i for i, n in enumerate(NIVELES)}
+    salida.sort(key=lambda e: (orden.get(e["nivel"], 9), not e["activa"], e["navegador"], e["nombre"].lower()))
+    return salida

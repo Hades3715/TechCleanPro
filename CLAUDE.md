@@ -10,7 +10,9 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
 - `codigo/optimizer.py` — acciones sobre el sistema. `autopilot.py` — todo lo
   que corre en segundo plano (Modo Juego, RAM automática, `Vigilante`).
 - `codigo/tecnico.py` — herramientas de la edición Admin. `seguridad.py` —
-  auditor de malware (solo lee). `idiomas.py` — todos los textos.
+  auditor de malware y de extensiones (solo lee). `atajos.py` — atajo de
+  teclado global (`RegisterHotKey`, nunca ganchos de teclado).
+  `idiomas.py` — todos los textos.
 - `herramientas/` — banco de pruebas. `compilar/` — PyInstaller e Inno Setup.
 
 ## Ediciones y builds
@@ -23,7 +25,7 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
   buscador de actualizaciones de la app compara las dos.
 
 ## Antes de dar algo por terminado
-`herramientas\Verificar_Todo.bat` (35 comprobaciones; la última gasta ~60 MB
+`herramientas\Verificar_Todo.bat` (39 comprobaciones; la última gasta ~60 MB
 de datos). Una suelta: `PYTHONIOENCODING=utf-8 python herramientas/<x>.py`.
 Al añadir una prueba, registrarla en el `.bat` (o `auditoria.py` falla); al
 añadir un módulo, sumarlo a `herramientas/_rutas.py` (`MODULOS`).
@@ -51,6 +53,10 @@ añadir un módulo, sumarlo a `herramientas/_rutas.py` (`MODULOS`).
 - **Ligera:** sin dependencias nuevas; nada en segundo plano sin necesidad;
   con la ventana oculta no se refresca nada. Medir el consumo si se toca algo
   que corre solo.
+- **Nada que espere en el hilo de Tk**, ni un `psutil.cpu_percent(interval=…)`
+  ni un `time.sleep`: congelaba Inicio el 15 % del tiempo (ver CONTEXTO,
+  "Versión 1.7.0"). Listas largas: un `CTkTextbox`, no un widget por fila.
+  `herramientas/prueba_rendimiento.py` lo vigila.
 - `.bat` con finales de línea CRLF y rutas con `/`.
 
 ## Entorno del desarrollador

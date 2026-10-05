@@ -243,7 +243,7 @@ class Autopilot:
                 t("auto_ram_resultado", uso=f"{uso:.0f}", umbral=self.umbral_ram,
                   procesos=afectados, tamano=opt.format_bytes(liberado)),
                 seccion=t("seccion_automatico"), exito=True,
-                bytes_liberados=liberado, archivos_afectados=afectados,
+                bytes_ram=liberado, archivos_afectados=afectados,
             )
 
     def _chequear_juego(self):
@@ -414,7 +414,7 @@ class LimpiezaAutomaticaRAM:
                       tamano=opt.format_bytes(r["liberado"]))
         self.log_callback(t("auto_ram_accion"), r["comando"], texto,
                           seccion=t("seccion_automatico"), exito=True,
-                          bytes_liberados=r["liberado"], archivos_afectados=r["procesos"])
+                          bytes_ram=r["liberado"], archivos_afectados=r["procesos"])
         return motivo
 
 
@@ -439,6 +439,9 @@ PROCESOS_SIN_VIGILAR = {"system", "registry", "memory compression", "system idle
 
 DISCO_REAVISO_SEG = 24 * 3600                  # como mucho un aviso al día por unidad
 DISCO_MARGEN_REARME = 5                        # vuelve a avisar si bajó 5 puntos y volvió a subir
+
+REINICIO_REAVISO_SEG = 3 * 24 * 3600           # si no reinicia, se repite el aviso cada 3 días
+CARGA_MARGEN_REARME = 5                        # tras avisar, rearma al bajar 5 puntos o desenchufar
 
 
 def es_fuga(muestras):
@@ -566,6 +569,18 @@ def _leer_procesos():
     return procesos
 
 
+def _leer_bateria():
+    """(porcentaje, enchufado) o None si el equipo no tiene batería.
+    psutil lo saca de GetSystemPowerStatus: no cuesta nada."""
+    try:
+        b = psutil.sensors_battery()
+    except Exception:
+        return None
+    if b is None or b.percent is None:
+        return None
+    return b.percent, bool(b.power_plugged)
+
+
 def _leer_discos():
     """[(unidad, porcentaje_usado, bytes_libres)] de las unidades fijas."""
     discos = []
@@ -581,21 +596,26 @@ def _leer_discos():
 
 
 class Vigilante:
-    """Mira en segundo plano dos cosas que el usuario no suele vigilar y
-    avisa con una notificación de Windows:
+    """Mira en segundo plano cosas que el usuario no suele vigilar y avisa
+    con una notificación de Windows:
 
     - Un programa con una fuga de memoria (su memoria privada no para de
       crecer). Mem Reduct no lo hace: liberar RAM a un programa con fuga
       solo esconde el problema unos minutos.
     - Una unidad casi llena, con el mismo umbral que el semáforo de Inicio.
+    - (1.7.0) Muchos días sin reiniciar, y la batería en su límite de carga.
 
     Una muestra por minuto: leer la memoria de ~200 procesos cuesta unos
-    milisegundos. Los discos, cada 10 muestras.
+    milisegundos, y la batería nada. Los discos, cada 10 muestras; los días
+    sin reiniciar, una vez por hora.
     """
 
     def __init__(self, log_callback=None, notificar=None, avisar_fugas=None, avisar_disco=None,
                  umbral_disco=None, segundos_entre_muestras=60, leer_procesos=None, leer_discos=None,
-                 avisos_disco_guardados=None, guardar_avisos_disco=None):
+                 avisos_disco_guardados=None, guardar_avisos_disco=None,
+                 avisar_reinicio=None, dias_reinicio=None, leer_arranque=None,
+                 aviso_reinicio_guardado=None, guardar_aviso_reinicio=None,
+                 avisar_carga=None, limite_carga=None, leer_bateria=None):
         self.log_callback = log_callback or (lambda *a, **k: None)
         self.notificar = notificar or opt.notificar_windows
         self.avisar_fugas = avisar_fugas or (lambda: True)
@@ -618,6 +638,17 @@ class Vigilante:
         self._guardar_avisos_disco = guardar_avisos_disco or (lambda avisos: None)
         # Lo que la interfaz puede consultar: {pid: {"nombre", "crecimiento", "actual", "minutos"}}
         self.fugas = {}
+        # 1.7.0: días sin reiniciar y límite de carga de la batería.
+        self.avisar_reinicio = avisar_reinicio or (lambda: True)
+        self.dias_reinicio = dias_reinicio or (lambda: 7)
+        self._leer_arranque = leer_arranque or psutil.boot_time
+        # También se guarda en disco, por lo mismo que los avisos de disco.
+        self._aviso_reinicio = dict(aviso_reinicio_guardado or {})
+        self._guardar_aviso_reinicio = guardar_aviso_reinicio or (lambda aviso: None)
+        self.avisar_carga = avisar_carga or (lambda: False)
+        self.limite_carga = limite_carga or (lambda: 80)
+        self._leer_bateria = leer_bateria or _leer_bateria
+        self._carga_avisada = False
 
     def iniciar(self):
         if self.activo:
@@ -632,15 +663,21 @@ class Vigilante:
     def _loop(self, mi_generacion):
         vuelta = 0
         while self.activo and mi_generacion == self._generacion:
-            try:
-                self.revisar_fugas()
-                # El disco, cada 10 vueltas y NO en la primera: al encender el
-                # equipo ya hay bastante en pantalla como para sumar un aviso
-                # en el primer segundo.
-                if vuelta % 10 == 9:
-                    self.revisar_discos()
-            except Exception:
-                pass
+            # Cada revisión por separado: si una falla (WMI raro, un disco
+            # que desaparece) no se lleva por delante a las demás.
+            revisiones = [self.revisar_fugas, self.revisar_carga]
+            # El disco, cada 10 vueltas y NO en la primera: al encender el
+            # equipo ya hay bastante en pantalla como para sumar un aviso
+            # en el primer segundo. Los días sin reiniciar, una vez por hora.
+            if vuelta % 10 == 9:
+                revisiones.append(self.revisar_discos)
+            if vuelta % 60 == 5:
+                revisiones.append(self.revisar_reinicio)
+            for revision in revisiones:
+                try:
+                    revision()
+                except Exception:
+                    pass
             vuelta += 1
             time.sleep(self.segundos_entre_muestras)
 
@@ -717,3 +754,67 @@ class Vigilante:
                               seccion=t("seccion_automatico"), exito=bool(mostrada))
             avisadas.append(unidad)
         return avisadas
+
+    # ---------------- Días sin reiniciar (1.7.0) ----------------
+    def dias_encendido(self, ahora=None):
+        try:
+            arranque = self._leer_arranque()
+        except Exception:
+            return None
+        if not arranque:
+            return None
+        ahora = time.time() if ahora is None else ahora
+        return max(0.0, (ahora - arranque) / 86400)
+
+    def revisar_reinicio(self, ahora=None):
+        """Avisa si el equipo lleva `dias_reinicio()` días sin reiniciarse.
+        Devuelve True si avisó.
+
+        Por qué importa: con el "Inicio rápido" de Windows (activado de
+        fábrica), APAGAR no reinicia el sistema: guarda su estado y lo
+        recupera al encender. Muchos equipos llevan semanas sin un reinicio
+        de verdad aunque se apaguen cada noche, y ahí se acumulan fugas,
+        controladores colgados y actualizaciones a medias."""
+        if not self.avisar_reinicio():
+            return False
+        ahora = time.time() if ahora is None else ahora
+        dias = self.dias_encendido(ahora)
+        if dias is None or dias < self.dias_reinicio():
+            return False
+        arranque = int(self._leer_arranque())
+        anterior = self._aviso_reinicio
+        if anterior.get("arranque") == arranque and ahora - (anterior.get("hora") or 0) < REINICIO_REAVISO_SEG:
+            return False
+        self._aviso_reinicio = {"arranque": arranque, "hora": ahora}
+        self._guardar_aviso_reinicio(dict(self._aviso_reinicio))
+        texto = t("vig_reinicio_msg", dias=int(dias))
+        mostrada = self.notificar(t("vig_reinicio_titulo"), texto)
+        self.log_callback(t("vig_reinicio_log"), "psutil.boot_time()", texto,
+                          seccion=t("seccion_automatico"), exito=bool(mostrada))
+        return True
+
+    # ---------------- Límite de carga de la batería (1.7.0) ----------------
+    def revisar_carga(self):
+        """Avisa UNA vez cuando, enchufado, la batería llega al límite (80 %
+        de fábrica): pasar el día al 100 % y caliente es lo que más la
+        desgasta. Se rearma al desenchufar o al bajar unos puntos.
+        Devuelve True si avisó."""
+        if not self.avisar_carga():
+            self._carga_avisada = False
+            return False
+        estado = self._leer_bateria()
+        if estado is None:
+            return False
+        porcentaje, enchufado = estado
+        limite = self.limite_carga()
+        if not enchufado or porcentaje < limite - CARGA_MARGEN_REARME:
+            self._carga_avisada = False
+            return False
+        if porcentaje < limite or self._carga_avisada:
+            return False
+        self._carga_avisada = True
+        texto = t("vig_carga_msg", porcentaje=f"{porcentaje:.0f}", limite=limite)
+        mostrada = self.notificar(t("vig_carga_titulo"), texto)
+        self.log_callback(t("vig_carga_log"), "GetSystemPowerStatus", texto,
+                          seccion=t("seccion_automatico"), exito=bool(mostrada))
+        return True

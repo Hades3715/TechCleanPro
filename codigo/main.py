@@ -40,6 +40,7 @@ import tecnico as tec
 import seguridad as seg
 import widget as widget_mod
 import tray as tray_mod
+import atajos
 import autopilot as autopilot_mod
 import preferences as prefs
 import rutas
@@ -53,6 +54,29 @@ except ImportError:
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+
+def _sin_redibujo_forzado(clase):
+    """BUG de rendimiento corregido (de customtkinter 6.0, no nuestro):
+    CTkScrollbar y CTkOptionMenu llaman a update_idletasks() al final de
+    CADA _draw. Eso recalcula la disposición de la ventana ENTERA, y al
+    recalcularla las barras se vuelven a mover y a dibujar: una cascada.
+    Medido: cerca del 30 % del tiempo de abrir una pantalla, y la mitad de
+    Ajustes. Tk redibuja igual en cuanto el hilo queda libre, así que
+    forzarlo no aporta nada que se vea. Se anula solo en el canvas de esos
+    dos controles, no en el resto de la app."""
+    original = clase._draw
+
+    def _draw(self, *args, **kwargs):
+        canvas = getattr(self, "_canvas", None)
+        if canvas is not None and "update_idletasks" not in canvas.__dict__:
+            canvas.update_idletasks = lambda: None
+        return original(self, *args, **kwargs)
+    clase._draw = _draw
+
+
+for _clase in (ctk.CTkScrollbar, ctk.CTkOptionMenu):
+    _sin_redibujo_forzado(_clase)
+
 COLOR_OK = "#2ecc71"
 COLOR_WARN = "#f1c40f"
 COLOR_CRIT = "#e74c3c"
@@ -62,7 +86,7 @@ COLOR_DONAR = "#ff5e5b"   # calido, para que la tarjeta de apoyo no se pierda en
 
 DEV_NAME = "Edwin Javier Cortez Cardoza"
 DEV_ALIAS = "Hades"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.7.0"
 
 # ---------------------------------------------------------------------------
 # EDICIÓN: "cliente" (por defecto) oculta todo lo administrativo/técnico y
@@ -159,7 +183,109 @@ COMANDOS_DISPONIBLES = {
     "/plan": "cmd_plan",
     "/red": "cmd_red",
     "/tecnico": "cmd_tecnico",
+    # 1.7.0
+    "/wifi": "cmd_wifi",
+    "/disco": "cmd_disco",
+    "/extensiones": "cmd_extensiones",
+    "/accesos": "cmd_accesos",
+    "/encendido": "cmd_encendido",
+    "/buscar": "cmd_buscar",
 }
+
+# Lo que enseña la ventana de novedades al actualizar (claves de idiomas.py).
+NOVEDADES = ("nov_170_rapida", "nov_170_paleta", "nov_170_bandeja", "nov_170_atajo", "nov_170_wifi",
+             "nov_170_disco", "nov_170_extensiones", "nov_170_accesos", "nov_170_avisos",
+             "nov_170_historial")
+
+
+def _sin_acentos(texto):
+    import unicodedata
+    texto = unicodedata.normalize("NFD", str(texto).lower())
+    return "".join(c for c in texto if unicodedata.category(c) != "Mn")
+
+
+def buscar_en_paleta(entradas, consulta):
+    """Filtra y ordena las entradas del buscador de funciones (Ctrl+K).
+
+    entradas: [(título, dónde, palabras extra, acción)]. Cada palabra de la
+    consulta tiene que aparecer en el título, en el dónde o en las palabras
+    extra, sin mirar mayúsculas ni tildes ("dns" encuentra "DNS", "energia"
+    encuentra "Energía"). Primero lo que EMPIEZA por lo escrito, luego lo
+    que lo contiene en el título, y al final lo que solo coincide en los
+    sinónimos. Si no hay nada, se prueba con faltas de ortografía
+    ("memroia")."""
+    palabras = _sin_acentos(consulta).split()
+    if not palabras:
+        return list(entradas)
+    puntuadas = []
+    for orden, e in enumerate(entradas):
+        titulo = _sin_acentos(e[0])
+        resto = _sin_acentos(f"{e[1]} {e[2]}")
+        if all(p in titulo or p in resto for p in palabras):
+            if titulo.startswith(palabras[0]):
+                nota = 0
+            elif all(p in titulo for p in palabras):
+                nota = 1
+            else:
+                nota = 2
+            puntuadas.append((nota, orden, e))
+    if not puntuadas:
+        consulta_limpia = " ".join(palabras)
+        for orden, e in enumerate(entradas):
+            candidatas = _sin_acentos(f"{e[0]} {e[2]}").split()
+            if difflib.get_close_matches(consulta_limpia, candidatas, n=1, cutoff=0.75):
+                puntuadas.append((3, orden, e))
+    puntuadas.sort(key=lambda x: (x[0], x[1]))
+    return [e for _, _, e in puntuadas]
+
+
+_BANDAS_WIFI = {"2.4": "wifi_banda_24", "5": "wifi_banda_5", "6": "wifi_banda_6"}
+_VEREDICTOS_WIFI = {"bien": "wifi_v_bien", "regular": "wifi_v_regular", "mal": "wifi_v_mal"}
+
+
+def texto_wifi(datos):
+    """(texto, nivel) para enseñar lo que devuelve sysmon.leer_wifi().
+    nivel: "bien" | "regular" | "mal" | "info" (sin Wi-Fi o sin conexión)."""
+    if datos is None:
+        return t("wifi_sin_adaptador"), "info"
+    conectado = next((w for w in datos if w.get("conectado")), None)
+    if conectado is None:
+        return t("wifi_sin_conexion"), "info"
+    w = conectado
+    nd = t("comp_nd")
+    lineas = [
+        t("wifi_red", ssid=w.get("ssid") or t("wifi_ssid_oculto"), adaptador=w.get("adaptador") or nd),
+        t("wifi_senal", senal=w["senal"] if w.get("senal") is not None else nd,
+          rssi=w["rssi"] if w.get("rssi") is not None else nd),
+        t("wifi_banda_canal", banda=t(_BANDAS_WIFI[w["banda"]]) if w.get("banda") in _BANDAS_WIFI else nd,
+          canal=w.get("canal") or nd),
+        t("wifi_estandar", estandar=w.get("estandar") or nd, velocidad=w.get("velocidad_mbps") or nd),
+    ]
+    if w.get("redes_mismo_canal") is not None:
+        lineas.append(t("wifi_vecinas", mismo=w["redes_mismo_canal"], banda=w.get("redes_misma_banda") or 0))
+    if w.get("rssi") is None and w.get("senal") is None:
+        # Sin la señal no hay veredicto honesto: decir "está bien" sería inventarlo.
+        return "\n".join(lineas + ["", t("wifi_sin_datos")]), "info"
+    nivel, motivos = sysmon.veredicto_wifi(w)
+    lineas += ["", t(_VEREDICTOS_WIFI[nivel])]
+    for m in motivos:
+        lineas.append("• " + t(m, redes=w.get("redes_mismo_canal") or 0, velocidad=w.get("velocidad_mbps") or 0,
+                               rssi=w.get("rssi") if w.get("rssi") is not None else nd))
+    return "\n".join(lineas), nivel
+
+
+_CLASES_DISCO = {"hdd": "comp_disco_clase_hdd", "ssd": "comp_disco_clase_ssd", "nvme": "comp_disco_clase_nvme"}
+
+
+def texto_disco(r, tipo_windows=None):
+    """Resultado de opt.prueba_velocidad_disco en palabras. tipo_windows:
+    lo que Windows dice que es la unidad ("SSD"/"HDD"), si se sabe."""
+    lineas = [t("comp_disco_resultado", escritura=r["escritura_mbs"], lectura=r["lectura_mbs"],
+                aleatoria=r.get("aleatoria_mbs", "?")),
+              t(_CLASES_DISCO.get(r.get("clase"), "comp_disco_clase_ssd"))]
+    if tipo_windows == "SSD" and r.get("clase") == "hdd":
+        lineas.append(t("comp_disco_ssd_lento"))
+    return "\n".join(lineas)
 
 # Las rutas de assets/ salen de rutas.py y no de dirname(__file__).
 # Con el codigo en codigo/ y assets/ en la raiz, dirname(__file__) apunta a
@@ -1250,6 +1376,10 @@ class TechCleanApp(ctk.CTk):
 
         # Preferencias del usuario (widget visible, perfil de energía, alerta
         # de temperatura, punto de restauración) — persisten entre sesiones.
+        # ¿Ya se había usado la app en este equipo? Se mira ANTES de que nada
+        # guarde preferencias: sirve para enseñar las novedades a quien
+        # actualiza, y no a quien la abre por primera vez.
+        self._habia_preferencias = os.path.exists(os.path.join(prefs.carpeta_datos(), "preferencias.json"))
         self.prefs = prefs.cargar()
         # En la edicion cliente el idioma NO se elige ni se guarda: es el de la
         # build. En admin se respeta lo que haya en preferencias y, si es la
@@ -1305,16 +1435,36 @@ class TechCleanApp(ctk.CTk):
             avisar_disco=lambda: self.prefs.get("avisar_disco_lleno", True),
             umbral_disco=lambda: self.prefs.get("umbral_salud_disco", 85),
             avisos_disco_guardados=self.prefs.get("avisos_disco", {}),
-            guardar_avisos_disco=self._guardar_avisos_disco)
+            guardar_avisos_disco=self._guardar_avisos_disco,
+            avisar_reinicio=lambda: self.prefs.get("avisar_reinicio", True),
+            dias_reinicio=lambda: self.prefs.get("dias_reinicio", 7),
+            aviso_reinicio_guardado=self.prefs.get("aviso_reinicio", {}),
+            guardar_aviso_reinicio=self._guardar_aviso_reinicio,
+            avisar_carga=lambda: self.prefs.get("avisar_carga_bateria", False),
+            limite_carga=lambda: self.prefs.get("limite_carga_bateria", 80))
         self.vigilante.iniciar()
 
+        self._ram_rapida_en_curso = False
         self.tray = tray_mod.TrayIcon(
             on_mostrar_panel=lambda: self.after(0, self._mostrar_ventana),
             on_toggle_widget=lambda: self.after(0, self._toggle_widget),
             on_toggle_auto=lambda: self.after(0, self._toggle_autopilot),
             on_salir=lambda: self.after(0, self._salir_definitivo),
+            on_liberar_ram=lambda: self.after(0, lambda: self._liberar_ram_rapida("bandeja")),
+            on_limpieza_rapida=lambda: self.after(0, self._limpieza_rapida_bandeja),
         )
         self.tray.iniciar()
+
+        # Atajo de teclado global para liberar RAM (apagado de fábrica).
+        self.atajo_ram = None
+        self._estado_atajo = "apagado"        # "apagado" | "activo" | "ocupado"
+        if self.prefs.get("atajo_ram_activo", False):
+            self._aplicar_atajo_ram()
+
+        # Buscador de funciones: Ctrl+K desde cualquier pantalla.
+        self.bind_all("<Control-k>", lambda e: self._abrir_paleta())
+        self.bind_all("<Control-K>", lambda e: self._abrir_paleta())
+        self._novedades_pendientes = False
 
         # Cerrar la ventana minimiza a la bandeja en vez de cerrar la app
         self.protocol("WM_DELETE_WINDOW", self._minimizar_a_bandeja)
@@ -1328,6 +1478,7 @@ class TechCleanApp(ctk.CTk):
         self.after(self._intervalo(2500), self._actualizar_icono_bandeja)
         self.after(self._intervalo(30000), self._chequear_bateria_automatica)
         self.after(5000, self._chequear_actualizacion_app)
+        self.after(1500, self._mostrar_novedades_si_toca)
 
     # ---------------- Layout general ----------------
     def _build_layout(self):
@@ -1337,9 +1488,7 @@ class TechCleanApp(ctk.CTk):
         self.sidebar = ctk.CTkScrollableFrame(self, width=210, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nswe")
 
-        self.contenido = ctk.CTkFrame(self, fg_color="transparent")
-        self.contenido.grid(row=0, column=1, sticky="nswe", padx=20, pady=20)
-        self.contenido.grid_columnconfigure((0, 1, 2), weight=1)
+        self.contenido = None          # lo crea _limpiar_contenido en cada pantalla
 
         self._construir_sidebar()
         self.mostrar_dashboard()
@@ -1383,6 +1532,7 @@ class TechCleanApp(ctk.CTk):
         self.lbl_admin.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
 
         botones = [
+            (t("sidebar_buscar"), self._abrir_paleta),
             (t("nav_inicio"), self.mostrar_dashboard),
             (t("nav_componentes"), self.mostrar_componentes),
             (t("nav_optimizar"), self.mostrar_optimizador),
@@ -1424,30 +1574,39 @@ class TechCleanApp(ctk.CTk):
                 row=fila_sig + 1, column=0, padx=20, pady=(10, 4), sticky="w")
 
     def _limpiar_contenido(self):
-        """Destruye todo lo que hubiera en la pantalla anterior antes de
-        dibujar la nueva. Si UN widget falla al destruirse (estado
-        corrupto, poco probable pero no imposible), no debe dejar a los
-        demás sin destruir — de ahí el try/except por widget en vez de uno
-        solo para todo el bucle.
+        """Deja un marco vacío para la pantalla nueva.
 
-        BUG corregido: self.contenido es un widget COMPARTIDO entre TODAS
-        las pantallas — si una pantalla cambiaba el ancho de alguna
-        columna o fila para su propio diseño (como hacía antes
-        Componentes, angostando la columna 2), esa configuración se
-        quedaba así para la SIGUIENTE pantalla que se abriera, sin
-        importar cuál fuera, dejando espacio real sin usar y una barra de
-        scroll que no debería estar ahí. Se restaura a un estado base
-        conocido cada vez que se cambia de pantalla, para que ninguna
-        quede "contaminada" por configuraciones de la anterior."""
-        for w in self.contenido.winfo_children():
-            try:
-                w.destroy()
-            except Exception:
-                pass
-        for col in range(3):
-            self.contenido.grid_columnconfigure(col, weight=1)
-        for fila in range(8):
-            self.contenido.grid_rowconfigure(fila, weight=0)
+        Rendimiento (1.7.0): antes se destruían aquí, uno por uno, los
+        widgets de la pantalla anterior, y eso era el 20-30 % de lo que
+        tardaba cambiar de pantalla (hasta 0.3 s en Gaming) ANTES de empezar
+        a dibujar la nueva. Ahora la pantalla vieja se oculta al instante en
+        su propio marco y se destruye cuando la nueva ya está dibujada.
+
+        Que cada pantalla estrene marco resuelve además un BUG antiguo: si
+        una pantalla cambiaba el peso de alguna fila o columna (Componentes
+        angostaba la columna 2), eso se quedaba para la siguiente, con
+        espacio sin usar y un scroll que no tocaba. Un marco nuevo empieza
+        siempre igual."""
+        viejo = getattr(self, "contenido", None)
+        nuevo = ctk.CTkFrame(self, fg_color="transparent")
+        nuevo.grid_columnconfigure((0, 1, 2), weight=1)
+        self.contenido = nuevo
+        if viejo is not None:
+            viejo.grid_forget()
+            # after_idle y no after(ms): un temporizador vencido se atiende
+            # ANTES que el dibujado pendiente, y destruiría la vieja justo
+            # cuando se quería evitar. El primer turno libre llega cuando la
+            # pantalla nueva ya se construyó; desde ahí se espera un poco más.
+            self.after_idle(lambda: self.after(80, lambda: self._destruir_pantalla(viejo)))
+        nuevo.grid(row=0, column=1, sticky="nswe", padx=20, pady=20)
+
+    @staticmethod
+    def _destruir_pantalla(marco):
+        try:
+            if marco.winfo_exists():
+                marco.destroy()
+        except Exception:
+            pass
 
     # ---------------- Puente entre hilos y la interfaz ----------------
     def after(self, ms, func=None, *args):
@@ -1511,6 +1670,11 @@ class TechCleanApp(ctk.CTk):
         self.deiconify()
         self.lift()
         self.focus_force()
+        # Si arrancó escondida en la bandeja, las novedades esperaban a que
+        # hubiera ventana que mirar.
+        if self._novedades_pendientes:
+            self._novedades_pendientes = False
+            self.after(400, self._mostrar_novedades)
 
     def _salir_definitivo(self):
         """Cierre TOTAL de la app (desde el menú de la bandeja), no solo minimizar."""
@@ -1527,8 +1691,329 @@ class TechCleanApp(ctk.CTk):
             self.tray.detener()
         except Exception:
             pass
+        try:
+            if self.atajo_ram is not None:
+                self.atajo_ram.detener()
+        except Exception:
+            pass
         self.destroy()
         sys.exit(0)
+
+    # ---------------- Acciones rápidas: bandeja y atajo de teclado (1.7.0) ----------------
+    def _notificar(self, titulo, texto):
+        """Notificación desde cualquier hilo de fondo. Primero por el icono
+        de la bandeja (instantáneo); si no hay bandeja, la de Windows vía
+        PowerShell, que tarda ~1 s: por eso NUNCA desde el hilo de Tk."""
+        if self.tray.notificar(titulo, texto):
+            return True
+        return opt.notificar_windows(titulo, texto)
+
+    def _pid_juego_protegido(self):
+        """El juego que el Modo Juego está priorizando, para no tocarlo:
+        liberarle memoria en plena partida es justo el tirón que se quiere
+        evitar (el autopiloto hace lo mismo)."""
+        if not self.autopilot.activo:
+            return None
+        return getattr(self.autopilot, "_pid_priorizado", None)
+
+    def _liberar_ram_rapida(self, origen):
+        """Liberar RAM sin abrir la ventana, desde la bandeja o el atajo de
+        teclado. El resultado llega en una notificación.
+        origen: "bandeja" o "atajo"."""
+        if self._ram_rapida_en_curso:
+            return
+        self._ram_rapida_en_curso = True
+        juego = self._pid_juego_protegido()
+        clave_log = {"bandeja": "rapida_log_ram_bandeja", "atajo": "rapida_log_ram_atajo"}.get(
+            origen, "rapida_log_ram_bandeja")
+
+        def worker():
+            try:
+                r = opt.liberar_memoria(nivel="normal", exclude_pids={juego} if juego else None)
+                msg = t("opt_ram_ok", antes=f"{r['uso_antes']:.0f}", despues=f"{r['uso_despues']:.0f}",
+                        tamano=opt.format_bytes(r["liberado"]))
+                self._notificar(t("rapida_ram_titulo"), msg)
+                self._log_dev(t(clave_log), r["comando"], msg, seccion=t("seccion_automatico"),
+                              exito=True, bytes_ram=r["liberado"])
+            finally:
+                self.after(0, lambda: setattr(self, "_ram_rapida_en_curso", False))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _limpieza_rapida_bandeja(self):
+        """RAM + temporales, desde la bandeja: lo mismo que /rapido."""
+        if self._ram_rapida_en_curso:
+            return
+        self._ram_rapida_en_curso = True
+        juego = self._pid_juego_protegido()
+
+        def worker():
+            try:
+                r = opt.liberar_memoria(nivel="normal", exclude_pids={juego} if juego else None)
+                liberado_disco, archivos, cmd = opt.clear_temp_files()
+                msg = t("rapida_limpieza_msg", ram=opt.format_bytes(r["liberado"]), archivos=archivos,
+                        disco=opt.format_bytes(liberado_disco))
+                self._notificar(t("rapida_limpieza_titulo"), msg)
+                self._log_dev(t("rapida_log_limpieza"), f'{r["comando"]} + {cmd}', msg,
+                              seccion=t("seccion_automatico"), exito=True, bytes_liberados=liberado_disco,
+                              bytes_ram=r["liberado"], archivos_afectados=archivos)
+            finally:
+                self.after(0, lambda: setattr(self, "_ram_rapida_en_curso", False))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _aplicar_atajo_ram(self):
+        """(Re)registra el atajo según las preferencias y devuelve su
+        estado: "apagado", "activo" u "ocupado" (otro programa ya usa esa
+        combinación: Windows solo deja registrarla a uno)."""
+        if self.atajo_ram is not None:
+            self.atajo_ram.detener()
+            self.atajo_ram = None
+        if not self.prefs.get("atajo_ram_activo", False):
+            self._estado_atajo = "apagado"
+        else:
+            combinacion = self.prefs.get("atajo_ram_combinacion", "ctrl+alt+r")
+            # Llega desde el hilo del atajo: a la interfaz, solo por after(0).
+            atajo = atajos.AtajoGlobal(combinacion,
+                                       lambda: self.after(0, lambda: self._liberar_ram_rapida("atajo")))
+            if atajo.iniciar():
+                self.atajo_ram = atajo
+                self._estado_atajo = "activo"
+            else:
+                self._estado_atajo = "ocupado"
+        self._pintar_estado_atajo()
+        return self._estado_atajo
+
+    def _pintar_estado_atajo(self):
+        if not (hasattr(self, "lbl_estado_atajo") and self.lbl_estado_atajo.winfo_exists()):
+            return
+        combinacion = atajos.texto_combinacion(self.prefs.get("atajo_ram_combinacion", "ctrl+alt+r"))
+        if self._estado_atajo == "activo":
+            self.lbl_estado_atajo.configure(text=t("atajo_estado_activo", combinacion=combinacion),
+                                            text_color=COLOR_OK)
+        elif self._estado_atajo == "ocupado":
+            self.lbl_estado_atajo.configure(text=t("atajo_estado_ocupado", combinacion=combinacion),
+                                            text_color=COLOR_WARN)
+        else:
+            self.lbl_estado_atajo.configure(text=t("atajo_estado_apagado"), text_color="gray60")
+
+    def _toggle_atajo_ram(self):
+        activo = bool(self.switch_atajo_ram.get())
+        self.prefs["atajo_ram_activo"] = activo
+        prefs.guardar({"atajo_ram_activo": activo})
+        estado = self._aplicar_atajo_ram()
+        clave = {"activo": "atajo_estado_activo", "ocupado": "atajo_estado_ocupado"}.get(
+            estado, "atajo_estado_apagado")
+        self._log_dev(t("atajo_log"), "RegisterHotKey",
+                      t(clave, combinacion=atajos.texto_combinacion(
+                          self.prefs.get("atajo_ram_combinacion", "ctrl+alt+r"))),
+                      seccion=t("seccion_ajustes"), exito=estado != "ocupado")
+
+    def _cambiar_combinacion_atajo(self, texto):
+        clave = next((c for c in atajos.COMBINACIONES if atajos.texto_combinacion(c) == texto), None)
+        if clave is None:
+            return
+        self.prefs["atajo_ram_combinacion"] = clave
+        prefs.guardar({"atajo_ram_combinacion": clave})
+        if self.prefs.get("atajo_ram_activo", False):
+            self._aplicar_atajo_ram()
+        else:
+            self._pintar_estado_atajo()
+
+    # ---------------- Buscador de funciones, Ctrl+K (1.7.0) ----------------
+    def _ir_pestana(self, atributo, clave, cambiar):
+        """Abre una pestaña concreta de la pantalla que ya está a la vista."""
+        control = getattr(self, atributo, None)
+        if control is not None and control.winfo_exists():
+            control.set(t(clave))
+            cambiar(t(clave))
+
+    def _paleta_ir(self, pantalla, accion=None):
+        pantalla()
+        if accion is not None:
+            self.after(120, accion)
+
+    def _entradas_paleta(self):
+        """[(título, dónde está, palabras extra, acción)].
+
+        Las palabras extra son sinónimos en los dos idiomas, para encontrar
+        lo mismo escribiendo "ram", "memoria" o "memory". No se enseñan, así
+        que no pasan por t(). Solo hay acciones que no borran nada sin
+        preguntar: las que sí (vaciar la papelera...) llevan a su pantalla."""
+        ir = self._paleta_ir
+        pestana = self._ir_pestana
+        pantallas = [
+            ("nav_inicio", self.mostrar_dashboard, "inicio home dashboard salud health"),
+            ("nav_componentes", self.mostrar_componentes, "hardware cpu gpu temperatura temperature"),
+            ("nav_optimizar", self.mostrar_optimizador, "optimizar optimize limpiar clean"),
+            ("disco_titulo", self.mostrar_espacio_disco, "espacio disco disk space storage carpetas"),
+            ("drv_titulo", self.mostrar_drivers, "drivers controladores dispositivos devices"),
+            ("nav_reparar", self.mostrar_reparar, "reparar repair sfc dism red network"),
+            ("nav_aplicaciones", self.mostrar_aplicaciones, "apps programas desinstalar uninstall startup"),
+            ("nav_privacidad", self.mostrar_privacidad, "privacidad privacy navegador browser"),
+            ("nav_seguridad", self.mostrar_seguridad, "seguridad security antivirus defender malware"),
+            ("nav_gaming", self.mostrar_gaming, "gaming juegos games fps"),
+            ("nav_segundo_plano", self.mostrar_segundo_plano, "segundo plano background"),
+            ("nav_historial", self.mostrar_reporte, "historial history registro log"),
+            ("nav_energia", self.mostrar_bios, "energia power bios bateria battery"),
+            ("nav_ajustes", self.mostrar_ajustes, "ajustes settings configuracion options"),
+        ]
+        if EDICION == "admin":
+            pantallas.append(("nav_tecnico", self.mostrar_tecnico, "tecnico technician informe report"))
+        entradas = [(t(clave), t("paleta_pantalla"), palabras, funcion)
+                    for clave, funcion, palabras in pantallas]
+
+        def disco(tab):
+            return lambda: ir(self.mostrar_espacio_disco,
+                              lambda: pestana("pestana_disco", tab, self._cambiar_pestana_disco))
+
+        def seguridad(tab):
+            return lambda: ir(self.mostrar_seguridad,
+                              lambda: pestana("pestana_seguridad", tab, self._cambiar_pestana_seguridad))
+        acciones = [
+            ("paleta_ram", "nav_optimizar", "ram memoria memory liberar free",
+             lambda: ir(self.mostrar_optimizador, self._accion_liberar_ram)),
+            ("paleta_ram_profunda", "nav_optimizar", "ram memoria memory profunda deep standby",
+             lambda: ir(self.mostrar_optimizador, self._accion_liberar_ram_profunda)),
+            ("paleta_temporales", "nav_optimizar", "temporales temp archivos files limpiar clean",
+             lambda: ir(self.mostrar_optimizador, self._accion_limpiar_temp)),
+            ("paleta_dns", "nav_optimizar", "dns cache internet",
+             lambda: ir(self.mostrar_optimizador, self._accion_flush_dns)),
+            ("paleta_modo_juego", "nav_gaming", "modo juego game mode autopiloto", self._toggle_autopilot),
+            ("paleta_widget", "nav_segundo_plano", "widget flotante overlay fps", self._toggle_widget),
+            ("paleta_lag", "nav_gaming", "lag ping latencia latency jitter",
+             lambda: ir(self.mostrar_gaming, self._accion_medir_lag)),
+            ("paleta_wifi", "nav_gaming", "wifi wi-fi wlan senal signal canal channel router",
+             lambda: ir(self.mostrar_gaming, self._accion_analizar_wifi)),
+            ("paleta_velocidad_internet", "nav_componentes", "velocidad internet speedtest megas mbps",
+             self._abrir_ventana_speedtest),
+            ("paleta_disco", "nav_componentes", "disco disk ssd hdd nvme velocidad speed benchmark",
+             lambda: ir(self.mostrar_componentes, self._accion_probar_disco)),
+            ("paleta_auditoria", "nav_seguridad", "auditoria audit malware virus sospechoso suspicious",
+             seguridad("seg_tab_auditoria")),
+            ("paleta_extensiones", "nav_seguridad", "extensiones extensions chrome edge firefox brave navegador",
+             seguridad("seg_tab_extensiones")),
+            ("paleta_accesos", "disco_titulo", "accesos directos shortcuts rotos broken lnk escritorio desktop",
+             disco("disco_tab_accesos")),
+            ("paleta_duplicados", "disco_titulo", "duplicados duplicates copias copies", disco("disco_tab_duplicados")),
+            ("paleta_limpieza_fondo", "disco_titulo", "limpieza fondo windows update cleanup liberador",
+             disco("disco_tab_fondo")),
+            ("paleta_archivos_grandes", "disco_titulo", "archivos grandes large files pesados",
+             disco("disco_tab_archivos")),
+            ("paleta_actualizar_app", "nav_ajustes", "actualizar update version nueva",
+             lambda: ir(self.mostrar_ajustes, self._accion_buscar_actualizacion_manual)),
+            ("paleta_novedades", "nav_ajustes", "novedades changelog whats new nuevo", self._mostrar_novedades),
+        ]
+        return [(t(clave), t(donde), palabras, accion) for clave, donde, palabras, accion in acciones] + entradas
+
+    def _abrir_paleta(self):
+        if getattr(self, "_paleta", None) is not None and self._paleta.winfo_exists():
+            self._paleta.lift()
+            return
+        if self.state() in ("withdrawn", "iconic"):
+            return
+        v = ctk.CTkToplevel(self)
+        self._paleta = v
+        v.title(t("paleta_titulo"))
+        ancho, alto = 600, 430
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - ancho) // 2)
+        y = self.winfo_rooty() + 70
+        v.geometry(f"{ancho}x{alto}+{x}+{y}")
+        v.resizable(False, False)
+        v.transient(self)
+        v.grab_set()
+        entrada = ctk.CTkEntry(v, placeholder_text=t("paleta_placeholder"), height=40, font=ctk.CTkFont(size=14))
+        entrada.pack(fill="x", padx=14, pady=(14, 6))
+        ctk.CTkLabel(v, text=t("paleta_ayuda"), font=ctk.CTkFont(size=11), text_color="gray60").pack(
+            anchor="w", padx=18, pady=(0, 6))
+        lbl_vacio = ctk.CTkLabel(v, text=t("paleta_sin_resultados"), text_color="gray60")
+        fuente = ctk.CTkFont(size=13)
+        estado = {"resultados": [], "sel": 0}
+        todas = self._entradas_paleta()
+        botones = []
+
+        def ejecutar(i=None):
+            i = estado["sel"] if i is None else i
+            if i >= len(estado["resultados"]):
+                return
+            accion = estado["resultados"][i][3]
+            v.destroy()
+            self.after(10, accion)
+
+        # Ocho botones fijos que se reescriben: crear y destruir botones en
+        # cada tecla se notaría al escribir rápido.
+        for i in range(8):
+            botones.append(ctk.CTkButton(v, text="", anchor="w", height=34, font=fuente, corner_radius=8,
+                                         fg_color="transparent", hover_color="#2a2d36",
+                                         command=lambda i=i: ejecutar(i)))
+
+        def pintar():
+            for i, b in enumerate(botones):
+                if i < len(estado["resultados"]):
+                    titulo, donde, _, _ = estado["resultados"][i]
+                    b.configure(text=f"{titulo}    ·    {donde}",
+                                fg_color=COLOR_ACCENT if i == estado["sel"] else "transparent")
+                    if not b.winfo_ismapped():
+                        b.pack(fill="x", padx=10, pady=1)
+                else:
+                    b.pack_forget()
+            if estado["resultados"]:
+                lbl_vacio.pack_forget()
+            elif not lbl_vacio.winfo_ismapped():
+                lbl_vacio.pack(pady=20)
+
+        def refrescar(evento=None):
+            if evento is not None and evento.keysym in ("Up", "Down", "Return", "Escape"):
+                return
+            estado["resultados"] = buscar_en_paleta(todas, entrada.get())[:8]
+            estado["sel"] = 0
+            pintar()
+
+        def mover(paso):
+            if estado["resultados"]:
+                estado["sel"] = (estado["sel"] + paso) % len(estado["resultados"])
+                pintar()
+            return "break"
+
+        entrada.bind("<KeyRelease>", refrescar)
+        entrada.bind("<Down>", lambda e: mover(1))
+        entrada.bind("<Up>", lambda e: mover(-1))
+        entrada.bind("<Return>", lambda e: ejecutar())
+        v.bind("<Escape>", lambda e: v.destroy())
+        refrescar()
+        # CTkToplevel se coloca y toma el foco un instante después de crearse.
+        v.after(80, entrada.focus_set)
+
+    # ---------------- Novedades de la versión (1.7.0) ----------------
+    def _mostrar_novedades_si_toca(self):
+        """La primera vez que se abre una versión nueva, una ventana con lo
+        que cambió. Solo a quien ACTUALIZA: a quien la estrena no hay
+        "novedades" que contarle."""
+        if self.prefs.get("ultima_version_vista", "") == APP_VERSION:
+            return
+        self.prefs["ultima_version_vista"] = APP_VERSION
+        prefs.guardar({"ultima_version_vista": APP_VERSION})
+        if not self._habia_preferencias:
+            return
+        if self.state() in ("withdrawn", "iconic"):
+            self._novedades_pendientes = True
+            return
+        self._mostrar_novedades()
+
+    def _mostrar_novedades(self):
+        v = ctk.CTkToplevel(self)
+        v.title(t("nov_titulo_ventana", version=APP_VERSION))
+        v.geometry("600x560")
+        v.transient(self)
+        ctk.CTkLabel(v, text=t("nov_titulo", version=APP_VERSION),
+                     font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", padx=20, pady=(18, 4))
+        ctk.CTkLabel(v, text=t("nov_subtitulo"), font=ctk.CTkFont(size=12), text_color="gray60",
+                     wraplength=550, justify="left").pack(anchor="w", padx=20, pady=(0, 8))
+        marco = ctk.CTkScrollableFrame(v, fg_color=COLOR_BG_PANEL, corner_radius=12)
+        marco.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        for clave in NOVEDADES:
+            ctk.CTkLabel(marco, text=t(clave), font=ctk.CTkFont(size=13), wraplength=520, justify="left",
+                         anchor="w").pack(fill="x", padx=10, pady=6)
+        ctk.CTkButton(v, text=t("nov_entendido"), width=160, command=v.destroy).pack(pady=(4, 14))
+        v.after(100, v.lift)
 
     # ---------------- Dashboard ----------------
     def mostrar_dashboard(self):
@@ -1657,7 +2142,7 @@ class TechCleanApp(ctk.CTk):
             msg = t("dash_arreglo_listo", procesos=procesos, archivos=archivos,
                     total=opt.format_bytes(liberado_ram + liberado_disco))
             self._log_dev(t("log_arreglar_todo"), f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
-                          exito=True, bytes_liberados=liberado_ram + liberado_disco,
+                          exito=True, bytes_liberados=liberado_disco, bytes_ram=liberado_ram,
                           archivos_afectados=procesos + archivos)
             self.after(0, lambda: self._actualizar_label("lbl_salud_detalle", msg))
             self.after(800, self._calcular_salud_sistema)
@@ -1704,6 +2189,7 @@ class TechCleanApp(ctk.CTk):
                 mb_recuperable = total_recuperable / (1024 ** 2)
             except Exception:
                 mb_recuperable = 0
+            dias_encendido = self.vigilante.dias_encendido()
 
             umbral_ram = self.prefs.get("umbral_salud_ram", 75)
             umbral_disco = self.prefs.get("umbral_salud_disco", 85)
@@ -1735,6 +2221,17 @@ class TechCleanApp(ctk.CTk):
             elif mb_recuperable > 1500:
                 puntaje -= 5
                 motivos.append(t("dash_motivo_temporales_mb", mb=f"{mb_recuperable:.0f}"))
+            # 1.7.0: con el Inicio rápido de Windows, apagar no reinicia. Un
+            # equipo con semanas sin reiniciar va peor aunque todo lo demás
+            # esté bien, y "Arreglar todo" no lo puede arreglar: hay que
+            # decírselo a la persona.
+            if dias_encendido is not None:
+                if dias_encendido >= 14:
+                    puntaje -= 10
+                    motivos.append(t("dash_motivo_sin_reiniciar", dias=int(dias_encendido)))
+                elif dias_encendido >= 7:
+                    puntaje -= 5
+                    motivos.append(t("dash_motivo_sin_reiniciar", dias=int(dias_encendido)))
             puntaje = max(0, min(100, puntaje))
 
             if puntaje >= 80:
@@ -1855,10 +2352,13 @@ class TechCleanApp(ctk.CTk):
         fila_disco = ctk.CTkFrame(self.panel_disco.master, fg_color="transparent")
         fila_disco.pack(fill="x", padx=14, pady=(0, 14))
         ctk.CTkButton(fila_disco, text=t("comp_btn_probar_disco"), width=170, height=28,
-                      font=ctk.CTkFont(size=11), command=self._accion_probar_disco).pack(side="left")
+                      font=ctk.CTkFont(size=11), command=self._accion_probar_disco).pack(anchor="w")
+        # Debajo del botón y no al lado: desde la 1.7.0 el resultado ocupa
+        # varias líneas (tres velocidades y qué tipo de disco parece).
         self.lbl_resultado_disco = ctk.CTkLabel(fila_disco, text="", font=ctk.CTkFont(size=11),
-                                                  text_color="gray60")
-        self.lbl_resultado_disco.pack(side="left", padx=10)
+                                                  text_color="gray60", wraplength=400, justify="left",
+                                                  anchor="w")
+        self.lbl_resultado_disco.pack(fill="x", pady=(6, 0))
         self.panel_red = self._crear_tarjeta_componente(scroll, t("comp_card_red"), 2, 0)
         self.panel_bateria = self._crear_tarjeta_componente(scroll, t("comp_card_bateria"), 2, 1)
         self.panel_sistema = self._crear_tarjeta_componente(scroll, t("comp_card_equipo"), 3, 0)
@@ -2080,8 +2580,14 @@ class TechCleanApp(ctk.CTk):
                        else t("comp_disco_error_simple"))
                 exito = False
             else:
-                msg = t("comp_disco_resultado", escritura=resultado["escritura_mbs"],
-                        lectura=resultado["lectura_mbs"])
+                # Solo si rinde como un disco mecánico hace falta saber qué
+                # cree Windows que es: leer las unidades tarda unos segundos.
+                tipo = None
+                if resultado.get("clase") == "hdd":
+                    letra = (resultado.get("unidad") or "")[:1].upper()
+                    tipo = next((u["tipo"] for u in opt.listar_unidades_optimizables()
+                                 if u["letra"].upper() == letra), None)
+                msg = texto_disco(resultado, tipo)
                 exito = True
             self._log_dev(t("comp_log_disco"), t("comp_log_disco_cmd"), msg,
                           seccion=t("seccion_componentes"), exito=exito)
@@ -2669,11 +3175,18 @@ class TechCleanApp(ctk.CTk):
         self.entry_buscar_driver.bind("<KeyRelease>", lambda e: self._filtrar_drivers())
 
         self.contenido.grid_rowconfigure(9, weight=1)
-        self.lista_drivers = ctk.CTkScrollableFrame(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        # BUG de rendimiento corregido: era un marco con una tarjeta (marco +
+        # etiqueta) por driver, hasta 300: 3 s de ventana congelada al
+        # cargar, y OTROS 3 s con cada letra del buscador, que lo rehacía
+        # todo en cada tecla. Un solo cuadro de texto pinta los 300 al
+        # instante, y además deja seleccionar y copiar el nombre.
+        self.lista_drivers = ctk.CTkTextbox(self.contenido, fg_color=COLOR_BG_PANEL, corner_radius=16,
+                                            font=ctk.CTkFont(size=12), wrap="word", spacing1=4, spacing3=4)
         self.lista_drivers.grid(row=9, column=0, columnspan=3, sticky="nswe", padx=8, pady=8)
-        ctk.CTkLabel(self.lista_drivers,
-                     text=t("drv_leyendo_drivers_largo"),
-                     text_color="gray60", wraplength=850, justify="left").pack(padx=16, pady=16)
+        self.lista_drivers.tag_config("aviso", foreground="gray60")
+        self.lista_drivers.tag_config("nombre", foreground="white")
+        self.lista_drivers.tag_config("detalle", foreground="gray70")
+        self._escribir_lista_drivers([(t("drv_leyendo_drivers_largo"), "aviso")])
         self._drivers_cache = None
 
         def worker():
@@ -2755,33 +3268,44 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._actualizar_label("lbl_estado_inicio_rapido", texto))
         threading.Thread(target=worker, daemon=True).start()
 
+    def _escribir_lista_drivers(self, trozos):
+        """Reemplaza el contenido de la lista: `trozos` es [(texto, etiqueta)]."""
+        caja = self.lista_drivers
+        caja.configure(state="normal")
+        caja.delete("1.0", "end")
+        for texto, etiqueta in trozos:
+            caja.insert("end", texto, etiqueta)
+        caja.configure(state="disabled")
+
     def _filtrar_drivers(self):
         if not (hasattr(self, "lista_drivers") and self.lista_drivers.winfo_exists()):
             return
-        for w in self.lista_drivers.winfo_children():
-            w.destroy()
-
         drivers = self._drivers_cache
         if drivers is None:
-            ctk.CTkLabel(self.lista_drivers, text=t("drv_leyendo_drivers"),
-                         text_color="gray60").pack(padx=16, pady=16)
+            self._escribir_lista_drivers([(t("drv_leyendo_drivers"), "aviso")])
             return
         if not drivers:
-            ctk.CTkLabel(self.lista_drivers, text=t("drv_sin_drivers"),
-                         text_color="gray60").pack(padx=16, pady=16)
+            self._escribir_lista_drivers([(t("drv_sin_drivers"), "aviso")])
             return
 
         termino = self.entry_buscar_driver.get().strip().lower() if hasattr(self, "entry_buscar_driver") else ""
         if termino:
-            drivers = [d for d in drivers if termino in d["nombre"].lower() or termino in d["fabricante"].lower()]
+            drivers = [d for d in drivers
+                       if termino in str(d.get("nombre") or "").lower()
+                       or termino in str(d.get("fabricante") or "").lower()]
 
+        trozos = []
         for d in drivers[:300]:
-            fila = ctk.CTkFrame(self.lista_drivers, fg_color="#141720", corner_radius=10)
-            fila.pack(fill="x", padx=8, pady=3)
-            texto = t("drv_detalle", nombre=d["nombre"], fabricante=d["fabricante"],
-                      version=d["version"], fecha=d["fecha"])
-            ctk.CTkLabel(fila, text=texto, font=ctk.CTkFont(size=12), anchor="w",
-                         wraplength=900, justify="left").pack(padx=12, pady=8, fill="x", expand=True, anchor="w")
+            nombre = str(d.get("nombre") or "")
+            texto = t("drv_detalle", nombre=nombre, fabricante=d.get("fabricante"),
+                      version=d.get("version"), fecha=d.get("fecha"))
+            # El nombre resaltado y el resto en gris; si una traducción
+            # pusiera el nombre en otro sitio, la línea sale entera en gris.
+            if nombre and texto.startswith(nombre):
+                trozos += [(nombre, "nombre"), (texto[len(nombre):] + "\n", "detalle")]
+            else:
+                trozos.append((texto + "\n", "detalle"))
+        self._escribir_lista_drivers(trozos or [(t("drv_sin_coincidencias", termino=termino), "aviso")])
 
     def _accion_buscar_drivers_update(self):
         self.lbl_drivers_update.configure(text=t("drv_buscando_update"))
@@ -3057,7 +3581,7 @@ class TechCleanApp(ctk.CTk):
             self.contenido,
             values=[t("disco_tab_carpetas"), t("disco_tab_archivos"),
                     t("disco_tab_instaladores"), t("disco_tab_cache"), t("disco_tab_fondo"),
-                    t("disco_tab_duplicados")],
+                    t("disco_tab_duplicados"), t("disco_tab_accesos")],
             command=self._cambiar_pestana_disco)
         self.pestana_disco.set(t("disco_tab_carpetas"))
         self.pestana_disco.grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 12))
@@ -3087,6 +3611,8 @@ class TechCleanApp(ctk.CTk):
             self._mostrar_limpieza_fondo()
         elif valor == t("disco_tab_duplicados"):
             self._mostrar_duplicados()
+        elif valor == t("disco_tab_accesos"):
+            self._mostrar_accesos_rotos()
         else:
             self._mostrar_carpetas_pesadas()
 
@@ -3520,7 +4046,7 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._actualizar_label("lbl_resultado_opt", msg))
             self._log_dev(t("opt_log_ram_profunda" if nivel == "profunda" else "opt_log_ram"), comando, msg,
                           seccion=t("seccion_optimizador"),
-                          exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
+                          exito=True, bytes_ram=liberado, archivos_afectados=afectados)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_opt.configure(
             text=t("opt_liberando_ram_profunda" if nivel == "profunda" else "opt_liberando_ram"))
@@ -3925,6 +4451,106 @@ class TechCleanApp(ctk.CTk):
         if getattr(self, "_auditoria_cache", None) is not None:
             self._pintar_auditoria(self._auditoria_cache)
 
+    # ---- Extensiones del navegador (1.7.0) ----
+    def _mostrar_extensiones(self):
+        self._limpiar_contenedor_seguridad()
+        cabecera = ctk.CTkFrame(self.contenedor_seguridad, fg_color="transparent")
+        cabecera.grid(row=0, column=0, sticky="we")
+        ctk.CTkLabel(cabecera, text=t("ext_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 6))
+        fila = ctk.CTkFrame(cabecera, fg_color="transparent")
+        fila.pack(fill="x", pady=(0, 6))
+        self.btn_extensiones = ctk.CTkButton(fila, text=t("ext_btn"), width=220,
+                                             command=self._accion_auditar_extensiones)
+        self.btn_extensiones.pack(side="left")
+        self.lbl_extensiones = ctk.CTkLabel(fila, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                            wraplength=650, justify="left")
+        self.lbl_extensiones.pack(side="left", padx=12, fill="x", expand=True)
+        self.lista_extensiones = ctk.CTkScrollableFrame(self.contenedor_seguridad, fg_color=COLOR_BG_PANEL,
+                                                        corner_radius=16)
+        self.lista_extensiones.grid(row=1, column=0, sticky="nswe")
+        if getattr(self, "_extensiones_cache", None) is not None:
+            self._pintar_extensiones(self._extensiones_cache)
+        else:
+            self._accion_auditar_extensiones()
+
+    def _accion_auditar_extensiones(self):
+        if getattr(self, "_auditando_extensiones", False):
+            return
+        self._auditando_extensiones = True
+        self.btn_extensiones.configure(state="disabled")
+        self.lbl_extensiones.configure(text=t("ext_revisando"), text_color="gray70")
+        idioma = idiomas.IDIOMA_ACTUAL
+
+        def worker():
+            try:
+                extensiones = seg.auditar_extensiones(idioma)
+            except Exception as e:
+                extensiones = None
+                self._log_dev(t("ext_log"), "seguridad.auditar_extensiones", str(e),
+                              seccion=t("seccion_seguridad"), exito=False)
+            if extensiones is not None:
+                self._extensiones_cache = extensiones
+                self._log_dev(t("ext_log"), "seguridad.auditar_extensiones",
+                              t("ext_resumen", total=len(extensiones),
+                                altos=sum(1 for e in extensiones if e["nivel"] == "alto"),
+                                medios=sum(1 for e in extensiones if e["nivel"] == "medio")),
+                              seccion=t("seccion_seguridad"), exito=True)
+            self.after(0, lambda: self._pintar_extensiones(extensiones))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_extensiones(self, extensiones):
+        self._auditando_extensiones = False
+        if not (hasattr(self, "lista_extensiones") and self.lista_extensiones.winfo_exists()):
+            return
+        self.btn_extensiones.configure(state="normal")
+        for w in self.lista_extensiones.winfo_children():
+            w.destroy()
+        if extensiones is None:
+            self.lbl_extensiones.configure(text=t("ext_error"), text_color=COLOR_CRIT)
+            return
+        if not extensiones:
+            self.lbl_extensiones.configure(text=t("ext_ninguna"), text_color=COLOR_OK)
+            return
+        extensiones = [e for e in extensiones if isinstance(e, dict)]
+        altos = sum(1 for e in extensiones if e.get("nivel") == "alto")
+        medios = sum(1 for e in extensiones if e.get("nivel") == "medio")
+        self.lbl_extensiones.configure(
+            text=t("ext_resumen", total=len(extensiones), altos=altos, medios=medios),
+            text_color=COLOR_CRIT if altos else COLOR_WARN if medios else COLOR_OK)
+        colores = {"alto": COLOR_CRIT, "medio": COLOR_WARN, "info": "gray60"}
+        etiquetas = {"alto": "aud_nivel_alto", "medio": "aud_nivel_medio", "info": "aud_nivel_info"}
+        for e in extensiones[:200]:
+            caja = ctk.CTkFrame(self.lista_extensiones, fg_color="#141720", corner_radius=10)
+            caja.pack(fill="x", padx=8, pady=4)
+            arriba = ctk.CTkFrame(caja, fg_color="transparent")
+            arriba.pack(fill="x", padx=12, pady=(8, 2))
+            ctk.CTkLabel(arriba, text=t(etiquetas.get(e.get("nivel"), "aud_nivel_info")),
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color=colores.get(e.get("nivel"), "gray60"), width=90, anchor="w").pack(side="left")
+            nombre = e.get("nombre") or e.get("id") or "?"
+            if not e.get("activa", True):
+                nombre += f'   ({t("ext_desactivada")})'
+            ctk.CTkLabel(arriba, text=nombre, font=ctk.CTkFont(size=13, weight="bold"),
+                         anchor="w").pack(side="left", padx=6)
+            ruta = e.get("ruta")
+            if ruta and os.path.isdir(ruta):
+                ctk.CTkButton(arriba, text=t("aud_btn_ubicacion"), width=150, fg_color="#2a2d36",
+                              hover_color="#3a3e4a",
+                              command=lambda r=ruta: self._abrir_ubicacion(r)).pack(side="right")
+            perfiles = e.get("perfiles") or []
+            texto_perfiles = ", ".join(perfiles[:3]) + (f" +{len(perfiles) - 3}" if len(perfiles) > 3 else "")
+            ctk.CTkLabel(caja, text=t("ext_detalle", navegador=e.get("navegador") or "?",
+                                      version=e.get("version") or "?",
+                                      perfiles=texto_perfiles or "—"),
+                         font=ctk.CTkFont(size=11), text_color="gray60", anchor="w", justify="left",
+                         wraplength=860).pack(fill="x", padx=24, pady=(0, 2))
+            for m in e.get("motivos") or []:
+                ctk.CTkLabel(caja, text="• " + t(m, organizacion=e.get("organizacion") or ""),
+                             font=ctk.CTkFont(size=11), anchor="w", justify="left",
+                             wraplength=860).pack(fill="x", padx=24, pady=1)
+            ctk.CTkFrame(caja, height=6, fg_color="transparent").pack()
+
     def _accion_auditar(self):
         if getattr(self, "_auditando", False):
             return
@@ -4089,7 +4715,7 @@ class TechCleanApp(ctk.CTk):
             # el widget ya no existia y el resultado se perdia en silencio.
             self.after(0, lambda: self._actualizar_label("lbl_resultado_user", msg))
             self._log_dev(t("dash_log_optimizacion"), f"{cmd1} + {cmd2}", msg, seccion=t("seccion_inicio"),
-                          exito=True, bytes_liberados=liberado_ram + liberado_disco,
+                          exito=True, bytes_liberados=liberado_disco, bytes_ram=liberado_ram,
                           archivos_afectados=procesos + archivos)
         threading.Thread(target=worker, daemon=True).start()
         self.lbl_resultado_user.configure(text=t("dash_optimizando"))
@@ -4121,8 +4747,8 @@ class TechCleanApp(ctk.CTk):
 
         self.pestana_seguridad = ctk.CTkSegmentedButton(
             self.contenido,
-            values=[t("seg_tab_antivirus"), t("seg_tab_auditoria"), t("seg_tab_red"), t("seg_tab_permisos"),
-                    t("seg_tab_firewall"), t("seg_tab_usuarios")],
+            values=[t("seg_tab_antivirus"), t("seg_tab_auditoria"), t("seg_tab_extensiones"), t("seg_tab_red"),
+                    t("seg_tab_permisos"), t("seg_tab_firewall"), t("seg_tab_usuarios")],
             command=self._cambiar_pestana_seguridad)
         self.pestana_seguridad.set(t("seg_tab_antivirus"))
         self.pestana_seguridad.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
@@ -4141,6 +4767,8 @@ class TechCleanApp(ctk.CTk):
         que es la pestaña por defecto — nunca en una rama arbitraria."""
         if valor == t("seg_tab_auditoria"):
             self._mostrar_auditoria()
+        elif valor == t("seg_tab_extensiones"):
+            self._mostrar_extensiones()
         elif valor == t("seg_tab_red"):
             self._mostrar_red_programas()
         elif valor == t("seg_tab_permisos"):
@@ -5695,6 +6323,77 @@ class TechCleanApp(ctk.CTk):
         if rutas:
             self._confirmar_borrar_archivos(rutas)
 
+    # ---- Pestaña: Accesos directos rotos (1.7.0) ----
+    def _mostrar_accesos_rotos(self):
+        self._limpiar_contenedor_disco()
+        ctk.CTkLabel(self.contenedor_disco, text=t("accesos_intro"), font=ctk.CTkFont(size=12),
+                     text_color="gray60", wraplength=900, justify="left", anchor="w").pack(fill="x", pady=(0, 8))
+        self.lista_accesos = ctk.CTkScrollableFrame(self.contenedor_disco, fg_color=COLOR_BG_PANEL,
+                                                    corner_radius=16)
+        self.lista_accesos.pack(fill="both", expand=True)
+        barra = ctk.CTkFrame(self.contenedor_disco, fg_color="transparent")
+        barra.pack(fill="x", pady=(8, 0))
+        self.lbl_accesos = ctk.CTkLabel(barra, text=t("accesos_buscando"), font=ctk.CTkFont(size=12),
+                                        anchor="w", wraplength=650, justify="left")
+        self.lbl_accesos.pack(side="left", fill="x", expand=True)
+        self.btn_borrar_accesos = ctk.CTkButton(barra, text=t("dup_btn_papelera"), state="disabled",
+                                                command=self._accion_enviar_accesos)
+        self.btn_borrar_accesos.pack(side="right")
+        self._checks_accesos = []
+
+        def worker():
+            rotos = opt.buscar_accesos_rotos()
+            self.after(0, lambda: self._pintar_accesos_rotos(rotos))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_accesos_rotos(self, rotos):
+        if not (hasattr(self, "lista_accesos") and self.lista_accesos.winfo_exists()):
+            return
+        for w in self.lista_accesos.winfo_children():
+            w.destroy()
+        self._checks_accesos = []
+        if not rotos:
+            self.lbl_accesos.configure(text=t("accesos_ninguno"), text_color=COLOR_OK)
+            self._actualizar_boton_accesos()
+            return
+        self.lbl_accesos.configure(text=t("accesos_resumen", total=len(rotos)), text_color=COLOR_WARN)
+        lugares = {"escritorio": "accesos_lugar_escritorio", "inicio": "accesos_lugar_inicio",
+                   "arranque": "accesos_lugar_arranque"}
+        for r in rotos[:300]:
+            if not isinstance(r, dict) or not r.get("ruta"):
+                continue
+            caja = ctk.CTkFrame(self.lista_accesos, fg_color="#141720", corner_radius=10)
+            caja.pack(fill="x", padx=8, pady=3)
+            # Los de la carpeta de arranque salen SIN marcar: un acceso que
+            # se abría solo al encender y apunta a algo que ya no está puede
+            # ser el resto de un programa sospechoso, y conviene mirarlo
+            # (Seguridad > Auditoría) antes de hacerlo desaparecer.
+            var = ctk.BooleanVar(value=r.get("lugar") != "arranque")
+            self._checks_accesos.append((var, r["ruta"]))
+            ctk.CTkCheckBox(caja, text=r.get("nombre") or r["ruta"], variable=var,
+                            font=ctk.CTkFont(size=12, weight="bold"),
+                            command=self._actualizar_boton_accesos).pack(anchor="w", padx=12, pady=(8, 2))
+            lugar = t(lugares.get(r.get("lugar"), "accesos_lugar_inicio"))
+            if r.get("comun"):
+                lugar += "  ·  " + t("accesos_comun")
+            ctk.CTkLabel(caja, text=t("accesos_detalle", lugar=lugar, destino=r.get("destino") or "?"),
+                         font=ctk.CTkFont(size=11), text_color="gray60", anchor="w", justify="left",
+                         wraplength=860).pack(fill="x", padx=42, pady=(0, 8))
+        self._actualizar_boton_accesos()
+
+    def _actualizar_boton_accesos(self):
+        n = sum(1 for var, _ in getattr(self, "_checks_accesos", []) if var.get())
+        if hasattr(self, "btn_borrar_accesos") and self.btn_borrar_accesos.winfo_exists():
+            self.btn_borrar_accesos.configure(state="normal" if n else "disabled",
+                                              text=t("dup_btn_papelera_n", n=n) if n else t("dup_btn_papelera"))
+
+    def _accion_enviar_accesos(self):
+        rutas = [ruta for var, ruta in self._checks_accesos if var.get()]
+        if rutas:
+            # El mismo diálogo y la misma papelera que los duplicados: se
+            # puede deshacer desde la papelera de Windows.
+            self._confirmar_borrar_archivos(rutas)
+
     # ---- Tareas programadas (de terceros, no la nuestra) ----
     def _mostrar_tareas_programadas(self):
         self._limpiar_contenedor_apps()
@@ -5939,6 +6638,19 @@ class TechCleanApp(ctk.CTk):
                                     wraplength=850, justify="left")
         self.lbl_lag.pack(fill="x", padx=16, pady=(6, 16))
 
+        # ---- Wi-Fi (1.7.0) ----
+        panel_wifi = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
+        panel_wifi.pack(fill="x", padx=8, pady=8)
+        ctk.CTkLabel(panel_wifi, text=t("wifi_titulo"),
+                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w", padx=16, pady=(16, 4))
+        ctk.CTkLabel(panel_wifi, text=t("wifi_desc"), font=ctk.CTkFont(size=11), text_color="gray60",
+                     wraplength=850, justify="left").pack(anchor="w", padx=16, pady=(0, 8))
+        self.btn_wifi = ctk.CTkButton(panel_wifi, text=t("wifi_btn"), width=220, command=self._accion_analizar_wifi)
+        self.btn_wifi.pack(anchor="w", padx=16)
+        self.lbl_wifi = ctk.CTkLabel(panel_wifi, text="", font=ctk.CTkFont(size=12), anchor="w",
+                                     wraplength=850, justify="left")
+        self.lbl_wifi.pack(fill="x", padx=16, pady=(6, 16))
+
         panel_biblioteca = ctk.CTkFrame(contenedor, fg_color=COLOR_BG_PANEL, corner_radius=16)
         panel_biblioteca.pack(fill="x", padx=8, pady=8)
         ctk.CTkLabel(panel_biblioteca, text=t("gaming_biblioteca_titulo"),
@@ -6125,11 +6837,42 @@ class TechCleanApp(ctk.CTk):
                      perdida=s["perdida_pct"], min=s["min_ms"], max=s["max_ms"])
         veredicto = t({"bien": "gjuego_lag_v_bien", "local": "gjuego_lag_v_local",
                        "proveedor": "gjuego_lag_v_proveedor"}[r["veredicto"]])
+        if r["veredicto"] == "local":
+            # El problema está en casa: el análisis de Wi-Fi dice por qué.
+            veredicto += "\n" + t("gjuego_lag_ver_wifi")
         self.lbl_lag.configure(
             text="\n".join([linea(t("gjuego_lag_router") + (f' ({r["router_ip"]})' if r["router_ip"] else ""),
                                   r["router"]),
                             linea(t("gjuego_lag_internet") + " (1.1.1.1)", r["internet"]), "", veredicto]),
             text_color=COLOR_OK if r["veredicto"] == "bien" else COLOR_WARN)
+
+    # ---- Gaming: Wi-Fi (1.7.0) ----
+    def _accion_analizar_wifi(self):
+        if getattr(self, "_analizando_wifi", False):
+            return
+        if not (hasattr(self, "btn_wifi") and self.btn_wifi.winfo_exists()):
+            return
+        self._analizando_wifi = True
+        self.btn_wifi.configure(state="disabled")
+        self.lbl_wifi.configure(text=t("wifi_analizando"), text_color="gray70")
+
+        def worker():
+            datos = sysmon.leer_wifi(escanear=True)
+            texto, nivel = texto_wifi(datos)
+            # En el historial va el veredicto, no el nombre de la red.
+            self._log_dev(t("wifi_log"), "wlanapi.dll (WlanQueryInterface + WlanGetNetworkBssList)",
+                          t(_VEREDICTOS_WIFI.get(nivel, "wifi_v_bien")) if nivel != "info" else texto,
+                          seccion=t("seccion_gaming"), exito=datos is not None)
+            self.after(0, lambda: self._pintar_wifi(texto, nivel))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _pintar_wifi(self, texto, nivel):
+        self._analizando_wifi = False
+        if not (hasattr(self, "lbl_wifi") and self.lbl_wifi.winfo_exists()):
+            return
+        self.btn_wifi.configure(state="normal")
+        colores = {"bien": COLOR_OK, "regular": COLOR_WARN, "mal": COLOR_CRIT}
+        self.lbl_wifi.configure(text=texto, text_color=colores.get(nivel, "gray70"))
 
     def _actualizar_tarjeta_gaming(self):
         if not (hasattr(self, "lbl_estado_gaming") and self.lbl_estado_gaming.winfo_exists()):
@@ -6171,7 +6914,7 @@ class TechCleanApp(ctk.CTk):
             self._log_dev(t("gaming_log_antes_ram"), cmd,
                           t("gaming_ram_compactada", procesos=procesos,
                             tamano=opt.format_bytes(liberado)),
-                          seccion=t("seccion_gaming"), exito=True, bytes_liberados=liberado, archivos_afectados=procesos)
+                          seccion=t("seccion_gaming"), exito=True, bytes_ram=liberado, archivos_afectados=procesos)
 
             if not self.autopilot.activo:
                 self.after(0, self._toggle_autopilot)
@@ -6525,14 +7268,19 @@ class TechCleanApp(ctk.CTk):
                 texto = t("hist_resumen_todo",
                           total=resumen["acciones"], sesiones=resumen["sesiones"],
                           espacio=opt.format_bytes(resumen["bytes"]),
-                          desde=resumen["desde"] or t("hist_sin_fecha"))
+                          ram=opt.format_bytes(resumen["ram"]),
+                          mes_acciones=resumen["mes_acciones"],
+                          mes_espacio=opt.format_bytes(resumen["mes_bytes"]),
+                          mes_ram=opt.format_bytes(resumen["mes_ram"]),
+                          desde=(resumen["desde"] or t("hist_sin_fecha"))[:10])
             else:
                 entradas = self.reporte.entradas_recientes_primero()
                 texto = t("hist_resumen",
                           total=self.reporte.total_acciones(),
                           exitosas=self.reporte.total_exitosas(),
                           fallidas=self.reporte.total_fallidas(),
-                          espacio=opt.format_bytes(self.reporte.total_bytes_liberados()))
+                          espacio=opt.format_bytes(self.reporte.total_bytes_liberados()),
+                          ram=opt.format_bytes(self.reporte.total_bytes_ram()))
             secciones = sorted({e.get("seccion", "") for e in entradas if e.get("seccion")})
 
             def pintar():
@@ -6834,7 +7582,7 @@ class TechCleanApp(ctk.CTk):
         boton_ref.configure(command=alternar_ref)
 
     def _log_dev(self, accion, comando, resultado, seccion=None, exito=True,
-                 bytes_liberados=0, archivos_afectados=0):
+                 bytes_liberados=0, archivos_afectados=0, bytes_ram=0):
         """
         Punto único de registro: alimenta la consola dev Y el historial.
 
@@ -6860,7 +7608,7 @@ class TechCleanApp(ctk.CTk):
                 except Exception:
                     pass
             self.reporte.add(seccion, accion, comando, exito, resultado,
-                              bytes_liberados, archivos_afectados)
+                              bytes_liberados, archivos_afectados, bytes_ram)
         self.after(0, _hacer)
 
     # ---------------- Panel de comandos oculto (solo Edición Cliente) ----------------
@@ -6930,7 +7678,7 @@ class TechCleanApp(ctk.CTk):
                 msg = t("consola_ram_ok", procesos=afectados, tamano=opt.format_bytes(liberado))
                 self.after(0, lambda: decir(True, msg))
                 self._log_dev(t("consola_log_ram", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
-                              exito=True, bytes_liberados=liberado, archivos_afectados=afectados)
+                              exito=True, bytes_ram=liberado, archivos_afectados=afectados)
             threading.Thread(target=worker, daemon=True).start()
             return
 
@@ -6979,7 +7727,7 @@ class TechCleanApp(ctk.CTk):
                         disco=opt.format_bytes(liberado_disco))
                 self.after(0, lambda: decir(True, msg))
                 self._log_dev(t("consola_log_rapido", origen=seccion_origen), "N/A", msg, seccion=seccion_origen,
-                              exito=True, bytes_liberados=liberado_ram + liberado_disco,
+                              exito=True, bytes_liberados=liberado_disco, bytes_ram=liberado_ram,
                               archivos_afectados=procesos + archivos)
             threading.Thread(target=worker, daemon=True).start()
             return
@@ -7007,7 +7755,7 @@ class TechCleanApp(ctk.CTk):
                     msg += " " + t("opt_ram_espera", antes=opt.format_bytes(r["espera_antes"]),
                                     despues=opt.format_bytes(r["espera_despues"]))
                 self._log_dev(t("opt_log_ram_profunda"), r["comando"], msg, seccion=seccion_origen,
-                              exito=True, bytes_liberados=r["liberado"])
+                              exito=True, bytes_ram=r["liberado"])
                 return True, msg
             en_hilo(trabajo)
             return
@@ -7163,6 +7911,76 @@ class TechCleanApp(ctk.CTk):
                 return
             consola.imprimir(t("consola_abriendo"), "dim")
             self.after(300, self.mostrar_tecnico)
+            return
+
+        # ---- Comandos de la 1.7.0 ----
+        if comando == "/wifi":
+            consola.imprimir(t("wifi_analizando"), "dim")
+
+            def trabajo():
+                texto, nivel = texto_wifi(sysmon.leer_wifi(escanear=True))
+                return nivel in ("bien", "info"), texto
+            en_hilo(trabajo)
+            return
+
+        if comando == "/disco":
+            consola.imprimir(t("comp_disco_fase_escribiendo"), "dim")
+
+            def trabajo():
+                r = opt.prueba_velocidad_disco(tamano_mb=256)
+                if not r or "error" in r:
+                    return False, t("comp_disco_error", error=(r or {}).get("error") or t("comp_error_desconocido"))
+                self._log_dev(t("comp_log_disco"), t("comp_log_disco_cmd"), texto_disco(r),
+                              seccion=seccion_origen, exito=True)
+                return r["clase"] != "hdd", texto_disco(r)
+            en_hilo(trabajo)
+            return
+
+        if comando == "/extensiones":
+            consola.imprimir(t("ext_revisando"), "dim")
+
+            def trabajo():
+                extensiones = seg.auditar_extensiones(idiomas.IDIOMA_ACTUAL)
+                if not extensiones:
+                    return True, t("ext_ninguna")
+                niveles = {"alto": "aud_nivel_alto", "medio": "aud_nivel_medio", "info": "aud_nivel_info"}
+                lineas = [t("ext_resumen", total=len(extensiones),
+                            altos=sum(1 for e in extensiones if e["nivel"] == "alto"),
+                            medios=sum(1 for e in extensiones if e["nivel"] == "medio"))]
+                for e in extensiones[:40]:
+                    lineas.append(f'[{t(niveles[e["nivel"]])}] {e["navegador"]}: {e["nombre"]}'
+                                  + ("" if e["activa"] else f'  ({t("ext_desactivada")})'))
+                return not any(e["nivel"] == "alto" for e in extensiones), "\n".join(lineas)
+            en_hilo(trabajo)
+            return
+
+        if comando == "/accesos":
+            def trabajo():
+                rotos = opt.buscar_accesos_rotos()
+                if not rotos:
+                    return True, t("accesos_ninguno")
+                lineas = [t("accesos_resumen", total=len(rotos))]
+                lineas += [f'{r["nombre"]}  →  {r["destino"]}' for r in rotos[:40]]
+                lineas.append(t("consola_accesos_donde"))
+                return False, "\n".join(lineas)
+            en_hilo(trabajo)
+            return
+
+        if comando == "/encendido":
+            dias = self.vigilante.dias_encendido()
+            if dias is None:
+                decir(False, t("consola_encendido_error"))
+                return
+            limite = self.prefs.get("dias_reinicio", 7)
+            texto = t("consola_encendido", dias=f"{dias:.1f}")
+            if dias >= limite:
+                texto += "\n" + t("vig_reinicio_msg", dias=int(dias))
+            decir(dias < limite, texto)
+            return
+
+        if comando == "/buscar":
+            consola.imprimir(t("consola_abriendo"), "dim")
+            self.after(300, self._abrir_paleta)
             return
 
         navegacion = {
@@ -8246,6 +9064,8 @@ class TechCleanApp(ctk.CTk):
         fila_actualizacion.pack(fill="x", padx=20, pady=(0, 8))
         ctk.CTkButton(fila_actualizacion, text=t("ajustes_buscar_actualizaciones"), width=180, fg_color="#2a2d36",
                       hover_color="#3a3e4a", command=self._accion_buscar_actualizacion_manual).pack(side="left")
+        ctk.CTkButton(fila_actualizacion, text=t("nov_btn_ver"), width=160, fg_color="#2a2d36",
+                      hover_color="#3a3e4a", command=self._mostrar_novedades).pack(side="left", padx=(8, 0))
         self.lbl_resultado_actualizacion = ctk.CTkLabel(fila_actualizacion, text="",
                                                           font=ctk.CTkFont(size=11), text_color="gray60")
         self.lbl_resultado_actualizacion.pack(side="left", padx=10)
@@ -8430,9 +9250,68 @@ class TechCleanApp(ctk.CTk):
         self.switch_avisar_disco.pack(side="right")
         if self.prefs.get("avisar_disco_lleno", True):
             self.switch_avisar_disco.select()
+        # 1.7.0: días sin reiniciar y límite de carga de la batería.
+        fila_reinicio = ctk.CTkFrame(panel, fg_color="transparent")
+        fila_reinicio.pack(fill="x", padx=20, pady=(0, 4))
+        ctk.CTkLabel(fila_reinicio, text=t("ajustes_avisar_reinicio"), font=ctk.CTkFont(size=12)).pack(side="left")
+        self.switch_avisar_reinicio = ctk.CTkSwitch(fila_reinicio, text="",
+                                                    command=lambda: self._toggle_aviso("avisar_reinicio",
+                                                                                       self.switch_avisar_reinicio))
+        self.switch_avisar_reinicio.pack(side="right")
+        if self.prefs.get("avisar_reinicio", True):
+            self.switch_avisar_reinicio.select()
+        dias_opciones = {3: t("ajustes_dias_3"), 7: t("ajustes_dias_7"), 14: t("ajustes_dias_14")}
+        self.combo_dias_reinicio = ctk.CTkOptionMenu(
+            fila_reinicio, values=list(dias_opciones.values()), width=110,
+            command=lambda v: self._guardar_numero_pref(
+                "dias_reinicio", next(d for d, txt in dias_opciones.items() if txt == v)))
+        self.combo_dias_reinicio.set(dias_opciones.get(self.prefs.get("dias_reinicio", 7), dias_opciones[7]))
+        self.combo_dias_reinicio.pack(side="right", padx=8)
+
+        fila_carga = ctk.CTkFrame(panel, fg_color="transparent")
+        fila_carga.pack(fill="x", padx=20, pady=(0, 4))
+        ctk.CTkLabel(fila_carga, text=t("ajustes_avisar_carga"), font=ctk.CTkFont(size=12)).pack(side="left")
+        self.switch_avisar_carga = ctk.CTkSwitch(fila_carga, text="",
+                                                 command=lambda: self._toggle_aviso("avisar_carga_bateria",
+                                                                                    self.switch_avisar_carga))
+        self.switch_avisar_carga.pack(side="right")
+        if self.prefs.get("avisar_carga_bateria", False):
+            self.switch_avisar_carga.select()
+        self.combo_limite_carga = ctk.CTkOptionMenu(
+            fila_carga, values=["80%", "85%", "90%"], width=90,
+            command=lambda v: self._guardar_numero_pref("limite_carga_bateria", int(v.replace("%", ""))))
+        self.combo_limite_carga.set(f'{self.prefs.get("limite_carga_bateria", 80)}%')
+        self.combo_limite_carga.pack(side="right", padx=8)
         ctk.CTkLabel(panel, text=t("ajustes_avisos_desc"),
                      font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
-            padx=20, pady=(4, 20), anchor="w")
+            padx=20, pady=(4, 4), anchor="w")
+        ctk.CTkLabel(panel, text=t("ajustes_carga_desc"),
+                     font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
+            padx=20, pady=(0, 20), anchor="w")
+
+        # ---- Atajo de teclado global (1.7.0) ----
+        sep_atajo = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
+        sep_atajo.pack(fill="x", padx=20, pady=10)
+        ctk.CTkLabel(panel, text=t("atajo_titulo"),
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=20, pady=(10, 4))
+        fila_atajo = ctk.CTkFrame(panel, fg_color="transparent")
+        fila_atajo.pack(fill="x", padx=20, pady=(0, 4))
+        ctk.CTkLabel(fila_atajo, text=t("atajo_interruptor"), font=ctk.CTkFont(size=12)).pack(side="left")
+        self.switch_atajo_ram = ctk.CTkSwitch(fila_atajo, text="", command=self._toggle_atajo_ram)
+        self.switch_atajo_ram.pack(side="right")
+        if self.prefs.get("atajo_ram_activo", False):
+            self.switch_atajo_ram.select()
+        self.combo_atajo_ram = ctk.CTkOptionMenu(
+            fila_atajo, values=[atajos.texto_combinacion(c) for c in atajos.COMBINACIONES], width=160,
+            command=self._cambiar_combinacion_atajo)
+        self.combo_atajo_ram.set(atajos.texto_combinacion(self.prefs.get("atajo_ram_combinacion", "ctrl+alt+r")))
+        self.combo_atajo_ram.pack(side="right", padx=8)
+        self.lbl_estado_atajo = ctk.CTkLabel(panel, text="", font=ctk.CTkFont(size=12), anchor="w")
+        self.lbl_estado_atajo.pack(fill="x", padx=20, pady=(0, 2))
+        self._pintar_estado_atajo()
+        ctk.CTkLabel(panel, text=t("atajo_desc"),
+                     font=ctk.CTkFont(size=11), text_color="gray60", wraplength=800, justify="left").pack(
+            padx=20, pady=(0, 20), anchor="w")
 
         sep_ligero = ctk.CTkFrame(panel, height=1, fg_color="#2a2d36")
         sep_ligero.pack(fill="x", padx=20, pady=10)
@@ -8596,9 +9475,15 @@ class TechCleanApp(ctk.CTk):
                 datos = json.load(f)
             if not isinstance(datos, dict):
                 raise ValueError(t("ajustes_importar_formato_invalido"))
-            prefs.guardar(datos)
+            aceptadas, descartadas = prefs.filtrar_importables(datos)
+            if not aceptadas:
+                raise ValueError(t("ajustes_importar_formato_invalido"))
+            prefs.guardar(aceptadas)
             self.prefs = prefs.cargar()
-            self.lbl_resultado_config.configure(text=t("ajustes_importar_exito"))
+            texto = t("ajustes_importar_exito")
+            if descartadas:
+                texto += " " + t("ajustes_importar_descartadas", n=len(descartadas))
+            self.lbl_resultado_config.configure(text=texto)
             self._log_dev(t("ajustes_log_importar"), "N/A",
                           t("ajustes_importar_desde", origen=origen),
                           seccion=t("seccion_ajustes"), exito=True)
@@ -8781,11 +9666,22 @@ class TechCleanApp(ctk.CTk):
         ANIMAR_BARRAS = not self.prefs.get("modo_ligero")
         widget_mod.ANIMAR_BARRAS = ANIMAR_BARRAS
 
+    def _guardar_aviso_reinicio(self, aviso):
+        """Como _guardar_avisos_disco: lo llama el vigilante desde su hilo."""
+        self.prefs["aviso_reinicio"] = aviso
+        prefs.guardar({"aviso_reinicio": aviso})
+
     def _guardar_avisos_disco(self, avisos):
         """Lo llama el vigilante (desde su hilo) al avisar de un disco lleno.
         Solo toca preferencias, nada de la interfaz."""
         self.prefs["avisos_disco"] = avisos
         prefs.guardar({"avisos_disco": avisos})
+
+    def _guardar_numero_pref(self, clave, valor):
+        """Un número de Ajustes que el vigilante lee en cada vuelta: basta
+        con guardarlo, no hay nada que reiniciar."""
+        self.prefs[clave] = valor
+        prefs.guardar({clave: valor})
 
     def _toggle_aviso(self, clave, switch):
         """Avisos del vigilante. El vigilante lee self.prefs en cada vuelta,

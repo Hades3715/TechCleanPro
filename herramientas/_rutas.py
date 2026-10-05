@@ -34,7 +34,7 @@ ASSETS = os.path.join(RAIZ, "assets")
 # Los modulos de la app, en el orden en que conviene leerlos.
 MODULOS = ["main.py", "main_admin.py", "optimizer.py", "system_monitor.py",
            "idiomas.py", "widget.py", "tray.py", "autopilot.py", "privacy.py",
-           "report.py", "preferences.py", "deshacer.py", "tecnico.py", "seguridad.py",
+           "report.py", "preferences.py", "deshacer.py", "tecnico.py", "seguridad.py", "atajos.py",
            "rutas.py", "build_config.py"]
 
 

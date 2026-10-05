@@ -12,8 +12,10 @@ En sistemas que no son Windows, cada función degrada elegantemente
 mostrando "No disponible" en vez de fallar.
 """
 
+import datetime
 import json
 import platform
+import re
 import socket
 import getpass
 import subprocess
@@ -212,10 +214,19 @@ def estimar_canal_ram(modulos):
 
 # ---------------- CPU ----------------
 
+# cpu_percent(interval=None) da el uso desde la llamada ANTERIOR, sin
+# esperar. La primera vez no hay anterior y devuelve 0.0: se ceba aquí.
+psutil.cpu_percent(interval=None)
+
+
 def get_cpu_info():
+    """BUG de rendimiento corregido: medía con interval=0.3, que DUERME
+    0.3 s, y esto se llama desde el hilo de la interfaz cada 2 s en Inicio:
+    la ventana quedaba congelada el 15 % del tiempo (clics y scroll a
+    tirones). Ahora mide desde la lectura anterior, sin bloquear."""
     freq = psutil.cpu_freq()
     return {
-        "porcentaje": psutil.cpu_percent(interval=0.3),
+        "porcentaje": psutil.cpu_percent(interval=None),
         "nucleos_fisicos": psutil.cpu_count(logical=False),
         "nucleos_logicos": psutil.cpu_count(logical=True),
         "frecuencia_mhz": round(freq.current, 0) if freq else None,
@@ -444,6 +455,268 @@ def get_network_speed():
     return {"bajada_mbps": round(max(bajada, 0), 2), "subida_mbps": round(max(subida, 0), 2)}
 
 
+# ---------------- Wi-Fi ----------------
+# Con la API nativa de Windows (wlanapi.dll) y no con "netsh wlan show
+# interfaces": la salida de netsh viene traducida al idioma de Windows
+# ("Señal", "Signal"...) y cambia de forma entre versiones. La API no.
+
+# DOT11_PHY_TYPE -> nombre comercial del estándar.
+WIFI_ESTANDARES = {4: "802.11a", 5: "802.11b", 6: "802.11g", 7: "Wi-Fi 4 (802.11n)",
+                   8: "Wi-Fi 5 (802.11ac)", 9: "802.11ad", 10: "Wi-Fi 6 (802.11ax)",
+                   11: "Wi-Fi 7 (802.11be)"}
+
+_WLAN_CONECTADO = 1                      # wlan_interface_state_connected
+_OPCODE_CONEXION = 7                     # wlan_intf_opcode_current_connection
+_OPCODE_CANAL = 8                        # wlan_intf_opcode_channel_number
+_OPCODE_RSSI = 0x10000102                # wlan_intf_opcode_rssi
+
+if IS_WINDOWS:
+    import ctypes
+    from ctypes import wintypes as _wt
+
+    class _GUID(ctypes.Structure):
+        _fields_ = [("d1", _wt.DWORD), ("d2", _wt.WORD), ("d3", _wt.WORD), ("d4", ctypes.c_ubyte * 8)]
+
+    class _WLAN_INTERFACE_INFO(ctypes.Structure):
+        _fields_ = [("guid", _GUID), ("descripcion", ctypes.c_wchar * 256), ("estado", ctypes.c_int)]
+
+    class _WLAN_INTERFACE_INFO_LIST(ctypes.Structure):
+        _fields_ = [("cantidad", _wt.DWORD), ("indice", _wt.DWORD), ("items", _WLAN_INTERFACE_INFO * 1)]
+
+    class _DOT11_SSID(ctypes.Structure):
+        _fields_ = [("largo", ctypes.c_ulong), ("ssid", ctypes.c_ubyte * 32)]
+
+    class _WLAN_ASSOCIATION_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [("ssid", _DOT11_SSID), ("tipo_bss", ctypes.c_int), ("bssid", ctypes.c_ubyte * 6),
+                    ("phy", ctypes.c_int), ("phy_indice", ctypes.c_ulong), ("calidad", ctypes.c_ulong),
+                    ("rx_kbps", ctypes.c_ulong), ("tx_kbps", ctypes.c_ulong)]
+
+    class _WLAN_SECURITY_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [("seguridad", _wt.BOOL), ("onex", _wt.BOOL), ("auth", ctypes.c_int),
+                    ("cifrado", ctypes.c_int)]
+
+    class _WLAN_CONNECTION_ATTRIBUTES(ctypes.Structure):
+        _fields_ = [("estado", ctypes.c_int), ("modo", ctypes.c_int), ("perfil", ctypes.c_wchar * 256),
+                    ("asociacion", _WLAN_ASSOCIATION_ATTRIBUTES), ("seguridad", _WLAN_SECURITY_ATTRIBUTES)]
+
+    class _WLAN_RATE_SET(ctypes.Structure):
+        _fields_ = [("largo", ctypes.c_ulong), ("tasas", ctypes.c_ushort * 126)]
+
+    class _WLAN_BSS_ENTRY(ctypes.Structure):
+        _fields_ = [("ssid", _DOT11_SSID), ("phy_id", ctypes.c_ulong), ("bssid", ctypes.c_ubyte * 6),
+                    ("tipo_bss", ctypes.c_int), ("phy", ctypes.c_int), ("rssi", ctypes.c_long),
+                    ("calidad", ctypes.c_ulong), ("en_dominio", ctypes.c_ubyte), ("baliza", ctypes.c_ushort),
+                    ("marca", ctypes.c_ulonglong), ("marca_host", ctypes.c_ulonglong),
+                    ("capacidades", ctypes.c_ushort), ("frecuencia_khz", ctypes.c_ulong),
+                    ("tasas", _WLAN_RATE_SET), ("ie_offset", ctypes.c_ulong), ("ie_tamano", ctypes.c_ulong)]
+
+    class _WLAN_BSS_LIST(ctypes.Structure):
+        _fields_ = [("tamano", _wt.DWORD), ("cantidad", _wt.DWORD), ("items", _WLAN_BSS_ENTRY * 1)]
+
+
+def banda_wifi(canal=None, frecuencia_mhz=None):
+    """'2.4', '5', '6' o None. Con la frecuencia es exacto; con el canal
+    solo, los canales de 6 GHz se confunden con los de 2.4 y 5 (se
+    numeran desde 1 otra vez), así que se prefiere la frecuencia."""
+    if frecuencia_mhz:
+        if frecuencia_mhz < 3000:
+            return "2.4"
+        return "5" if frecuencia_mhz < 5925 else "6"
+    if canal:
+        return "2.4" if canal <= 14 else "5"
+    return None
+
+
+def canal_wifi(frecuencia_mhz):
+    if not frecuencia_mhz:
+        return None
+    if frecuencia_mhz == 2484:
+        return 14
+    if 2412 <= frecuencia_mhz <= 2472:
+        return (frecuencia_mhz - 2407) // 5
+    if 5000 <= frecuencia_mhz < 5925:
+        return (frecuencia_mhz - 5000) // 5
+    if 5925 <= frecuencia_mhz <= 7125:
+        return (frecuencia_mhz - 5950) // 5
+    return None
+
+
+def _consultar_wifi(wlan, manejador, guid, opcode, tipo):
+    """Una consulta WlanQueryInterface; copia el resultado y libera la
+    memoria que reservó Windows. None si falla."""
+    tamano = _wt.DWORD()
+    dato = ctypes.c_void_p()
+    clase = ctypes.c_int()
+    if wlan.WlanQueryInterface(manejador, ctypes.byref(guid), opcode, None, ctypes.byref(tamano),
+                               ctypes.byref(dato), ctypes.byref(clase)) != 0 or not dato.value:
+        return None
+    try:
+        if tamano.value < ctypes.sizeof(tipo):
+            return None
+        return tipo.from_buffer_copy(ctypes.string_at(dato.value, ctypes.sizeof(tipo)))
+    finally:
+        wlan.WlanFreeMemory(dato)
+
+
+def _redes_vecinas(wlan, manejador, guid):
+    """[(bssid, frecuencia_mhz, rssi)] de las redes que el adaptador oye,
+    de su último escaneo (no lanza uno nuevo). None si Windows no lo deja
+    (desde Windows 11 24H2 puede pedir permiso de ubicación)."""
+    lista = ctypes.POINTER(_WLAN_BSS_LIST)()
+    if wlan.WlanGetNetworkBssList(manejador, ctypes.byref(guid), None, 3, False, None,
+                                  ctypes.byref(lista)) != 0 or not lista:
+        return None
+    try:
+        n = lista.contents.cantidad
+        if not n:
+            return []
+        entradas = ctypes.cast(ctypes.addressof(lista.contents.items),
+                               ctypes.POINTER(_WLAN_BSS_ENTRY * n)).contents
+        return [(bytes(e.bssid), e.frecuencia_khz // 1000, e.rssi) for e in entradas]
+    finally:
+        wlan.WlanFreeMemory(lista)
+
+
+# Una red más débil que esto apenas estorba: no se cuenta como vecina.
+RSSI_VECINA_MINIMO = -82
+
+
+def leer_wifi(escanear=False):
+    """Estado de cada adaptador Wi-Fi.
+
+    None si el equipo no tiene Wi-Fi o el servicio "Configuración automática
+    de WLAN" está apagado. Si no, una lista con un diccionario por
+    adaptador: adaptador, conectado, ssid, senal (0-100), rssi (dBm),
+    canal, banda ('2.4'/'5'/'6'), estandar, velocidad_mbps,
+    redes_mismo_canal y redes_misma_banda (las que se oyen, sin contar la
+    propia; None si Windows no da la lista). Nunca lanza.
+
+    escanear=True pide antes un escaneo y espera 4 s: sin él, Windows suele
+    devolver solo la red a la que se está conectado (comprobado en Windows
+    11), y "tu canal está saturado" saldría siempre que no. Un escaneo
+    puede dar un pequeño pico de ping, así que no se hace mientras se mide
+    el lag."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        wlan = ctypes.windll.wlanapi
+    except OSError:
+        return None
+    manejador = _wt.HANDLE()
+    version = _wt.DWORD()
+    try:
+        if wlan.WlanOpenHandle(2, None, ctypes.byref(version), ctypes.byref(manejador)) != 0:
+            return None
+    except Exception:
+        return None
+    lista = ctypes.POINTER(_WLAN_INTERFACE_INFO_LIST)()
+    try:
+        if wlan.WlanEnumInterfaces(manejador, None, ctypes.byref(lista)) != 0 or not lista:
+            return None
+        n = lista.contents.cantidad
+        if not n:
+            return []
+        interfaces = ctypes.cast(ctypes.addressof(lista.contents.items),
+                                 ctypes.POINTER(_WLAN_INTERFACE_INFO * n)).contents
+        if escanear:
+            escaneados = [wlan.WlanScan(manejador, ctypes.byref(i.guid), None, None, None) == 0
+                          for i in interfaces if i.estado == _WLAN_CONECTADO]
+            if any(escaneados):
+                time.sleep(4)
+        resultado = []
+        for info in interfaces:
+            w = {"adaptador": info.descripcion, "conectado": info.estado == _WLAN_CONECTADO,
+                 "ssid": None, "senal": None, "rssi": None, "canal": None, "banda": None,
+                 "estandar": None, "velocidad_mbps": None,
+                 "redes_mismo_canal": None, "redes_misma_banda": None}
+            resultado.append(w)
+            if not w["conectado"]:
+                continue
+            guid = info.guid
+            conexion = _consultar_wifi(wlan, manejador, guid, _OPCODE_CONEXION, _WLAN_CONNECTION_ATTRIBUTES)
+            bssid_propio = None
+            if conexion is not None:
+                a = conexion.asociacion
+                w["ssid"] = bytes(a.ssid.ssid[:min(a.ssid.largo, 32)]).decode("utf-8", "replace") or None
+                w["senal"] = int(a.calidad)
+                w["estandar"] = WIFI_ESTANDARES.get(a.phy)
+                w["velocidad_mbps"] = round(max(a.rx_kbps, a.tx_kbps) / 1000) or None
+                bssid_propio = bytes(a.bssid)
+            canal = _consultar_wifi(wlan, manejador, guid, _OPCODE_CANAL, ctypes.c_ulong)
+            if canal is not None:
+                w["canal"] = int(canal.value) or None
+            rssi = _consultar_wifi(wlan, manejador, guid, _OPCODE_RSSI, ctypes.c_long)
+            if rssi is not None and -120 < rssi.value < 0:
+                w["rssi"] = int(rssi.value)
+
+            vecinas = _redes_vecinas(wlan, manejador, guid)
+            frecuencia_propia = None
+            if vecinas:
+                for bssid, mhz, _ in vecinas:
+                    if bssid == bssid_propio:
+                        frecuencia_propia = mhz
+                otras = [(mhz, r) for bssid, mhz, r in vecinas
+                         if bssid != bssid_propio and r >= RSSI_VECINA_MINIMO]
+                w["banda"] = banda_wifi(w["canal"], frecuencia_propia)
+                # Se compara por frecuencia: dos redes con el mismo número
+                # de canal en bandas distintas no se pisan.
+                if frecuencia_propia:
+                    w["redes_mismo_canal"] = sum(1 for mhz, _ in otras if mhz == frecuencia_propia)
+                else:
+                    w["redes_mismo_canal"] = sum(1 for mhz, _ in otras if canal_wifi(mhz) == w["canal"]
+                                                 and banda_wifi(frecuencia_mhz=mhz) == w["banda"])
+                w["redes_misma_banda"] = sum(1 for mhz, _ in otras if banda_wifi(frecuencia_mhz=mhz) == w["banda"])
+            else:
+                w["banda"] = banda_wifi(w["canal"])
+        return resultado
+    except Exception:
+        return None
+    finally:
+        try:
+            if lista:
+                wlan.WlanFreeMemory(lista)
+            wlan.WlanCloseHandle(manejador, None)
+        except Exception:
+            pass
+
+
+def veredicto_wifi(w):
+    """("bien" | "regular" | "mal", [claves de motivo]) de un adaptador
+    conectado. Las claves son de idiomas.py; la interfaz les pasa los datos
+    de `w` como campos."""
+    motivos = []
+    nivel = 0
+    rssi, senal = w.get("rssi"), w.get("senal")
+    # El RSSI (dBm) es más fiable que el porcentaje, que cada driver calcula
+    # a su manera. Umbrales habituales: -67 dBm basta para llamadas y
+    # juegos; por debajo de -75 se pierden paquetes.
+    if rssi is not None:
+        if rssi < -75:
+            motivos.append("wifi_mot_senal_mala")
+            nivel = 2
+        elif rssi < -67:
+            motivos.append("wifi_mot_senal_regular")
+            nivel = max(nivel, 1)
+    elif senal is not None:
+        if senal < 40:
+            motivos.append("wifi_mot_senal_mala")
+            nivel = 2
+        elif senal < 60:
+            motivos.append("wifi_mot_senal_regular")
+            nivel = max(nivel, 1)
+    if w.get("banda") == "2.4":
+        motivos.append("wifi_mot_banda_24")
+        nivel = max(nivel, 1)
+        if (w.get("redes_mismo_canal") or 0) >= 4:
+            motivos.append("wifi_mot_canal_lleno")
+    elif (w.get("redes_mismo_canal") or 0) >= 6:
+        motivos.append("wifi_mot_canal_lleno")
+    if w.get("velocidad_mbps") and w["velocidad_mbps"] < 50:
+        motivos.append("wifi_mot_enlace_lento")
+        nivel = max(nivel, 1)
+    return ("bien", "regular", "mal")[nivel], motivos
+
+
 # ---------------- GPU ----------------
 
 def get_gpu_info():
@@ -564,6 +837,27 @@ def get_top_processes(limit=8):
 
 # ---------------- Drivers ----------------
 
+def _fecha_cim(valor):
+    """Fecha de una consulta CIM como 'AAAA-MM-DD', o None.
+
+    BUG corregido: se cortaban los 10 primeros caracteres suponiendo
+    formato ISO, pero ConvertTo-Json de PowerShell 5.1 escribe las fechas
+    como '/Date(1150848000000)/' (milisegundos desde 1970): la lista de
+    drivers mostraba '/Date(1150' y ordenaba por ese texto. También se
+    acepta el formato WMI ('20190614000000.000000+000') y el ISO."""
+    if not isinstance(valor, str):
+        return None
+    m = re.search(r"/Date\((-?\d+)", valor)
+    if m:
+        try:
+            return (datetime.datetime(1970, 1, 1)
+                    + datetime.timedelta(milliseconds=int(m.group(1)))).strftime("%Y-%m-%d")
+        except (OverflowError, ValueError):
+            return None
+    m = re.match(r"(\d{4})-?(\d{2})-?(\d{2})", valor)
+    return f"{m.group(1)}-{m.group(2)}-{m.group(3)}" if m else None
+
+
 def listar_drivers():
     """
     Lista los drivers firmados instalados (Win32_PnPSignedDriver): nombre
@@ -582,12 +876,7 @@ def listar_drivers():
         nombre = (f.get("DeviceName") or "").strip()
         if not nombre:
             continue
-        fecha = f.get("DriverDate")
-        fecha_legible = None
-        if fecha and isinstance(fecha, str) and len(fecha) >= 8:
-            # CIM devuelve fechas como '20190614000000.000000+000' o WMI datetime;
-            # Get-CimInstance normalmente ya lo convierte a ISO ('2019-06-14T00:00:00').
-            fecha_legible = fecha[:10]
+        fecha_legible = _fecha_cim(f.get("DriverDate"))
         drivers.append({
             "nombre": nombre,
             "fabricante": (f.get("Manufacturer") or "N/D").strip(),

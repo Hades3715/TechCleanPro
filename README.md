@@ -289,6 +289,12 @@ Se maneja como una consola de verdad:
 | `/plan` | Plan de energía activo |
 | `/red` | Conexiones activas con su IP y DNS |
 | `/tecnico` | Abre Herramientas de técnico (solo edición Administrador) |
+| `/wifi` | Analiza tu Wi-Fi: señal, banda, canal y redes vecinas |
+| `/disco` | Velocidad real del disco (escribe 256 MB temporales y los borra) |
+| `/extensiones` | Revisa las extensiones de todos tus navegadores |
+| `/accesos` | Accesos directos rotos del Escritorio y del menú Inicio |
+| `/encendido` | Cuántos días lleva el equipo sin reiniciarse |
+| `/buscar` | Abre el buscador de funciones (también con Ctrl+K) |
 
 Repite los 7 clics para ocultarlo de nuevo.
 
@@ -375,8 +381,9 @@ un hilo aparte para no afectar el rendimiento mientras juegas.
 
 ### Bandeja del sistema
 Cerrar con la X **no cierra la app**: se minimiza a la bandeja. Clic derecho
-ahí: abrir el panel, mostrar/ocultar el widget, activar/desactivar Modo
-Juego, o salir de verdad.
+ahí: abrir el panel, **liberar RAM** o hacer una **limpieza rápida** sin abrir
+la ventana (1.7.0, con una notificación del resultado), mostrar/ocultar el
+widget, activar/desactivar Modo Juego, o salir de verdad.
 
 ### Inicio automático con Windows
 En **Ajustes**, activa "Iniciar TechClean con Windows" — se abre solo,
@@ -439,7 +446,65 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 8. Novedades y correcciones de la versión 1.6.0
+## 8. Novedades y correcciones de la versión 1.7.0
+
+**Más rápida:**
+
+- **Inicio ya no se traba.** Para medir la CPU, la ventana se quedaba
+  esperando 0.3 segundos cada 2 segundos: clics y scroll a tirones el 15 %
+  del tiempo. Ahora no espera nada (medido: de 300 ms a 11 ms por refresco).
+- **Drivers abre al instante** (de 3.3 s a 0.01 s), y el buscador ya no
+  congela la ventana 3 segundos con cada letra.
+- **Cambiar de pantalla, un 15-20 % más rápido**: se corrigió un fallo de
+  customtkinter que recalculaba la ventana entera cada vez que se movía una
+  barra de desplazamiento, y la pantalla vieja se destruye después de dibujar
+  la nueva.
+- Ligera como siempre: 0.35 % de CPU con la ventana abierta y 0.09 % en la
+  bandeja, con todo lo nuevo encendido.
+
+**Nuevo:**
+
+- **🔎 Buscador de funciones (Ctrl+K):** escribes "ram", "wifi", "dns" o
+  "drivers" y vas directo. Encuentra con o sin tildes, en español o inglés y
+  con faltas de ortografía.
+- **🧠 Desde la bandeja:** "Liberar RAM" y "Limpieza rápida" sin abrir la
+  ventana, con una notificación del resultado.
+- **⌨ Atajo de teclado global** (opcional, en Ajustes): libera RAM desde
+  cualquier programa, incluso jugando. Usa `RegisterHotKey` de Windows: no
+  es un "gancho" de teclado, así que no ve nada más de lo que escribes.
+- **📶 Wi-Fi** (en Gaming): señal en dBm, banda, canal, estándar, velocidad
+  del enlace y cuántas redes vecinas comparten tu canal, con un veredicto.
+- **🧩 Extensiones del navegador** (Seguridad): Chrome, Edge, Brave, Opera,
+  Vivaldi y Firefox, en todos sus perfiles. Marca las cargadas sin pasar por
+  la tienda, las forzadas por el registro y las que pueden leer tus datos en
+  todas las webs. Las que instala tu escuela o empresa se reconocen como tales.
+- **🔗 Accesos directos rotos** (Espacio en disco): los que quedaron al
+  desinstalar programas, a la papelera. Los que se abrían al encender el
+  equipo salen sin marcar, para revisarlos antes.
+- **🔔 Avisos nuevos:** cuando el equipo lleva días sin reiniciarse (con el
+  Inicio rápido de Windows, apagar no reinicia) y, opcional, cuando la batería
+  llega a su límite de carga.
+- **✨ Ventana de novedades** al actualizar, una sola vez.
+
+**Errores corregidos:**
+
+- **La prueba de disco medía la RAM, no el disco.** Leía el archivo que
+  acababa de escribir, y Windows lo servía desde la caché: miles de MB/s
+  también en un disco mecánico. Ahora usa `FILE_FLAG_NO_BUFFERING`, mide
+  también bloques sueltos de 4 KB y dice si rinde como un HDD, un SSD o un NVMe.
+- **El Historial sumaba la RAM como "espacio liberado".** Con la liberación
+  automática, la cifra llegaba a cientos de GB que nunca fueron disco. Ahora
+  van separados, también en lo guardado por versiones anteriores.
+- **Importar ajustes aceptaba cualquier cosa:** un archivo con un texto donde
+  va un número rompía la app después. Ahora solo se importan ajustes
+  conocidos y del tipo correcto.
+- **Las fechas de los drivers salían como `/Date(1150848000000)/`.**
+
+Detalle completo en `documentacion/NOTAS_RELEASE_1.7.0.md`.
+
+---
+
+## 9. Novedades y correcciones de la versión 1.6.0
 
 **Lo más grande:**
 
@@ -484,7 +549,7 @@ Detalle completo en `documentacion/NOTAS_RELEASE_1.6.0.md`.
 
 ---
 
-## 9. Novedades y correcciones de la versión 1.5.0
+## 10. Novedades y correcciones de la versión 1.5.0
 
 **Nuevo en esta versión, lo más grande:**
 
@@ -665,7 +730,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 10. Novedades y correcciones de la versión 1.4.0
+## 11. Novedades y correcciones de la versión 1.4.0
 
 **Nuevo:**
 - Ícono propio de la app (ventana, bandeja del sistema y el `.exe` compilado).
@@ -697,7 +762,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 11. Correcciones de la versión 1.3.0
+## 12. Correcciones de la versión 1.3.0
 
 - El autopiloto (y ahora Modo Juego) llamaban a la función que registra
   acciones **desde su propio hilo de fondo**, tocando directamente la
@@ -729,7 +794,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 12. Estructura del proyecto
+## 13. Estructura del proyecto
 
 ```
 codigo/
@@ -748,9 +813,11 @@ codigo/
   report.py          → registro transparente de sesión
   deshacer.py        → registro de cambios reversibles
   tecnico.py         → herramientas de la edición administrador
-  seguridad.py       → auditor de seguridad (solo lee): malware, mineros, red
-  autopilot.py       → segundo plano: Modo Juego, RAM automática, vigilante de fugas y disco
+  seguridad.py       → auditor de seguridad (solo lee): malware, mineros, red, extensiones
+  autopilot.py       → segundo plano: Modo Juego, RAM automática, vigilante (fugas, disco,
+                       días sin reiniciar, límite de carga)
   tray.py            → icono en la bandeja del sistema
+  atajos.py          → atajo de teclado global (RegisterHotKey, sin ganchos de teclado)
   widget.py          → barra de rendimiento flotante
 compilar/            → generadores de .exe, instalador y su script de Inno Setup
 documentacion/       → CONTEXTO_PROYECTO.md y las notas de cada versión
@@ -762,7 +829,7 @@ herramientas/        → verificaciones (ver abajo)
 ### Herramientas de verificación
 
 Antes de dar un cambio por terminado, doble clic en
-**`herramientas\Verificar_Todo.bat`**: corre las 35 comprobaciones seguidas
+**`herramientas\Verificar_Todo.bat`**: corre las 39 comprobaciones seguidas
 y espera una tecla al final para que puedas leer los resultados. Al terminar
 dice cuántas pasaron y cuántas no — antes solo imprimía "revisa arriba", y
 una comprobación que ni llegaba a arrancar no se distinguía de una que
@@ -776,7 +843,7 @@ pasaba.
 | `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar la app |
 | `revisar_lecturas.py` | Ejecuta las ~30 consultas de solo lectura y revisa tipo, claves y cuánto tardan |
-| `revisar_comandos.py` | Que los 38 comandos del panel oculto existan, naveguen y aguanten entrada rara |
+| `revisar_comandos.py` | Que los 44 comandos del panel oculto existan, naveguen y aguanten entrada rara |
 | `prueba_consola.py` | La consola entera: historial con las flechas, completar con Tab, tope de líneas, un color por tipo de línea, y que no quede ni una frase escrita a mano sin traducir |
 | `revisar_pantallas.py` | Abre las 16 pantallas, pulsa cada pestaña y repinta con datos vacíos o a medias |
 | `prueba_arranque.py` | Que la app abra y que las 16 pantallas se pinten, en el idioma que le pases |
@@ -801,6 +868,10 @@ pasaba.
 | `prueba_gaming.py` | Cerrar/reabrir apps (nunca el juego), ajustes de juego, lag y juegos de GOG |
 | `prueba_seguridad.py` | El auditor detecta un malware real y no marca programas legítimos |
 | `prueba_apps_sistema.py` | Winget en cualquier idioma, apps de serie, duplicados y puntos de restauración |
+| `prueba_rendimiento.py` | Que la ventana no se congele: lecturas del hilo de la interfaz, barras de desplazamiento y la lista de drivers |
+| `prueba_wifi_disco.py` | Estructuras de la API de Wi-Fi, veredicto, y que la prueba de disco mida el disco y no la RAM |
+| `prueba_extensiones_accesos.py` | Un navegador de mentira con cada tipo de extensión, y accesos directos de verdad (uno roto) |
+| `prueba_acciones_rapidas.py` | Buscador Ctrl+K, atajo global (y cuando está ocupado), bandeja, novedades e importar ajustes |
 | `revisar_errores_banco.py` | Los errores que la app registró mientras corría el banco: una prueba puede decir "ok" aunque dentro haya saltado uno |
 
 Los `.py` sueltos también se pueden correr desde una terminal
@@ -810,7 +881,7 @@ cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 
 ---
 
-## 13. Licencia y autoría
+## 14. Licencia y autoría
 
 TechClean es **gratis** pero **no** es de dominio público ni de código
 abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los

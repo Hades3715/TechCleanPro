@@ -134,6 +134,56 @@ comprobar(v2.revisar_discos(ahora=1000 + 3 * 3600) == [] and not f2.notificacion
           "tras reiniciar 3 h despues no vuelve a avisar")
 comprobar(v2.revisar_discos(ahora=1000 + 25 * 3600) == ["C:"], "al dia siguiente si")
 
+print("== Dias sin reiniciar (1.7.0) ==")
+DIA = 86400
+avisos = []
+guardado = {}
+arranque = [1_000_000.0]
+v3 = auto.Vigilante(notificar=lambda titulo, texto: avisos.append(texto) or True,
+                    leer_arranque=lambda: arranque[0], dias_reinicio=lambda: 7,
+                    guardar_aviso_reinicio=lambda a: guardado.update(a))
+comprobar(not v3.revisar_reinicio(ahora=arranque[0] + 6 * DIA), "6 dias encendido: no avisa")
+comprobar(v3.revisar_reinicio(ahora=arranque[0] + 8 * DIA) and len(avisos) == 1, "8 dias: avisa")
+comprobar("8" in avisos[-1], f"el aviso dice cuantos dias ({avisos[-1][:40]}...)")
+comprobar(not v3.revisar_reinicio(ahora=arranque[0] + 9 * DIA), "un dia despues, sin reiniciar: no repite")
+comprobar(v3.revisar_reinicio(ahora=arranque[0] + 11.5 * DIA), "a los 3 dias del aviso, si lo repite")
+comprobar(guardado.get("arranque") == int(arranque[0]), "lo guarda para no repetir al abrir la app de nuevo")
+v4 = auto.Vigilante(notificar=lambda *a: avisos.append("x") or True, leer_arranque=lambda: arranque[0],
+                    aviso_reinicio_guardado=dict(guardado))
+comprobar(not v4.revisar_reinicio(ahora=arranque[0] + 12 * DIA),
+          "tras cerrar y abrir la app el mismo arranque: no repite el aviso de hace un rato")
+arranque[0] += 20 * DIA      # reinició y ha pasado poco
+comprobar(not v3.revisar_reinicio(ahora=arranque[0] + DIA), "despues de reiniciar: no avisa")
+v5 = auto.Vigilante(notificar=lambda *a: avisos.append("x") or True, leer_arranque=lambda: arranque[0],
+                    avisar_reinicio=lambda: False)
+comprobar(not v5.revisar_reinicio(ahora=arranque[0] + 30 * DIA), "apagado en Ajustes: no avisa nunca")
+comprobar(v3.dias_encendido(ahora=arranque[0] + 2.5 * DIA) == 2.5, "dias_encendido cuenta bien")
+
+print("== Limite de carga de la bateria (1.7.0) ==")
+avisos_carga = []
+bateria = [(70, True)]
+v6 = auto.Vigilante(notificar=lambda titulo, texto: avisos_carga.append(texto) or True,
+                    avisar_carga=lambda: True, limite_carga=lambda: 80, leer_bateria=lambda: bateria[0])
+pasos = [((70, True), False, "cargando al 70 %: nada"),
+         ((80, True), True, "llega al 80 % enchufada: avisa"),
+         ((84, True), False, "sigue cargando: no repite"),
+         ((100, True), False, "ni al 100 %"),
+         ((78, True), False, "baja un poco sin desenchufar: no rearma todavia"),
+         ((81, True), False, "y por eso no vuelve a avisar"),
+         ((81, False), False, "desenchufa: rearma"),
+         ((82, True), True, "vuelve a enchufar por encima del limite: avisa otra vez")]
+for estado, espera, texto in pasos:
+    bateria[0] = estado
+    comprobar(v6.revisar_carga() == espera, texto)
+v7 = auto.Vigilante(notificar=lambda *a: avisos_carga.append("x") or True, avisar_carga=lambda: True,
+                    leer_bateria=lambda: None)
+comprobar(not v7.revisar_carga(), "sin bateria (sobremesa): no hace nada")
+v8 = auto.Vigilante(notificar=lambda *a: avisos_carga.append("x") or True, leer_bateria=lambda: (95, True))
+comprobar(not v8.revisar_carga(), "de fabrica viene apagado")
+real = auto._leer_bateria()
+comprobar(real is None or (0 <= real[0] <= 100 and isinstance(real[1], bool)),
+          f"la lectura real tiene buena forma ({real})")
+
 print("== Lectura rapida de procesos (contra psutil) ==")
 if auto.IS_WINDOWS:
     inicio = time.perf_counter()

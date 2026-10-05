@@ -50,7 +50,55 @@ _DEFAULTS = {
     "cerrar_apps_al_jugar": False,                           # interruptor general de lo anterior (apagado de fábrica)
     "umbral_salud_ram": 75,                                  # % de RAM al que el semáforo de salud (Inicio) empieza a avisar
     "umbral_salud_disco": 85,                                # % de disco lleno al que el semáforo de salud empieza a avisar
+    # 1.7.0
+    "avisar_reinicio": True,                                 # avisar si el equipo lleva días sin reiniciarse
+    "dias_reinicio": 7,                                      # cuántos días
+    "aviso_reinicio": {},                                    # {"arranque": ts, "hora": ts} del último aviso
+    "avisar_carga_bateria": False,                           # avisar al llegar al límite de carga (cuidar la batería)
+    "limite_carga_bateria": 80,                              # % al que avisar
+    "atajo_ram_activo": False,                               # atajo de teclado global para liberar RAM
+    "atajo_ram_combinacion": "ctrl+alt+r",                   # ver atajos.COMBINACIONES
+    "ultima_version_vista": "",                              # para enseñar las novedades una sola vez
 }
+
+# Claves que no tiene sentido traer de otro equipo al importar ajustes: son
+# registros de ESTE equipo (cuándo se avisó de qué), no preferencias.
+_NO_IMPORTABLES = {"avisos_disco", "aviso_reinicio", "ultima_revision_actualizacion",
+                   "ultima_version_vista", "widget_pos"}
+
+
+def filtrar_importables(datos):
+    """De un JSON importado, solo lo que es una preferencia conocida y con
+    un valor del tipo que toca. Devuelve (aceptadas, descartadas).
+
+    BUG corregido (1.7.0): Importar ajustes guardaba el JSON entero tal
+    cual. Un archivo de otra app, de una versión rara o editado a mano
+    metía claves basura o, peor, tipos equivocados ("umbral_ram_auto":
+    "alto"), y la app reventaba después en un sitio que no tenía nada que
+    ver con la importación."""
+    aceptadas, descartadas = {}, []
+    if not isinstance(datos, dict):
+        return aceptadas, list(datos) if isinstance(datos, (list, tuple)) else []
+    for clave, valor in datos.items():
+        if clave not in _DEFAULTS or clave in _NO_IMPORTABLES:
+            descartadas.append(clave)
+            continue
+        defecto = _DEFAULTS[clave]
+        if isinstance(defecto, bool):
+            valido = isinstance(valor, bool)
+        elif isinstance(defecto, (int, float)):
+            valido = isinstance(valor, (int, float)) and not isinstance(valor, bool)
+        elif defecto is None:
+            # Las que valen None de fábrica son "apagado o un valor":
+            # alerta_temp_cpu (número) e icono_bandeja_metrica (texto).
+            valido = valor is None or (isinstance(valor, (int, float, str)) and not isinstance(valor, bool))
+        else:
+            valido = isinstance(valor, type(defecto))
+        if valido:
+            aceptadas[clave] = valor
+        else:
+            descartadas.append(clave)
+    return aceptadas, descartadas
 
 
 # Carpetas cuya creación ya se intentó en esta ejecución.
