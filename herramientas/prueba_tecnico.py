@@ -245,6 +245,36 @@ comprobar("incluye el trabajo hecho", "Liberar RAM" in html)
 comprobar("incluye la estabilidad", "2" in html and t("inf_estabilidad") in html)
 comprobar("sin datos no revienta", tecnico.generar_informe_html({}, t).startswith("<!doctype html>"))
 
+print("\n== El informe en PDF (1.8.0) ==")
+import informe
+datos = {"version": "9.9.9", "fecha": "2026-10-13 10:00", "equipo_nombre": "PC-Prueba",
+         "logo": informe.logo_data_uri(os.path.join(_rutas.RAIZ, "assets", "icono.ico")),
+         "salud": {"puntaje": 72, "nivel": "atencion", "estado": "Hay cosas que revisar", "texto": "Motivos: x."},
+         "problemas": [{"nivel": "atencion", "titulo": "Disco <casi> lleno", "detalle": "93 %", "consejo": "Libera"},
+                       {"nivel": "critico", "titulo": "Tarea sospechosa", "detalle": "gep.exe", "consejo": "No la abras"}],
+         "equipo": [("Procesador", "Intel")], "totales": [("1 GB", "de disco liberados")],
+         "acciones": [{"fecha": "2026-10-13 09:00", "seccion": "Optimizar", "accion": "Liberar RAM",
+                       "resultado": "x" * 400, "exito": True}], "acciones_mas": 3}
+html = informe.generar_html(datos, t)
+comprobar("lleva el logo de la app dentro (no depende de un archivo suelto)", "data:image/png;base64," in html)
+comprobar("escapa lo que viene del equipo", "Disco &lt;casi&gt; lleno" in html and "<casi>" not in html)
+comprobar("lo grave va antes que lo de revisar", html.index("Tarea sospechosa") < html.index("Disco &lt;casi"))
+comprobar("un resultado larguísimo se corta", "x" * 300 not in html)
+comprobar("dice cuántas acciones más hay", t("informe_acciones_mas", n=3) in html)
+comprobar("sin problemas lo dice en verde", t("informe_sin_problemas") in informe.generar_html({"problemas": []}, t))
+comprobar("lo que no se miró no sale", t("informe_sec_problemas") not in informe.generar_html({}, t))
+carpeta = tempfile.mkdtemp(prefix="tc_informe_prueba_")
+ruta_pdf = os.path.join(carpeta, "informe.pdf")
+if informe.buscar_edge():
+    comprobar("Edge lo convierte en un PDF de verdad", informe.a_pdf(html, ruta_pdf)
+              and open(ruta_pdf, "rb").read(5) == b"%PDF-")
+else:
+    print("  (sin Microsoft Edge en este equipo: se salta el PDF)")
+comprobar("si no puede, lo dice (no da por hecho un PDF que no existe)",
+          not informe.a_pdf(html, os.path.join(carpeta, "no", "existe", "informe.pdf")))
+import shutil
+shutil.rmtree(carpeta, ignore_errors=True)
+
 print("\n== Exportacion a medias ==")
 comprobar("lee totales y exportados de pnputil", tecnico.contar_exportados("x\nPaquetes totales:      91\nPaquetes exportados:   54\n") == (91, 54))
 comprobar("sin esas lineas no inventa numeros", tecnico.contar_exportados("nada") == (None, None))

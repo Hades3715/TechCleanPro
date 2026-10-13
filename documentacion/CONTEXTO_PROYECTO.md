@@ -1272,6 +1272,444 @@ el archivo (pasó tres veces en esta sesión: `idiomas.py`, `report.py`,
 `main.py`). Para cualquier cambio que lleve barras invertidas: Edit/Write, o
 un `.py` escrito con Write en el scratchpad.
 
+## Temas y rediseño de la interfaz (para la 1.8.0)
+
+El desarrollador dijo que la interfaz se veía "seca". Se dibujaron tres
+direcciones (lienzo de diseños en claude.ai: Pulido, Telemetría, Claro) y
+seis temas más; aprobó todos menos uno (Synthwave). Quedaron 9:
+Original, Pulido (de fábrica), Telemetría, Claro, Negro puro (OLED),
+Bosque, Terminal retro, Sakura y Alto contraste.
+
+### Cómo funciona (`temas.py`, `iconos.py`)
+
+- **Cerrado a propósito** (lo pidió el desarrollador): los temas van
+  compilados dentro de la app. Nada se descarga ni se lee de archivos;
+  en preferencias solo se guarda el NOMBRE (`"tema"`), y cualquier valor
+  que no esté en `temas.TEMAS` cae en el de fábrica (`nombre_valido`). Se
+  descartó la idea de temas descargables: un tema son colores (pocos KB),
+  las letras son de Windows, y descargar algo para ejecutarlo en una app que
+  corre como administrador es una puerta para malware.
+- Cada tema es un diccionario de **fichas** (`temas.FICHAS`): fondo,
+  lateral, panel, fila, borde, texto/texto2/texto3, acento, sobre_acento,
+  peligro, radios de las esquinas, letra, modo claro/oscuro, estilo de la
+  barra ("lista" o "rail") y escala (Alto contraste: 1.12).
+- `temas.aplicar(nombre)` construye el diccionario de colores por defecto
+  de customtkinter (`ThemeManager.theme`, a partir del "blue" de la
+  librería) y pone el modo. **Va ANTES de crear la ventana** (la ventana es
+  el primer widget que lee el tema): `TechCleanApp.__init__` lee
+  preferencias, aplica, y luego `super().__init__()`.
+  `temas.resolver_fuentes(raiz)` elige la primera letra instalada de cada
+  lista (Segoe UI Variable no existe en Windows 10).
+- En la interfaz, **`T.<ficha>`** (`from temas import T`) en vez de colores
+  escritos a mano. Se lee al crear cada widget; cambiar de tema
+  (`_aplicar_tema`) vuelve a construir la barra y la pantalla abierta. Las
+  `COLOR_*` de main.py siguen existiendo: `_sincronizar_colores()` las
+  reasigna (las funciones leen las globales al ejecutarse).
+- Los colores escritos a mano (446 en main.py; quedan 26, los de la consola
+  y la tarjeta de donar) se cambiaron por fichas SEGÚN SU PAPEL,
+  con un script sobre el árbol de sintaxis (no por valor: el mismo
+  "#2a2d36" era fondo de botón, separador u hover). Los botones
+  secundarios ganaron `text_color=T.texto` (el de por defecto es el de
+  "sobre el acento", casi negro en Telemetría) y los de peligro pasaron a
+  `T.peligro` (rojo oscuro) con texto blanco en todos los temas.
+- **La consola se queda oscura** en todos los temas (es una terminal), y su
+  globito de ayuda también. `prueba_temas.py` permite colores sueltos solo
+  ahí y en la tarjeta de donar.
+- Iconos de línea dibujados con Pillow (`iconos.TRAZOS`, cuadrícula 24x24,
+  a 3x para que se vean nítidos con el zoom de Windows). Sin archivos de
+  imagen. Las miniaturas de los temas en Ajustes también son imágenes de
+  Pillow: una imagen pesa mucho menos que una docena de widgets por tarjeta.
+
+### Barra lateral nueva
+
+- Grupos (Sistema, Protección, Herramientas), iconos en vez de emojis y la
+  sección abierta marcada (antes no había forma de saber dónde estabas).
+  Ajustes y "minimizar a la bandeja" quedan fijos abajo.
+- La pantalla abierta se sabe SIN tocar cada `mostrar_*`:
+  `_limpiar_contenido` mira quién la llamó (`sys._getframe(1)`), lo guarda
+  en `_pantalla_actual` y lo marca. Las que cuelgan de otra (Drivers,
+  Espacio en disco) marcan a su madre (`NAV_DE_PANTALLA`).
+- Telemetría usa una columna estrecha (`_sidebar_rail`) con nombres cortos
+  (`nav_corto_*`) y la explicación en un globito.
+
+### Inicio y Optimizar rediseñados
+
+- Inicio: cabecera con las dos acciones a la derecha, tarjeta de salud con
+  anillo (tk.Canvas escalado a mano: no sigue el zoom de Windows como los
+  widgets de customtkinter), cuatro `TarjetaMetrica` (misma interfaz
+  `set_value` que `Gauge`: `_refrescar_gauges` no cambió; la animación se
+  sacó a `_ValorAnimado`, que comparten), gráficas e información.
+- Optimizar: la RAM en dos tarjetas, el disco en filas (icono, qué hace,
+  botón), el perfil de energía en un selector que vuelve atrás si el
+  cambio falla.
+- El resto de pantallas toma colores, letra y bordes del tema; su
+  rediseño a fondo queda para después, una por una.
+
+### Errores encontrados por el camino
+
+- **Textos cortados por los dos lados** (venía de antes): muchos textos se
+  partían a un ancho fijo (wraplength=850/900). Con la ventana a su tamaño
+  de fábrica o el zoom al 125 %, la caja era más estrecha y la etiqueta,
+  centrada, se cortaba: en Gaming se leía "ambia el plan..." en vez de
+  "Cambia". `_textos_al_ancho` ajusta cada texto largo al ancho real de su
+  caja cuando la pantalla termina de dibujarse.
+- En Alto contraste el tema pone borde de 2 px a TODOS los botones; los de
+  la barra y los enlaces llevan `border_width=0` explícito.
+- El azul del tema Original (#1f6aa5) no llegaba al contraste mínimo como
+  color de línea sobre los paneles (2.9:1): se aclaró a #2070ab.
+- En Alto contraste el aviso de "Limpieza automática programada" de Inicio
+  no tenía wraplength y se cortaba por los dos lados (llega desde un hilo,
+  después del ajuste de textos): ahora se parte al ancho de su columna.
+
+### El rediseño hizo la app el DOBLE de lenta (y cómo se arregló)
+
+Medido con la ventana de fábrica, cambiando de pantalla (construir y
+dibujar), contra la 1.7.0 en el mismo equipo y el mismo rato:
+
+| Pantalla  | 1.7.0        | rediseño recién hecho | arreglado    |
+|-----------|--------------|-----------------------|--------------|
+| Inicio    | 0.50-0.67 s  | 1.4 s                 | 0.63-0.76 s  |
+| Optimizar | 0.65-1.0 s   | 2.1 s                 | 1.0-1.17 s   |
+| Ajustes   | 1.07-1.6 s   | 2.5 s                 | 1.25-1.6 s   |
+| Gaming    | 1.12-1.4 s   | 1.6 s                 | 1.0-1.3 s    |
+| Reparar   | 0.81-1.0 s   | 1.2 s                 | 0.74-0.9 s   |
+
+(Rangos de varias tandas alternando versiones, con el equipo más o menos
+ocupado.) Gaming y Reparar quedan igual que en la 1.7.0; Inicio, Optimizar
+y Ajustes, un 15-25 % por encima: enseñan más (las explicaciones de cada
+acción a la vista, la galería de temas). CPU con Inicio abierto y quieto:
+0.80 % con el rediseño recién hecho, 0.41 % arreglado (0.42 % la 1.7.0);
+RAM 84 MB (80 la 1.7.0). Lo que costaba, de más a menos:
+
+- **Una CTkProgressBar cuesta ~10 ms** (crearla y dibujarla) y se
+  redibujaba ENTERA en cada paso de la animación de las tarjetas de Inicio:
+  16 pasos por refresco y por tarjeta, también con la app quieta (de ahí la
+  CPU en reposo). `TarjetaMetrica` dibuja ahora número y barra en un
+  tk.Canvas: un texto y dos líneas de punta redonda; cada paso, dos llamadas.
+- **Los textos largos se reajustaban 3 o 4 veces al abrir una pantalla.**
+  `_textos_al_ancho` (el arreglo de los textos cortados) cambiaba el
+  wraplength en CADA `<Configure>`, y mientras la pantalla se coloca su
+  caja pasa por anchos intermedios: en Ajustes 800 → 234 → 729 → 800 px.
+  Cada cambio volvía a colocar y dibujar el panel entero. En Optimizar,
+  además, `texto_fluido` y `_textos_al_ancho` ajustaban la misma etiqueta
+  con márgenes distintos y se pisaban (620 ↔ 683). Ahora hay un solo
+  mecanismo (`texto_fluido`): cada `<Configure>` solo apunta la caja, y el
+  ajuste se hace UNA vez, cuando nada se mueve desde hace
+  `ESPERA_TEXTOS_MS` y han pasado tres ratos libres seguidos de Tk, y solo
+  en cajas ya asentadas (`_caja_asentada`: visibles, y sin un
+  CTkScrollableFrame que aún no ha fijado el ancho de su interior). Tk
+  atiende los temporizadores ANTES que su propio trabajo de colocar
+  ventanas: sin esas esperas el ajuste llegaba a media colocación.
+- **La galería de temas: ~0.8 s** (9 tarjetas × 4 widgets). `GaleriaTemas`
+  la dibuja en un solo tk.Canvas: cada tarjeta es una imagen de fondo con
+  la miniatura dentro (`iconos.tarjeta_tema`) y dos textos del lienzo.
+- **Una CTkFont por etiqueta.** `ctk.CTkFont(...)` crea una fuente nueva de
+  Tk cada vez, y había 390. Con la fuente compartida, crear y dibujar una
+  etiqueta cuesta ~1.3 ms menos: `fuente(size, weight, family)` las guarda
+  por ventana (en la ventana principal: las fuentes son de su intérprete de
+  Tcl, y las pruebas abren y cierran varias).
+- **Marcos invisibles.** Un `CTkFrame(fg_color="transparent")` es un lienzo
+  que dibuja un rectángulo redondeado aunque no se vea, y lo redibuja en
+  cada cambio de tamaño (~6 ms frente a ~1.5 de un tk.Frame). El rediseño
+  llenó Inicio y Optimizar de filas y cabeceras así. `Caja` es un tk.Frame
+  del color de su padre que escala sus márgenes con el zoom de Windows
+  (como hace customtkinter); `linea()` es el separador de 1 px. El marco
+  de cada pantalla (`_limpiar_contenido`) también es una `Caja`.
+- **La barra lateral repintaba sus 15 botones** en cada cambio de pantalla
+  para marcar uno: ahora solo el que se desmarca y el que se marca
+  (`_nav_marcado`).
+
+Lo que NO era: el tema en sí (con el "blue" de customtkinter tardaba lo
+mismo), el radio de las esquinas, ni la letra Segoe UI Variable (~10 %).
+
+Medidas sueltas por widget (crear + dibujar, este equipo): CTkLabel 1.3 +
+2.0 ms (3 ms con una CTkFont nueva; 7 con fondo y esquinas), tk.Label
+0.5 + 0.85, CTkButton 5.3 + 3.1, CTkFrame 2.5 + 3.8, tk.Frame 0.02 + 1.5,
+CTkProgressBar 4.2 + 6.2. Para lo que se dibuja muchas veces o en
+cantidad: tk.Canvas o widgets de Tk; customtkinter para lo que se toca.
+
+Dos errores que salieron al pasar el banco después del arreglo:
+
+- **El buscador Ctrl+K no abría** (UnboundLocalError). Al cambiar los 390
+  `ctk.CTkFont(` por `fuente(` de golpe, en `_abrir_paleta` quedó
+  `fuente = fuente(size=13)`: asignar el nombre lo hace local en TODA la
+  función, y la llamada a `fuente()` de unas líneas antes reventaba.
+  Python no lo avisa hasta ejecutar esa línea. `auditoria.py` (paso 6)
+  busca ahora variables locales que tapan una función del módulo.
+- **Componentes seguía consultando WMI con la pantalla cerrada** (venía de
+  antes; lo destapó `prueba_bucles.py` con el equipo cargado). Cada visita
+  lanza un hilo que primero hace las consultas lentas (módulos de RAM,
+  GPU: con WMI degradado, 8-9 s). Si entretanto el usuario salía, o salía
+  y volvía, el hilo viejo seguía con las otras ocho consultas sin tener
+  dónde pintar. Ahora, tras la parte lenta, mira si su visita sigue
+  abierta (`sigue_abierta`: número de visita y `_pantalla_actual`, dos
+  atributos de Python, sin tocar Tk desde el hilo).
+
+`prueba_temas.py` vigila que ningún texto se ajuste más de una vez al
+abrir Optimizar, Ajustes y Gaming, que las fuentes se compartan, que Inicio
+no lleve CTkProgressBar y que la galería quepa en Alto contraste.
+
+Cómo medirlo (sin compilar): un script que crea `TechCleanApp` con un
+APPDATA temporal, la pone fuera de la pantalla, y cronometra
+`getattr(app, pantalla)(); app.update()`. Los tiempos varían ±20 % de una
+vez a otra: comparar siempre contra la versión anterior en la MISMA
+tanda (un `git worktree` con la etiqueta anterior), alternando. Para
+saber QUÉ cuesta, contar llamadas (cProfile, cuántas veces se dibuja cada
+clase o cambia cada wraplength): eso no varía.
+
+### Cómo mirar la app sin molestar al usuario
+
+`PrintWindow` sobre una ventana FUERA de la pantalla no sirve (customtkinter
+no pinta sus lienzos ahí: salen restos). Lo que funciona: la ventana EN la
+pantalla pero con `attributes("-alpha", 0.0)`: no se ve, los clics la
+atraviesan, y `PrintWindow(hwnd, dc, 2)` la captura entera.
+
+## La 1.8.0 a fondo: funciones nuevas, Admin al cliente y el resto del rediseño
+
+Pedido del desarrollador el 2026-10-07, con los temas ya hechos: "la de
+Admin es de Admin por algo", pero lo que ya funcionaba allí (salud de
+discos y batería, historial de fallos, arranque completo, copia de
+drivers) pasa también al cliente en lenguaje sencillo; añadir los grupos
+A, B y C de la propuesta de "qué tan profundo se puede llegar" **menos los
+FPS reales en juegos** (lo descartó él); rediseñar las pantallas que solo
+habían tomado los colores del tema ("según mis amigos ya va quedando algo
+feita"); y revisar bugs. Después: "déjalo como 1.8.0, la 1.9.0 ya veremos".
+Todo esto va, por tanto, en la 1.8.0 (los comentarios que decían "1.9.0"
+se cambiaron).
+
+### Funciones nuevas y sus decisiones
+
+- **Salud de los discos, sin administrador (Componentes).** Los NVMe se
+  leen directo: `\\.\PhysicalDriveN` abierto con acceso 0 (no pide
+  administrador) e `IOCTL_STORAGE_QUERY_PROPERTY` con la página de
+  registro 0x02 del protocolo NVMe: temperatura, repuesto, desgaste, datos
+  escritos, horas, apagados inseguros. 18 ms. Los SATA siguen por
+  `Get-StorageReliabilityCounter` (PowerShell, necesita administrador).
+  `tecnico.leer_registro_nvme` y `veredicto_disco` son puras (las prueba
+  `prueba_diagnostico.py`). En el equipo de desarrollo: SSD al 98 % de vida
+  y 107 apagados inseguros.
+- **GPU de cualquier marca (`gpu.py`).** Lo mismo que el Administrador de
+  tareas: `D3DKMTEnumAdapters2` / `D3DKMTQueryAdapterInfo` (tipos 3, 8 y 62:
+  nombre, memoria, temperatura y ventilador) y los contadores PDH
+  `\GPU Engine(*)\Utilization Percentage` y `\GPU Adapter Memory(*)\Dedicated
+  Usage`. Antes, uso y temperatura solo salían con NVIDIA (`nvidia-smi`).
+- **Reparar → Diagnóstico de fallos (`tecnico.diagnostico_fallos`).** Los
+  últimos 30 días del registro de eventos: evento 41 de Kernel-Power con su
+  `BugcheckCode` y `SleepInProgress` (un 0x9F del 28/09 solo constaba ahí:
+  Windows no llegó a guardar el informe 1001), 1001 de WER, 1000 de
+  Application Error, WHEA y los avisos de disco **filtrados por
+  proveedor**. Lección: los IDs se repiten entre proveedores (el 153 de
+  Kernel-Boot es de arranque, el 7 de BTHUSB es Bluetooth): contando por
+  número salían 39 "errores de disco" que no lo eran. Y aun por proveedor
+  hay que leerlos: volmgr 161 = no se pudo guardar el volcado; Ntfs 55 =
+  daño en el sistema de archivos de una unidad.
+- **Aplicaciones → Inicio de Windows completo.** Las claves Run de tu usuario
+  y de todos (también las de 32 bits), las carpetas de Inicio y las tareas
+  programadas al iniciar sesión. Se activa y desactiva **como el
+  Administrador de tareas**: `...\Explorer\StartupApproved\<Run|Run32|
+  StartupFolder>`, 12 bytes: `02` + ceros = activo; `03` + tres ceros +
+  FILETIME = desactivado (sin valor = activo). Las tareas, con
+  `Enable/Disable-ScheduledTask`. Todo con deshacer (`inicio_aprobado`,
+  `tarea_inicio`): deshacer deja el valor EXACTAMENTE como estaba, también
+  "sin valor" (no un 02). Cada entrada pasa por las reglas de la auditoría
+  (`seg.evaluar_inicio`): con la versión anterior, la tarea del malware del
+  equipo ni salía aquí.
+- **Privacidad: quién usó la cámara, el micrófono y la ubicación.**
+  `HKCU\...\CapabilityAccessManager\ConsentStore\<permiso>`, valores
+  `LastUsedTimeStart/Stop` (FILETIME; Stop = 0 es que lo está usando). Las
+  apps de escritorio van en `NonPackaged` con las barras cambiadas por `#`.
+- **Seguridad → Protección y secuestros.** El Centro de seguridad
+  (`root/SecurityCenter2`: `productState`, segundo byte 0x10/0x11 = activo,
+  tercero 0x00 = al día; no es API documentada pero es lo que lee todo el
+  mundo), cortafuegos, arranque seguro, control de cuentas y aislamiento del
+  núcleo, del registro. Defender sale "pasivo" con McAfee al mando: se
+  explica (antes decía "Protección activa: No" a secas). Secuestros: hosts,
+  proxy (también PAC), DNS, certificados raíz raros y directivas del
+  navegador. **El hosts**: la primera regla ("todo lo que no va a
+  127.0.0.1 es una redirección") marcaba en rojo un bloqueo de McAfee
+  (0.0.0.1) y los nombres de Tailscale (100.92.x.x). Ahora hay tres
+  grupos: bloqueos (0.x, 127.x), tu red o VPN (privadas, 100.64.0.0/10) y
+  redirecciones a una IP PÚBLICA, lo único grave.
+- **Energía: consumo por app.** `powercfg /srumutil` (SRUM) a CSV. Necesita
+  administrador. Microsoft no documenta las columnas: se buscan por nombre
+  (`AppId`, `TotalEnergyConsumption` o la suma de las que acaban en
+  `EnergyConsumption`, SIN las `WorkOnBehalf`, que repiten lo que un
+  proceso hizo por otro; `OnBattery`). Sin comprobar todavía como
+  administrador en el equipo de desarrollo.
+- **Gaming.** Qué cuenta como juego (`Autopilot._buscar_juego`): a pantalla
+  completa salvo navegadores y reproductores (`NO_JUEGOS`), o cualquier
+  programa que viva en la carpeta de un juego de la biblioteca (Steam, Epic,
+  GOG) aunque vaya en ventana. **Modo Juego automático por juego**
+  (`VigiaJuegos`): solo corre si hay algún juego marcado, cada 10 s mira qué
+  hay delante; no apaga un Modo Juego encendido a mano. **Frenar lo que
+  acapara la CPU** (como el ProBalance de Process Lasso): más del 25 % de un
+  núcleo dos vueltas seguidas → prioridad "por debajo de lo normal"; nunca
+  el juego, lo del sistema, el chat de voz ni la grabación (`NO_FRENAR`), y
+  se devuelve al acabar. **Bufferbloat**: el ping en reposo y con la línea
+  llena (dos descargas, tope ~60 MB), con la escala de Waveform.
+- **Limpieza a fondo: cachés de sombreadores.** Se mantuvo la decisión de
+  NO borrar las de juegos instalados (darían tirones, en contra del Modo
+  Juego); solo `steamapps\shadercache\<id>` sin `appmanifest_<id>.acf` (juego
+  desinstalado). En el equipo de desarrollo no había ninguna.
+- **Espacio en disco: análisis completo (`disco.py`).** Ver abajo.
+- **Drivers: copia de seguridad** (exportar con `pnputil /export-driver` y
+  reinstalar) en el cliente. **Segundo plano** enseña de un vistazo todo lo
+  que la app hace sola, con un salto a donde se cambia.
+
+### El analizador de disco, y por qué no lee la MFT
+
+Antes: dos niveles de carpetas, casi todo sin contar. Ahora `disco.py`
+recorre la unidad entera con `os.scandir` en **8 hilos** (en Windows
+scandir trae el tamaño en el propio listado, y suelta el GIL mientras
+espera al disco). Medido en C: (300 GB, 713.000 archivos): 1 hilo, 50 s en
+caliente y hasta 400 s en frío; 8 hilos, **14-26 s**; 16 hilos, igual que
+8. La ventana sigue respondiendo (peor atasco ~0,15-0,2 s, media 7 ms).
+
+- Solo carpetas en memoria (cada una con lo que suman sus archivos):
+  ~50 MB para C:, que se sueltan a los 10 minutos sin mirar la pantalla.
+  Una subcarpeta siempre tiene un índice mayor que su madre, así que los
+  totales salen de una sola pasada del final al principio.
+- **Uniones y la nube**: OneDrive y Dropbox son puntos de análisis igual
+  que una unión (atributo 0x400), pero con etiqueta `0x9000?01A`; en esas sí
+  se entra. En una primera medida se saltaron y faltaba OneDrive. Lo que
+  está solo en la nube (RECALL_ON_DATA_ACCESS / RECALL_ON_OPEN / OFFLINE) no
+  se cuenta ni se lista: listarlo lo bajaría de internet. Nunca se abre un
+  archivo.
+- Los enlaces duros (WinSxS) se cuentan como en el Explorador: dos veces.
+- **La MFT no se lee** (lo de WizTree, grupo C): necesita administrador y
+  un lector a mano de las estructuras de NTFS (registros con fixups,
+  atributos residentes y no residentes, listas de atributos), y aquí no se
+  podía comprobar contra un disco real. Con 14-26 s no compensaba el riesgo
+  de enseñar tamaños mal leídos. Si se retoma: validar contra `scandir`
+  en carpetas sin enlaces duros antes de enseñar nada.
+- Lo que encontró en el equipo de desarrollo: **14,6 GB de `.etl`** en
+  `C:\ProgramData\McAfee\wps\log` (registros de McAfee; no se tocaron: es
+  del antivirus). De ahí el tipo "Registros y volcados".
+- La papelera desde aquí solo se ofrece para lo del usuario
+  (`puede_ir_a_papelera`): nada de Windows, programas, juegos (un .pak
+  borrado rompe el juego), AppData ni otras cuentas.
+
+### Rendimiento: cada widget de Tk es una ventana de Windows
+
+Entrar en una carpeta del analizador (40 filas) tardaba **0,9-1 s** con
+un widget por pieza (unas 450 ventanas del sistema: Windows mueve cada una
+al recolocar). Construirlas fuera de la vista no ayudaba: lo caro era
+colocarlas y destruirlas. **`ListaLienzo`**: todas las filas dibujadas en
+UN `tk.Canvas` (icono, título, barra, detalle, valor, acciones de texto),
+con zonas pulsables y resalte al pasar el ratón: **~50 ms**. Además:
+
+- `font measure` cuesta ~0,2 ms y recortar un texto pide varias: las
+  medidas se guardan; el lienzo se dibuja UNA vez con `after_idle` aunque
+  su ancho cambie tres veces al colocarse; columnas del mismo ancho para
+  que barras y valores queden alineados.
+- La pestaña vieja se oculta al momento y se destruye después
+  (`_vaciar_pestana`), como las pantallas: destruir los 300 servicios
+  costaba 1,5 s ANTES de dibujar la pestaña nueva.
+- Ojo: un lienzo de Windows no pasa de 32.767 px de alto. El Historial se
+  ve de 200 en 200 acciones.
+
+Con eso: Archivos grandes 2 s → 0,4 s; Desinstalar programas 1,8 s →
+0,5 s; Servicios (al venir de otra pestaña) 1,8 s → 0,2 s.
+
+### Errores corregidos (y por qué no se veían)
+
+- **Servicios: todos "Detenido".** `ConvertTo-Json` de Windows PowerShell
+  5.1 escribe los enumerados como NÚMEROS (`Status: 4`), y la pantalla
+  comparaba con `"Running"`. Se traducen en `opt.ESTADOS_SERVICIO`.
+- **Tildes rotas en todo lo que venía de PowerShell** ("Optimizaci¢n"):
+  por una tubería, PowerShell escribe en la página OEM (cp850) y Python
+  leía con la ANSI (cp1252). Las 30 llamadas que leen texto llevan
+  `PS_UTF8` delante del script y `encoding="utf-8"`. Las que leen bytes
+  siguen con `_decodificar_salida_consola`.
+- **La papelera daba por enviados todos** en cuanto SHFileOperation volvía
+  con 0: ahora cuenta lo que de verdad ya no está.
+- **Copia de drivers con una carpeta que no vale**: devolvía 4 valores y
+  la interfaz leía 6; el hilo moría y se quedaba en "Trabajando...".
+- **Un método definido dos veces**: `_accion_informe_bateria` de Energía
+  (nuevo) pisó al de la pestaña Técnico, que dejó de guardar en el
+  Escritorio. Y `_raiz_registro` dos veces en optimizer. `auditoria.py` ya
+  los imprimía en el paso 2… pero no los contaba como fallo. Ahora sí.
+- **Textos de los dos idiomas mezclados**: un script añadió textos detrás
+  de una línea que era IGUAL en español y en inglés, y metió los de los dos
+  en cada bloque (en un diccionario, el segundo pisa al primero sin avisar).
+  `verificar_idiomas.py` busca ahora claves repetidas.
+- En el hilo de la ventana: borrar caché/historial del navegador (recorre
+  miles de archivos) y lanzar un desinstalador.
+- Segundo plano: el interruptor del widget no reflejaba si estaba
+  visible; cambiar la hora de la limpieza programada no la reprogramaba;
+  la frecuencia no se guardaba; un "quitar" fallido dejaba el interruptor
+  apagado. Drivers: si no se podía cambiar el Inicio rápido, el
+  interruptor se quedaba en la posición falsa.
+- Actualizar una app con winget: se lanzaba y se daba por hecho. Ahora
+  espera y comprueba que ya no sale en la lista de pendientes.
+
+### El informe en PDF (`informe.py`) y la privacidad
+
+Lo pidió el desarrollador (2026-10-13): que el informe "tenga nuestra propia
+forma, bien organizadito, y los errores que presente el equipo". Hasta
+entonces, el cliente solo exportaba el Historial a `.txt`, y la edición
+Admin hacía un HTML sin marca para el cliente.
+
+- **PDF sin librerías nuevas**: el informe se arma en HTML
+  (`informe.generar_html`, pura) y lo imprime **Microsoft Edge en modo
+  headless** (`--headless=new --print-to-pdf`, `informe.a_pdf`), que viene
+  con Windows 10 y 11. Texto seleccionable, tildes bien, colores. Probado:
+  2-3 s. Con su propio perfil temporal (`--user-data-dir`): con el normal,
+  si Edge ya estaba abierto, la orden se la queda esa ventana y no imprime.
+  "Éxito" es que el PDF exista y no esté vacío. Sin Edge, se guarda el HTML.
+  Word o Excel habrían pedido librerías nuevas (python-docx, openpyxl).
+- El pie de página con el número de página va en `@page { @bottom-right }`
+  (Chromium lo admite desde 2024). La franja de color: un elemento
+  `position: fixed` se coloca DENTRO del área de la página; con
+  desplazamientos negativos hacia el margen, Edge lo recortaba y no salía.
+- `_datos_informe` (main) junta lo que la app ya sabe leer: la salud de
+  Inicio (`_medir_salud`, sacada de `_calcular_salud_sistema` para usarla en
+  los dos sitios), el diagnóstico de fallos, salud de discos y batería,
+  protección y secuestros, la auditoría de malware (se ejecuta si no estaba
+  hecha), dispositivos sin driver y el Historial. ~20 s en el equipo de
+  desarrollo. Solo lee. El estado del resumen es el PEOR entre el
+  rendimiento y los problemas: con el malware a la vista, la primera versión
+  decía "Tu equipo está bien" (95 de 100).
+- Los colores del papel van escritos a mano en `informe.py` a propósito: un
+  PDF tiene que verse igual con cualquier tema (con Negro puro sería tinta
+  tirada).
+- `tecnico.generar_informe_html` (el informe de la edición Admin para el
+  cliente) usa ahora la misma plantilla.
+- **Privacidad**: `PRIVACIDAD.md` (en la raíz y en el instalador) y Ajustes →
+  Privacidad. Comprobado en el código: la app solo se conecta a
+  `api.github.com` (actualizaciones, como mucho una vez al día) y a lo que el
+  usuario pulsa (Cloudflare y gstatic para velocidad y bufferbloat, pings a
+  1.1.1.1, DNS públicos al compararlos, winget). Sin telemetría. El
+  instalador de Inno Setup ya pedía aceptar `LICENSE.md`.
+
+### Más listas en lienzo, y dos errores al medir
+
+- `ListaLienzo` aprendió a dibujar un **interruptor** (cambia al momento,
+  queda en espera hasta que quien lo gestiona llama a `listo(exito)`, y
+  vuelve atrás si falló) y filas que se pulsan sin flecha (`pulsar`, para ver
+  el detalle). Con eso pasaron a lienzo Inicio de Windows (16 interruptores:
+  de 0,9-1 s a 0,2-0,3 s), el resumen de Segundo plano, los navegadores de
+  Privacidad y las filas de Protección.
+- `_mostrar_popup_info` era una ventana fija de 420×150: los textos largos
+  (el detalle de una acción del Historial, de una entrada del inicio) se
+  cortaban. Ahora se ajusta al texto, y con scroll si es muy largo.
+- Al medir salían avisos "main thread is not in main loop" de
+  `Variable.__del__`: las `BooleanVar` de las casillas las liberaba el
+  recolector de Python desde un hilo de fondo. `casilla()` crea la
+  CTkCheckBox sin variable (ella guarda su estado; `.get()` da 1 o 0).
+- Medido contra la 1.7.0 (mediana de 4, alternando): las pantallas tardan
+  entre 0,1 y 0,5 s más en abrirse (enseñan bastante más; Drivers, de 0,36
+  a 0,94 s); Aplicaciones, Privacidad y Gaming igual o menos. En la bandeja,
+  el mismo consumo; con la ventana quieta, 0,45 % de CPU (0,35 %): Inicio
+  ahora lee también la GPU de AMD e Intel. Memoria: 97 MB (86 MB).
+
+### Pendiente de comprobar como administrador
+
+El consumo de energía por app (SRUM), activar/desactivar lo que arranca
+para todos los usuarios (HKLM), la salud de los discos SATA y el análisis
+de disco de las carpetas del sistema. La app compilada siempre corre como
+administrador (`--uac-admin`); el banco, no.
+
 ## Malware encontrado en el equipo del desarrollador (2026-10-04)
 
 Durante un escaneo de solo lectura apareció un malware en Python instalado
@@ -1296,3 +1734,12 @@ preguntar. Es el caso real de `prueba_seguridad.py`.
   apoyo continuo, no algo puntual con un final claro. Si en el futuro se
   quiere, algo concreto y medible (como "$220 para la firma digital") sí
   encajaría bien ahí.
+- FPS reales dentro de los juegos (2026-10-07): descartado por el
+  desarrollador. Haría falta leer los eventos de presentación de DirectX
+  (ETW, como PresentMon), con administrador y mucho más trabajo en segundo
+  plano del que quiere una app ligera.
+- Drivers de kernel o cualquier cosa "a nivel 3" (leer sensores a mano,
+  tocar la memoria de otros procesos): nunca. Un driver mal hecho tumba el
+  equipo, y firmarlo no es viable.
+- Leer la MFT para el análisis de disco: no descartado, aplazado (ver "El
+  analizador de disco, y por qué no lee la MFT").

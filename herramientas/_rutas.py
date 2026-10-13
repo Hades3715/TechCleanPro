@@ -35,6 +35,7 @@ ASSETS = os.path.join(RAIZ, "assets")
 MODULOS = ["main.py", "main_admin.py", "optimizer.py", "system_monitor.py",
            "idiomas.py", "widget.py", "tray.py", "autopilot.py", "privacy.py",
            "report.py", "preferences.py", "deshacer.py", "tecnico.py", "seguridad.py", "atajos.py",
+           "temas.py", "iconos.py", "gpu.py", "disco.py", "informe.py",
            "rutas.py", "build_config.py"]
 
 

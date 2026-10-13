@@ -59,6 +59,8 @@ _DEFAULTS = {
     "atajo_ram_activo": False,                               # atajo de teclado global para liberar RAM
     "atajo_ram_combinacion": "ctrl+alt+r",                   # ver atajos.COMBINACIONES
     "ultima_version_vista": "",                              # para enseñar las novedades una sola vez
+    # 1.8.0
+    "tema": "pulido",                                        # uno de temas.ORDEN; cualquier otro valor = el de fábrica
 }
 
 # Claves que no tiene sentido traer de otro equipo al importar ajustes: son

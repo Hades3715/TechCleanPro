@@ -195,3 +195,100 @@ def clear_browser_cache(nombre):
         return True, liberado, t("privmod_cache_ok", navegador=nombre, ruta=cache_path)
     # No se pudo borrar nada: casi siempre es el navegador todavía vivo.
     return False, 0, t("privmod_cache_bloqueada", navegador=nombre)
+
+
+# ---------------- Quién usó la cámara, el micrófono y la ubicación ----------------
+# Windows apunta, por cada app, la última vez que empezó y terminó de usar la
+# cámara, el micrófono o la ubicación: es lo que enseña Configuración →
+# Privacidad → "Actividad reciente". Está en el registro de tu usuario
+# (ConsentStore), junto al permiso de cada app. Solo se lee.
+_CONSENT = r"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore"
+TIPOS_USO = ("webcam", "microphone", "location")
+
+
+def _filetime_a_epoch(valor):
+    try:
+        valor = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return valor / 10_000_000 - 11644473600 if valor > 0 else None
+
+
+def nombre_de_app(clave, empaquetada):
+    """Un nombre legible: "C:#Program Files#Google#Chrome#...#chrome.exe" ->
+    ("chrome", ruta); "Microsoft.WindowsCamera_8wekyb3d8bbwe" -> ("Windows
+    Camera", None)."""
+    import re
+    if not empaquetada:
+        ruta = clave.replace("#", "\\")
+        return os.path.splitext(os.path.basename(ruta))[0], ruta
+    familia = clave.split("_", 1)[0]
+    parte = familia.rsplit(".", 1)[-1] if "." in familia else familia
+    # Las de Windows con nombre interno poco claro.
+    conocidas = {"immersivecontrolpanel": "uso_app_configuracion", "BioEnrollment": "uso_app_hello"}
+    if parte in conocidas:
+        return t(conocidas[parte]), None
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", parte), None
+
+
+def uso_de_permisos():
+    """{tipo: [{nombre, ruta, inicio (epoch), fin (epoch o None), en_uso}]},
+    de más reciente a más antiguo. Vacío fuera de Windows."""
+    resultado = {tipo: [] for tipo in TIPOS_USO}
+    if not IS_WINDOWS:
+        return resultado
+    import winreg
+
+    def leer(clave_abierta, nombre_sub, empaquetada, lista):
+        try:
+            with winreg.OpenKey(clave_abierta, nombre_sub) as sub:
+                try:
+                    inicio = winreg.QueryValueEx(sub, "LastUsedTimeStart")[0]
+                except OSError:
+                    return
+                try:
+                    fin = winreg.QueryValueEx(sub, "LastUsedTimeStop")[0]
+                except OSError:
+                    fin = 0
+        except OSError:
+            return
+        inicio_e = _filetime_a_epoch(inicio)
+        if inicio_e is None:
+            return
+        fin_e = _filetime_a_epoch(fin)
+        nombre, ruta = nombre_de_app(nombre_sub, empaquetada)
+        lista.append({"nombre": nombre, "ruta": ruta, "inicio": inicio_e, "fin": fin_e,
+                      # Empezó y no ha terminado: la está usando ahora mismo.
+                      "en_uso": fin_e is None or fin_e < inicio_e})
+
+    for tipo in TIPOS_USO:
+        lista = resultado[tipo]
+        try:
+            raiz = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _CONSENT + "\\" + tipo)
+        except OSError:
+            continue
+        with raiz:
+            i = 0
+            while True:
+                try:
+                    sub = winreg.EnumKey(raiz, i)
+                except OSError:
+                    break
+                i += 1
+                if sub == "NonPackaged":
+                    try:
+                        with winreg.OpenKey(raiz, sub) as no_empaquetadas:
+                            j = 0
+                            while True:
+                                try:
+                                    app = winreg.EnumKey(no_empaquetadas, j)
+                                except OSError:
+                                    break
+                                j += 1
+                                leer(no_empaquetadas, app, False, lista)
+                    except OSError:
+                        pass
+                else:
+                    leer(raiz, sub, True, lista)
+        lista.sort(key=lambda a: a["inicio"], reverse=True)
+    return resultado

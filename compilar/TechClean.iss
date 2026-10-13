@@ -21,7 +21,7 @@
 ; ============================================================
 
 #define NombreApp "TechClean"
-#define VersionApp "1.7.0"
+#define VersionApp "1.8.0"
 #define Autor "Edwin Javier Cortez Cardoza (Hades)"
 #define WebApp "https://github.com/Hades3715/TechCleanPro"
 
@@ -82,6 +82,7 @@ Source: "..\TechClean_ES.exe"; DestDir: "{app}"; Components: es; Flags: ignoreve
 Source: "..\TechClean_EN.exe"; DestDir: "{app}"; Components: en; Flags: ignoreversion
 Source: "..\README.md";        DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE.md";       DestDir: "{app}"; Flags: ignoreversion
+Source: "..\PRIVACIDAD.md";    DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\TechClean";           Filename: "{app}\TechClean_ES.exe"; Components: es

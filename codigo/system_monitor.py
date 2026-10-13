@@ -22,15 +22,25 @@ import subprocess
 import time
 import psutil
 
+import gpu as _gpu
 from idiomas import t
+
+# PowerShell escribe por una tubería en la página de códigos OEM (cp850 en un
+# Windows en español) y Python lee con la ANSI (cp1252): "Optimización" salía
+# "Optimizaci¢n" en Servicios, Drivers, Tareas... (BUG corregido en la 1.8.0).
+# Las llamadas que leen texto le piden UTF-8 a PowerShell con esto delante del
+# script, y lo leen con encoding="utf-8".
+PS_UTF8 = "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
 
 IS_WINDOWS = platform.system() == "Windows"
 
 
-def _run(cmd, timeout=5):
+def _run(cmd, timeout=5, utf8=False):
+    """utf8: la salida viene en UTF-8 (PowerShell con PS_UTF8 delante)."""
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
+            cmd, capture_output=True, timeout=timeout,
+            **({"encoding": "utf-8", "errors": "replace"} if utf8 else {"text": True}),
             creationflags=subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
         )
         return result.stdout.strip()
@@ -60,7 +70,8 @@ def _cim(clase, propiedades, namespace="root/cimv2", timeout=8):
         f"Get-CimInstance -Namespace {namespace} -ClassName {clase} "
         f"-ErrorAction SilentlyContinue | Select-Object {props} | ConvertTo-Json -Compress"
     )
-    salida = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd], timeout=timeout)
+    salida = _run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + ps_cmd], timeout=timeout,
+                  utf8=True)
     if not salida:
         return []
     try:
@@ -719,16 +730,41 @@ def veredicto_wifi(w):
 
 # ---------------- GPU ----------------
 
+def get_gpu_vivo():
+    """La gráfica principal en vivo, de cualquier marca, como la lee el
+    Administrador de tareas (ver gpu.py). None si este Windows no la da.
+    Barata (unos milisegundos, sin lanzar programas): vale para refrescos."""
+    try:
+        return _gpu.leer_en_vivo()
+    except Exception:
+        return None
+
+
 def get_gpu_info():
     """
     Consulta completa de GPU: nombre, uso, memoria, temperatura y
-    velocidad del ventilador. Las métricas en vivo (uso/temp/mem/fan)
-    solo están disponibles para GPUs NVIDIA vía nvidia-smi. En GPUs
-    AMD/Intel se muestra el nombre (vía CIM) pero sin métricas en vivo:
-    no existe un equivalente universal sin drivers adicionales de terceros.
-    No la llames en un bucle rápido; para refrescos frecuentes usa
-    get_gpu_utilization().
+    velocidad del ventilador.
+
+    1.8.0: primero lo que da Windows para CUALQUIER marca (gpu.py, lo mismo
+    que el Administrador de tareas). Hasta la 1.7.0 las métricas en vivo
+    solo salían con NVIDIA (nvidia-smi) y en AMD/Intel decía "no
+    disponible". nvidia-smi queda de respaldo para un Windows antiguo sin
+    esos contadores, y si nada responde, el nombre por CIM.
     """
+    vivo = get_gpu_vivo()
+    if vivo:
+        return {
+            "nombre": vivo["nombre"],
+            "porcentaje": vivo["uso_pct"],
+            "vram_usada_gb": vivo["vram_usada_gb"],
+            "vram_total_gb": vivo["vram_total_gb"],
+            "compartida_gb": vivo["compartida_gb"],
+            "temperatura_c": vivo["temperatura_c"],
+            "ventilador_pct": None,
+            "ventilador_rpm": vivo["ventilador_rpm"],
+            "otras": vivo["otras"],
+            "fuente": "windows",
+        }
     salida = _run(["nvidia-smi",
                     "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed",
                     "--format=csv,noheader,nounits"])
@@ -765,13 +801,17 @@ _NVIDIA_SMI = None   # None = sin comprobar; "" = no existe en este equipo
 
 
 def get_gpu_utilization():
-    """Solo el % de uso (NVIDIA únicamente).
+    """Solo el % de uso. Primero el de Windows (cualquier marca, barato);
+    si no lo hay, nvidia-smi.
 
-    OJO: lanza un programa (nvidia-smi) en cada llamada; NO es gratis. Se
+    OJO: nvidia-smi lanza un programa en cada llamada; NO es gratis. Se
     llama desde un hilo, nunca desde el de la interfaz. Y en un equipo sin
     NVIDIA no se vuelve a intentar: antes se lanzaba igual cada 2 segundos
     para fallar siempre."""
     global _NVIDIA_SMI
+    vivo = get_gpu_vivo()
+    if vivo:
+        return vivo["uso_pct"]
     if _NVIDIA_SMI is None:
         import shutil
         _NVIDIA_SMI = shutil.which("nvidia-smi") or ""
@@ -996,8 +1036,8 @@ def listar_historial_arranques(limite=15):
         "} } | ConvertTo-Json -Compress"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=20)
         if not r.stdout:
             return []

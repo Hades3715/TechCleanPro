@@ -189,6 +189,90 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+print("== 1.8.0: qué cuenta como juego ==")
+carpetas = [os.path.normcase(os.path.normpath(r"D:\Steam\steamapps\common\Juego")) + os.sep]
+comprobar(auto.en_carpeta_de_juego(r"D:\Steam\steamapps\common\Juego\bin\juego.exe", carpetas),
+          "un programa dentro de la carpeta de un juego")
+comprobar(not auto.en_carpeta_de_juego(r"D:\Steam\steamapps\common\JuegoDos\x.exe", carpetas),
+          "no la de otro juego que empieza igual")
+piloto = auto.Autopilot(carpetas_juegos=lambda: carpetas)
+originales = (auto._get_foreground_fullscreen_pid, auto._pid_en_primer_plano, auto._exe_de)
+exes = {10: r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        20: r"D:\Steam\steamapps\common\Juego\bin\juego.exe", 30: r"C:\Apps\editor.exe"}
+try:
+    auto._exe_de = lambda pid: exes.get(pid, "")
+    auto._get_foreground_fullscreen_pid, auto._pid_en_primer_plano = lambda: 10, lambda: 10
+    comprobar(piloto._buscar_juego() is None, "el navegador a pantalla completa NO es un juego")
+    auto._get_foreground_fullscreen_pid, auto._pid_en_primer_plano = lambda: None, lambda: 20
+    comprobar(piloto._buscar_juego() == 20, "un juego de la biblioteca cuenta aunque vaya en ventana")
+    auto._get_foreground_fullscreen_pid, auto._pid_en_primer_plano = lambda: None, lambda: 30
+    comprobar(piloto._buscar_juego() is None, "otro programa en ventana, no")
+finally:
+    auto._get_foreground_fullscreen_pid, auto._pid_en_primer_plano, auto._exe_de = originales
+
+print("== 1.8.0: Modo Juego automático por juego ==")
+encendidos, apagados = [], []
+vigia = auto.VigiaJuegos(carpetas=lambda: carpetas, encender=encendidos.append,
+                         apagar=lambda: apagados.append(True))
+vivos = {20}
+originales = (auto._pid_en_primer_plano, auto._exe_de, auto.psutil.pid_exists)
+try:
+    auto._exe_de = lambda pid: exes.get(pid, "")
+    auto.psutil.pid_exists = lambda pid: pid in vivos
+    auto._pid_en_primer_plano = lambda: 30
+    vigia.revisar()
+    comprobar(not encendidos, "con otro programa delante, nada")
+    auto._pid_en_primer_plano = lambda: 20
+    vigia.revisar()
+    comprobar(encendidos == ["juego"], "con el juego delante, se enciende (una vez)")
+    auto._pid_en_primer_plano = lambda: 30
+    vigia.revisar()
+    comprobar(encendidos == ["juego"] and not apagados, "cambiar de ventana no lo apaga: el juego sigue abierto")
+    vivos.clear()
+    vigia.revisar()
+    comprobar(apagados == [True], "al cerrar el juego, se apaga")
+    vigia_vacio = auto.VigiaJuegos(carpetas=lambda: [], encender=encendidos.append)
+    vigia_vacio.revisar()
+    comprobar(encendidos == ["juego"], "sin juegos marcados no mira nada")
+finally:
+    auto._pid_en_primer_plano, auto._exe_de, auto.psutil.pid_exists = originales
+
+print("== 1.8.0: frenar lo que acapara la CPU ==")
+# Un proceso PROPIO que gasta CPU sin parar. Se le hace creer al piloto que es
+# el único proceso del equipo: nunca toca los de verdad.
+import subprocess
+import time
+gloton = subprocess.Popen([sys.executable, "-c", "while True: pass"], creationflags=subprocess.CREATE_NO_WINDOW)
+iter_original = auto.psutil.process_iter
+try:
+    auto.psutil.process_iter = lambda attrs=None: (p for p in iter_original(attrs) if p.pid == gloton.pid)
+    piloto = auto.Autopilot(frenar_acaparadores=lambda: True)
+    for _ in range(4):
+        piloto._frenar_acaparadores(pid_juego=999999)
+        time.sleep(0.6)
+    frenado = auto.psutil.Process(gloton.pid).nice() == auto.psutil.BELOW_NORMAL_PRIORITY_CLASS
+    comprobar(frenado and gloton.pid in piloto._frenados, "tras dos vueltas por encima, baja su prioridad")
+    piloto._soltar_frenados()
+    comprobar(auto.psutil.Process(gloton.pid).nice() == auto.psutil.NORMAL_PRIORITY_CLASS,
+              "al terminar la partida se le devuelve la normal")
+    piloto = auto.Autopilot(frenar_acaparadores=lambda: False)
+    for _ in range(3):
+        piloto._frenar_acaparadores(pid_juego=999999)
+        time.sleep(0.4)
+    comprobar(not piloto._frenados, "con el interruptor apagado no frena nada")
+    piloto = auto.Autopilot(frenar_acaparadores=lambda: True)
+    for _ in range(3):
+        piloto._frenar_acaparadores(pid_juego=gloton.pid)
+        time.sleep(0.4)
+    comprobar(not piloto._frenados, "nunca frena el propio juego")
+finally:
+    auto.psutil.process_iter = iter_original
+    gloton.kill()
+
+print("== 1.8.0: nota de bufferbloat ==")
+comprobar([opt.nota_bufferbloat(x) for x in (None, 2, 20, 45, 150, 300, 800)]
+          == [None, "A+", "A", "B", "C", "D", "F"], "la escala de Waveform")
+
 print()
 print("FALLOS: " + ", ".join(fallos) if fallos else "Todo bien.")
 sys.exit(1 if fallos else 0)

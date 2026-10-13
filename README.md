@@ -129,15 +129,16 @@ y sirve para revisar cómo queda todo en ambos idiomas sin recompilar.
 ### Qué trae la Edición Administrador que no trae la de cliente
 
 Una pestaña **🧰 Técnico** con herramientas pensadas para quien arregla
-computadoras ajenas:
+computadoras ajenas. Desde la 1.8.0, lo que se marca con ★ también está en
+la edición cliente, explicado en lenguaje sencillo (Componentes, Reparar,
+Aplicaciones y Drivers):
 
 - **📸 Antes y después** — guarda cómo está el equipo, optimizas, y te
   muestra la diferencia campo por campo. Para enseñarle a quien te pidió el
   favor qué cambió, en vez de decir "quedó mejor".
-- **🚀 Arranque completo** — todo lo que se inicia con Windows en una lista:
+- **🚀 Arranque completo** ★ — todo lo que se inicia con Windows en una lista:
   el registro del usuario y el de la máquina (incluida la clave de 32 bits,
   que casi nadie revisa), las dos carpetas Inicio, y las tareas programadas.
-  La pantalla de Aplicaciones solo mira uno de esos cuatro sitios.
 - **📈 Grabar métricas** — apunta CPU, RAM, disco y temperatura a un CSV cada
   pocos segundos. Para el caso de "a veces se pone lento y no sé por qué":
   lo dejas grabando, usas el equipo, y después buscas el pico en Excel.
@@ -147,9 +148,9 @@ computadoras ajenas:
 - **🔧 Mantenimiento completo** (1.6.0) — punto de restauración, RAM,
   temporales, limpieza a fondo, DNS, sfc/DISM opcional y optimizar discos, en
   orden, con foto antes/después y el informe al final.
-- **🩺 Salud del equipo** (1.6.0) — desgaste y temperatura de los discos,
+- **🩺 Salud del equipo** ★ (1.6.0) — desgaste y temperatura de los discos,
   capacidad de la batería, pantallazos azules y apagados inesperados.
-- **📦 Respaldo de controladores** (1.6.0) — exportarlos antes de formatear y
+- **📦 Respaldo de controladores** ★ (1.6.0) — exportarlos antes de formatear y
   reinstalarlos después, sin buscarlos uno por uno.
 
 Además: el comando exacto de cada acción en el Historial, la Consola de
@@ -189,7 +190,7 @@ TechClean/
 │   ├── Compilar_Instalador.bat      ← instalador de Windows (necesita Inno Setup)
 │   └── TechClean.iss
 ├── documentacion/               ← contexto del proyecto y notas de cada versión
-├── herramientas/                ← el banco de comprobaciones (ver sección 12)
+├── herramientas/                ← el banco de comprobaciones (ver sección 14)
 └── assets/                      ← icono y sonido
 ```
 
@@ -304,16 +305,18 @@ Repite los 7 clics para ocultarlo de nuevo.
 
 | Apartado | Qué hace realmente |
 |---|---|
-| **Inicio** | CPU, RAM, GPU, disco e info del equipo en vivo, con "Optimización con un clic" arriba |
-| **Componentes** | CPU por núcleo + frecuencia + temperatura, GPU con VRAM/temperatura/ventilador, RAM por módulo físico, disco por partición + velocidad de I/O, red, batería, placa madre/BIOS, tiempo encendido, procesos activos, **medidor de velocidad de internet**, **reporte de hardware exportable** |
-| **Optimizar** | RAM, temporales, papelera, DNS, **Perfiles de energía**, y **analizador de espacio en disco** |
-| **Reparar** | sfc /scannow, DISM RestoreHealth, reparar red, chequeo de disco, buscar actualizaciones de Windows, **punto de restauración automático** |
-| **Aplicaciones** | Gestor de apps de inicio, Desinstalador de programas, y **Servicios de Windows** (con confirmación) |
-| **Privacidad** | Borra historial y caché real de Chrome/Edge/Firefox (pide cerrarlos primero) |
-| **Segundo Plano** | Widget flotante, **Modo Juego**, y Limpieza programada automática |
-| **Historial** | Cada acción ejecutada y su resultado — exportable a `.txt`, con **buscador en tiempo real** |
-| **Reiniciar a BIOS** | Reinicia directo al firmware, sin pulsar teclas durante el arranque |
-| **Ajustes** | Créditos, inicio automático con Windows, **alerta de temperatura de CPU**, easter egg 🪿 |
+| **Inicio** | La salud del equipo (0-100) con lo que conviene arreglar, y RAM, CPU, disco y GPU en vivo, con "Optimización con un clic" arriba |
+| **Componentes** | CPU por núcleo, frecuencia y temperatura; GPU de **cualquier marca** con uso, memoria y temperatura; RAM por módulo; **salud de los discos** (en los NVMe, sin administrador) y **de la batería**; red, placa base y BIOS; **medidor de velocidad de internet**; reporte de hardware exportable. Desde aquí, **Drivers** (dispositivos con problemas, copia de seguridad de drivers, actualizaciones) |
+| **Optimizar** | RAM, temporales, papelera, **perfiles de energía**, optimizar unidades y **Espacio en disco**: análisis de la unidad entera carpeta a carpeta, archivos grandes, instaladores viejos, cachés, limpieza a fondo, duplicados y accesos rotos |
+| **Reparar** | **Diagnóstico de fallos** (pantallazos azules, apagados inesperados, apps que se cierran solas y avisos del disco de los últimos 30 días), sfc, DISM, reparar red, DNS más rápido, revisar disco y **puntos de restauración** |
+| **Energía** | Estado de la batería, **qué apps gastan más energía** (como administrador) y reiniciar directo a la BIOS |
+| **Seguridad** | **Estado de la protección** (antivirus, cortafuegos, arranque seguro, control de cuentas), **secuestros** del navegador o de la conexión, Defender, auditoría de malware, extensiones del navegador, programas en la red, permisos de apps, cortafuegos y cuentas de usuario |
+| **Privacidad** | **Qué apps usaron tu cámara, micrófono y ubicación** y cuándo; historial y caché de navegadores; ajustes de privacidad de Windows |
+| **Aplicaciones** | **Todo lo que arranca con Windows** (activar/desactivar como el Administrador de tareas, con deshacer), desinstalar programas, apps de serie, servicios, actualizar apps (winget) y tareas programadas |
+| **Gaming** | Modo Juego (también **automático por juego**), **frenar lo que acapara la CPU** mientras juegas, cerrar apps al jugar, ajustes de Windows para juegos, lag, **bufferbloat** y Wi-Fi |
+| **Segundo Plano** | Widget flotante, limpieza programada y un resumen de **todo lo que TechClean hace sola** |
+| **Historial** | Cada acción ejecutada y su resultado — exportable a `.txt`, con buscador; y lo que se puede deshacer |
+| **Ajustes** | Apariencia (9 temas), inicio con Windows, memoria automática, atajo de teclado, avisos, bandeja y widget, diagnóstico y configuración |
 
 ### Perfiles de energía
 En **Optimizar**, tres botones cambian el plan de energía de Windows:
@@ -323,20 +326,28 @@ los tiene (algunos fabricantes los quitan), se buscan por nombre como
 respaldo.
 
 ### Modo Juego (estilo AMD Adrenaline)
-En **Segundo Plano**, actívalo y hace todo esto junto:
+En **Gaming**, actívalo y hace todo esto junto:
 1. Cambia el plan de energía a Rendimiento.
-2. Cada 8 segundos (bajo consumo, no en bucle continuo) revisa si hay una
-   app a pantalla completa y le sube la prioridad de CPU sin tocarla de
-   ninguna otra forma.
+2. Cada 8 segundos (bajo consumo, no en bucle continuo) busca el juego y le
+   sube la prioridad de CPU sin tocarlo de ninguna otra forma. Cuenta como
+   juego lo que está a pantalla completa, **salvo** navegadores y
+   reproductores de vídeo, y cualquier programa de la carpeta de un juego de
+   tu biblioteca (Steam, Epic, GOG) aunque vaya en ventana (1.8.0).
 3. Si la RAM pasa del 85%, libera memoria automáticamente **excluyendo
    siempre el juego priorizado**, para no causarle un micro-tirón justo
    mientras se supone que lo protege.
+4. Si un programa de fondo se pone a acaparar la CPU durante la partida, le
+   **baja la prioridad** (no lo cierra) y se la devuelve al terminar. Nunca
+   toca el juego, lo del sistema, el chat de voz ni la grabación. Se apaga
+   con su interruptor (1.8.0).
 
 Al desactivarlo, vuelve al plan Equilibrado. Todo queda en el Historial.
+En la biblioteca de juegos puedes marcar los que **encienden el Modo Juego
+solos** al abrirlos (y lo apagan al cerrarse).
 
 ### Limpieza programada automática
-También en **Segundo Plano**: crea una tarea real en el Programador de
-tareas de Windows (Diaria o Semanal, 9:00 AM) que libera RAM y limpia
+En **Segundo Plano**: crea una tarea real en el Programador de
+tareas de Windows (diaria o semanal, a la hora que elijas) que libera RAM y limpia
 temporales **sin abrir ninguna ventana** — usa la bandera interna
 `--limpieza-programada`, que hace el trabajo y termina al instante.
 
@@ -353,9 +364,12 @@ primeras pueden tardar varios minutos — la app no se congela mientras
 corren, pero es mejor esperar antes de cerrarla.
 
 ### Aplicaciones — Inicio de Windows y Desinstalador
-- **Inicio de Windows**: lista lo que abre solo con el equipo (de tu
-  usuario) y permite activar/desactivar cada una. Desactivar NO desinstala
-  nada — solo deja de abrirse sola; se puede reactivar cuando quieras.
+- **Inicio de Windows** (1.8.0): todo lo que abre solo con el equipo — el
+  registro (tuyo y el de todos los usuarios, también la clave de 32 bits),
+  las carpetas de Inicio y las tareas programadas. Se activa y desactiva
+  **igual que en el Administrador de tareas**, se puede deshacer, y lo que
+  parece sospechoso (o apunta a un programa que ya no existe) sale marcado.
+  Desactivar NO desinstala nada — solo deja de abrirse sola.
 - **Desinstalar programas**: lee la misma lista que "Programas y
   características" de Windows y ejecuta el desinstalador **oficial** de
   cada programa — TechClean nunca borra archivos de otros programas a mano.
@@ -364,15 +378,23 @@ corren, pero es mejor esperar antes de cerrarla.
 - La **temperatura de CPU** no tiene una API pública y universal en Windows.
   Se intenta leer vía el sensor ACPI estándar, disponible en varias laptops
   pero no en todos los equipos ni en la mayoría de PCs de escritorio.
-- La **temperatura/VRAM/ventilador de GPU** en vivo solo están disponibles
-  para GPUs NVIDIA (vía `nvidia-smi`). En AMD/Intel se muestra el nombre,
-  no esas métricas en vivo.
+- El **uso, la memoria y la temperatura de la GPU** se leen como lo hace el
+  Administrador de tareas, para cualquier marca (1.8.0; antes solo NVIDIA).
+  La temperatura depende de que el driver la publique.
+- La **salud de los discos**: en los NVMe se lee directo del disco, sin
+  administrador. En los SATA hace falta abrir TechClean como administrador
+  (el `.exe` ya lo pide).
 - El **detalle de RAM/placa madre/BIOS** se lee una sola vez y se cachea.
 
 ### Historial — transparencia
 El comando/API técnica exacta solo aparece en la Edición Administrador —
 en la edición cliente el resultado se muestra en lenguaje simple, tanto en
 pantalla como en el `.txt` exportado.
+
+**Crear informe (PDF)** (1.8.0) junta en un PDF, en tu Escritorio, cómo
+está el equipo, los problemas que se le ven (pantallazos, discos, batería,
+protección, malware, drivers...) con qué hacer en cada uno, y lo que hizo
+TechClean. Tarda unos 30 segundos y solo lee.
 
 ### Widget flotante
 Ve a **Segundo Plano** → activa "Widget de rendimiento flotante". Barra
@@ -392,6 +414,13 @@ requiere administrador. Funciona igual en código fuente y en el `.exe`.
 
 ### Easter egg 🪿
 En **Ajustes**, 5 clics seguidos sobre el crédito del desarrollador.
+
+### Temas (Ajustes → Apariencia)
+Nueve temas con su miniatura: Original (los colores de siempre), Pulido (de
+fábrica), Telemetría, Claro, Negro puro (OLED), Bosque, Terminal retro,
+Sakura y Alto contraste (todo un 12 % más grande y con bordes marcados). El
+cambio es al instante. Los temas van compilados dentro de la app: no se
+descargan ni se leen de archivos, así que nadie los puede cambiar desde fuera.
 
 ---
 
@@ -431,11 +460,17 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
   de que el sistema operativo cargue. El botón reinicia directo al menú.
 - "Liberar RAM" compacta la que los procesos tienen reservada pero no usan
   — no crea memoria de la nada. Misma técnica que herramientas profesionales.
-- El **% de uso de GPU en vivo** solo con NVIDIA (`nvidia-smi`).
+- El **consumo de energía por app** lo da Windows solo a un administrador.
+- **Espacio en disco** recorre la unidad entera (unos 15-25 s para un disco
+  de 300 GB). No lee la tabla interna del disco (MFT) como WizTree: sería
+  más rápido, pero no se pudo comprobar que leyera bien todos los casos.
 - La **temperatura de CPU** no siempre está disponible — depende del equipo.
-- El "Modo Juego" detecta pantalla completa con una **heurística simple** —
-  no distingue juego de video/presentación. Intencionalmente conservador:
-  solo sube prioridad de CPU, nunca cierra ni limita otros procesos.
+- El "Modo Juego" reconoce un juego por estar a pantalla completa (salvo
+  navegadores y reproductores) o por vivir en la carpeta de un juego de tu
+  biblioteca: un programa raro a pantalla completa puede contar como juego.
+  Es conservador: sube la prioridad del juego y, si lo dejas encendido,
+  baja la de lo que acapare la CPU; nunca cierra nada (salvo las apps que
+  tú marques para cerrar al jugar).
 - **Reparar** (sfc/DISM/red) necesita permisos de administrador para
   completarse de verdad; sin ellos, la app te lo dice en el resultado en
   vez de fingir que funcionó.
@@ -446,7 +481,66 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
 
 ---
 
-## 8. Novedades y correcciones de la versión 1.7.0
+## 8. Novedades y correcciones de la versión 1.8.0
+
+**Otra cara, mucho más profunda, e igual de ligera:**
+
+- **🎨 Temas** (Ajustes → Apariencia): Original, Pulido (de fábrica),
+  Telemetría, Claro, Negro puro (OLED), Bosque, Terminal retro, Sakura y
+  Alto contraste. Cambian al instante, sin reiniciar. Van dentro de la app:
+  no se descarga nada y no se pueden cambiar desde fuera (en preferencias
+  solo se guarda el nombre; uno que no existe cae en el de fábrica).
+- **🧭 Todas las pantallas rediseñadas:** barra lateral agrupada con iconos
+  de línea, tarjetas, y cada opción explicada en su fila.
+- **📄 Informe del equipo en PDF** (Historial → Crear informe): cómo está el
+  equipo, los problemas que se le ven con qué hacer en cada uno, y lo que
+  hizo TechClean, con la cara de la app. Solo lee; lo imprime Edge, que viene
+  con Windows.
+- **🔐 Privacidad de la app** (Ajustes → Privacidad y `PRIVACIDAD.md`): qué
+  guarda (solo en tu equipo), cuándo se conecta a internet y qué no hace.
+- **💽 Espacio en disco** analiza la unidad entera en segundos (antes, solo
+  dos niveles de carpetas): carpeta a carpeta, reparto por tipo de archivo y
+  los archivos más grandes. Solo ofrece la papelera para lo tuyo, nunca para
+  archivos de Windows, programas o juegos.
+- **🔍 Reparar → Diagnóstico de fallos:** pantallazos azules (aunque Windows
+  no guardara el informe), apagados inesperados (también durante la
+  suspensión), apps que se cierran solas y avisos del disco.
+- **🩺 Componentes:** salud del disco y de la batería, uso por núcleo y la GPU
+  de cualquier marca. Antes, solo en la edición Admin o solo con NVIDIA.
+- **🚀 Aplicaciones → Inicio de Windows** completo (registro, carpetas y
+  tareas), con deshacer y lo sospechoso marcado.
+- **🛡 Seguridad → Protección:** antivirus, cortafuegos, arranque seguro y
+  control de cuentas, y si te secuestraron el navegador o la conexión
+  (hosts, proxy, DNS, certificados, directivas).
+- **🔐 Privacidad:** qué apps usaron tu cámara, micrófono y ubicación.
+- **🎮 Gaming:** Modo Juego automático por juego, frenar lo que acapara la
+  CPU y la prueba de bufferbloat.
+- **🔋 Energía:** batería y qué apps gastan más.
+- **📦 Drivers:** copia de seguridad y reinstalación en la edición cliente.
+- **👀 Segundo plano:** todo lo que la app hace sola, de un vistazo.
+- **⚡ Listas que ya no congelan la ventana:** carpetas del disco,
+  programas, servicios o un Historial con miles de acciones, al momento.
+- **Igual de ligera** (medido contra la 1.7.0; ver las notas de la release).
+
+**Errores corregidos:**
+
+- **Servicios mostraba TODOS los servicios como detenidos** (Windows
+  PowerShell entrega el estado como número).
+- **Tildes rotas** ("Optimizaci¢n") en todo lo que venía de PowerShell.
+- **La papelera daba por enviados** archivos que no se habían movido.
+- **Una copia de drivers fallida** se quedaba en "Trabajando..." para siempre.
+- **Textos cortados por los dos lados** con la ventana a su tamaño de fábrica
+  o el zoom de Windows al 125 %.
+- **Componentes seguía consultando el sistema con la pantalla cerrada.**
+- Y otros menores: el interruptor del widget, la limpieza programada que no
+  se reprogramaba al cambiar la hora, borrar la caché del navegador que
+  congelaba la ventana... (lista completa en las notas).
+
+Detalle completo en `documentacion/NOTAS_RELEASE_1.8.0.md`.
+
+---
+
+## 9. Novedades y correcciones de la versión 1.7.0
 
 **Más rápida:**
 
@@ -504,7 +598,7 @@ Detalle completo en `documentacion/NOTAS_RELEASE_1.7.0.md`.
 
 ---
 
-## 9. Novedades y correcciones de la versión 1.6.0
+## 10. Novedades y correcciones de la versión 1.6.0
 
 **Lo más grande:**
 
@@ -549,7 +643,7 @@ Detalle completo en `documentacion/NOTAS_RELEASE_1.6.0.md`.
 
 ---
 
-## 10. Novedades y correcciones de la versión 1.5.0
+## 11. Novedades y correcciones de la versión 1.5.0
 
 **Nuevo en esta versión, lo más grande:**
 
@@ -730,7 +824,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 11. Novedades y correcciones de la versión 1.4.0
+## 12. Novedades y correcciones de la versión 1.4.0
 
 **Nuevo:**
 - Ícono propio de la app (ventana, bandeja del sistema y el `.exe` compilado).
@@ -762,7 +856,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 12. Correcciones de la versión 1.3.0
+## 13. Correcciones de la versión 1.3.0
 
 - El autopiloto (y ahora Modo Juego) llamaban a la función que registra
   acciones **desde su propio hilo de fondo**, tocando directamente la
@@ -794,7 +888,7 @@ reemplaza sin dejar la vieja suelta.
 
 ---
 
-## 13. Estructura del proyecto
+## 14. Estructura del proyecto
 
 ```
 codigo/
@@ -816,6 +910,10 @@ codigo/
   seguridad.py       → auditor de seguridad (solo lee): malware, mineros, red, extensiones
   autopilot.py       → segundo plano: Modo Juego, RAM automática, vigilante (fugas, disco,
                        días sin reiniciar, límite de carga)
+  disco.py           → análisis completo de una unidad (8 hilos, solo lee)
+  gpu.py             → GPU de cualquier marca (lo mismo que el Administrador de tareas)
+  temas.py           → los 9 temas (colores, letra y forma)
+  iconos.py          → iconos de línea dibujados con Pillow (sin archivos de imagen)
   tray.py            → icono en la bandeja del sistema
   atajos.py          → atajo de teclado global (RegisterHotKey, sin ganchos de teclado)
   widget.py          → barra de rendimiento flotante
@@ -829,7 +927,7 @@ herramientas/        → verificaciones (ver abajo)
 ### Herramientas de verificación
 
 Antes de dar un cambio por terminado, doble clic en
-**`herramientas\Verificar_Todo.bat`**: corre las 39 comprobaciones seguidas
+**`herramientas\Verificar_Todo.bat`**: corre las 43 comprobaciones seguidas
 y espera una tecla al final para que puedas leer los resultados. Al terminar
 dice cuántas pasaron y cuántas no — antes solo imprimía "revisa arriba", y
 una comprobación que ni llegaba a arrancar no se distinguía de una que
@@ -837,8 +935,8 @@ pasaba.
 
 | Herramienta | Qué comprueba |
 |---|---|
-| `auditoria.py` | Métodos duplicados y referencias rotas entre módulos |
-| `verificar_idiomas.py` | Que español e inglés tengan las mismas claves y los mismos `{campos}` |
+| `auditoria.py` | Funciones y métodos definidos dos veces (el segundo pisa al primero sin avisar), referencias rotas entre módulos, nombres que no existen y variables que tapan una función |
+| `verificar_idiomas.py` | Que español e inglés tengan las mismas claves y los mismos `{campos}`, y ninguna clave repetida dentro de un idioma |
 | `revisar_hilos.py` | Que nadie toque la interfaz desde un hilo de fondo sin pasar por `after(0, ...)` |
 | `revisar_claves.py` | Que toda clave que lee la interfaz la escriba algún módulo de datos |
 | `revisar_ajustes.py` | Que cambiar un ajuste surta efecto sin reiniciar la app |
@@ -850,7 +948,7 @@ pasaba.
 | `prueba_ediciones.py` | Qué opciones ve cada edición (cliente vs admin) |
 | `prueba_animacion.py` | Que las barras, gráficas, aguja y tarjetas animen sin reventar |
 | `prueba_widget.py` | Widget flotante: arrastre, límites de pantalla, tooltips, colores, esquinas redondeadas, respuesta al ratón, que los números no muevan la barra, no trabajar oculto |
-| `prueba_bucles.py` | Que entrar y salir de una pantalla deprisa no deje bucles de refresco acumulados |
+| `prueba_bucles.py` | Que entrar y salir de una pantalla deprisa no deje bucles de refresco ni consultas de más |
 | `prueba_hilos_interfaz.py` | El puente hilo→interfaz, antes de que arranque la app y después de cerrarla |
 | `prueba_historial.py` | Que el historial sobreviva al cierre y aguante una línea corrupta |
 | `prueba_modo_juego.py` | Que el escritorio y una ventana maximizada NO se tomen por un juego |
@@ -865,13 +963,17 @@ pasaba.
 | `prueba_limpieza_fondo.py` | Borrado seguro: no entrar en uniones, no contar lo bloqueado, filtros |
 | `prueba_vigilante.py` | Fugas de memoria y disco lleno: qué es y qué no es, sin repetir avisos |
 | `prueba_dns_unidades.py` | Consulta DNS contra un servidor de mentira, y que nada raro llegue a PowerShell |
-| `prueba_gaming.py` | Cerrar/reabrir apps (nunca el juego), ajustes de juego, lag y juegos de GOG |
+| `prueba_gaming.py` | Cerrar/reabrir apps (nunca el juego), ajustes de juego, lag, juegos de GOG, qué cuenta como juego, Modo Juego automático por juego, frenar lo que acapara la CPU (con un proceso propio, nunca los de verdad) y la nota de bufferbloat |
 | `prueba_seguridad.py` | El auditor detecta un malware real y no marca programas legítimos |
 | `prueba_apps_sistema.py` | Winget en cualquier idioma, apps de serie, duplicados y puntos de restauración |
 | `prueba_rendimiento.py` | Que la ventana no se congele: lecturas del hilo de la interfaz, barras de desplazamiento y la lista de drivers |
 | `prueba_wifi_disco.py` | Estructuras de la API de Wi-Fi, veredicto, y que la prueba de disco mida el disco y no la RAM |
 | `prueba_extensiones_accesos.py` | Un navegador de mentira con cada tipo de extensión, y accesos directos de verdad (uno roto) |
 | `prueba_acciones_rapidas.py` | Buscador Ctrl+K, atajo global (y cuando está ocupado), bandeja, novedades e importar ajustes |
+| `prueba_temas.py` | Los 9 temas: contraste de cada texto, que un nombre raro caiga en el de fábrica, ningún color suelto en el código, cambio en caliente, y que el rediseño no vuelva a ser lento (textos que se ajustan una sola vez, letras compartidas, galería que cabe) |
+| `prueba_disco.py` | El analizador de disco: totales exactos en una carpeta inventada, que no entre en uniones, descontar lo borrado, cachés de juegos desinstalados y qué se ofrece mandar a la papelera |
+| `prueba_diagnostico.py` | Salud NVMe, diagnóstico de fallos (pantallazos, suspensión, volcado sin guardar, NTFS), consumo de energía por app, tildes y estado de los servicios que vienen de PowerShell, copia de drivers |
+| `prueba_proteccion.py` | El archivo hosts (bloqueo vs. secuestro), proxy, DNS, certificados, estado de la protección, y activar/desactivar/deshacer lo que arranca con Windows en una clave de registro propia |
 | `revisar_errores_banco.py` | Los errores que la app registró mientras corría el banco: una prueba puede decir "ok" aunque dentro haya saltado uno |
 
 Los `.py` sueltos también se pueden correr desde una terminal
@@ -881,7 +983,11 @@ cierra sola en cuanto terminan, porque imprimen y salen — para eso está el
 
 ---
 
-## 14. Licencia y autoría
+## 15. Licencia, privacidad y autoría
+
+**Privacidad:** TechClean no recoge ni envía datos tuyos (ni cuentas, ni
+anuncios, ni telemetría); lo que guarda se queda en tu equipo. Cuándo se
+conecta a internet y qué lee del equipo, en [PRIVACIDAD.md](PRIVACIDAD.md).
 
 TechClean es **gratis** pero **no** es de dominio público ni de código
 abierto. Copyright © 2026 Edwin Javier Cortez Cardoza (Hades). Todos los

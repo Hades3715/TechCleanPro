@@ -88,13 +88,17 @@ call :comprobar "34. Rendimiento (la ventana no se congela)" herramientas/prueba
 call :comprobar "35. Wi-Fi y velocidad real del disco" herramientas/prueba_wifi_disco.py
 call :comprobar "36. Extensiones del navegador y accesos rotos" herramientas/prueba_extensiones_accesos.py
 call :comprobar "37. Buscador Ctrl+K, atajo, bandeja y novedades" herramientas/prueba_acciones_rapidas.py
-call :comprobar "38. Errores que la app registro durante el banco" herramientas/revisar_errores_banco.py
+call :comprobar "38. Temas: contraste, cerrados y cambio en caliente" herramientas/prueba_temas.py
+call :comprobar "39. Analizador de disco (cuenta bien, no entra en uniones)" herramientas/prueba_disco.py
+call :comprobar "40. Diagnostico: salud NVMe, fallos, energia por app, PowerShell" herramientas/prueba_diagnostico.py
+call :comprobar "41. Proteccion, secuestros e Inicio de Windows" herramientas/prueba_proteccion.py
+call :comprobar "42. Errores que la app registro durante el banco" herramientas/revisar_errores_banco.py
 
-echo ---------- 39. Velocidad de internet (necesita conexion) ----------
+echo ---------- 43. Velocidad de internet (necesita conexion) ----------
 echo Esta prueba SI usa datos (unos 60 MB). Si estas con datos moviles,
 echo cierra esta ventana ahora.
 pause
-call :comprobar "39. Velocidad de internet" herramientas/prueba_velocidad.py
+call :comprobar "43. Velocidad de internet" herramientas/prueba_velocidad.py
 
 echo ==========================================================
 echo   Termino: %TOTAL% comprobaciones, %FALLOS% con fallo.

@@ -20,6 +20,13 @@ import psutil
 import webbrowser
 
 from idiomas import t
+
+# PowerShell escribe por una tubería en la página de códigos OEM (cp850 en un
+# Windows en español) y Python lee con la ANSI (cp1252): "Optimización" salía
+# "Optimizaci¢n" en Servicios, Drivers, Tareas... (BUG corregido en la 1.8.0).
+# Las llamadas que leen texto le piden UTF-8 a PowerShell con esto delante del
+# script, y lo leen con encoding="utf-8".
+PS_UTF8 = "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
 if platform.system() == "Windows":
     import ctypes.wintypes
 
@@ -51,8 +58,8 @@ def _cim(clase, propiedades, namespace="root/cimv2", timeout=8):
         f"-ErrorAction SilentlyContinue | Select-Object {props} | ConvertTo-Json -Compress"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + ps_cmd],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=timeout)
         salida = (r.stdout or "").strip()
     except Exception:
@@ -745,7 +752,7 @@ def _borrar_tarea(nombre):
 
 
 def _startup_registry_path():
-    """Usada por listar_apps_inicio()/set_app_inicio_activa() para
+    """Usada por listar_inicio_completo()/set_app_inicio_activa() para
     gestionar OTRAS apps de terceros que inician con Windows — no
     relacionada con el inicio automático de TechClean mismo (ver
     set_startup() más abajo, que usa una tarea programada en vez de
@@ -1310,31 +1317,10 @@ def limpieza_programada_activa():
 STARTUP_BACKUP_KEY = r"Software\TechClean\InicioDeshabilitado"
 
 
-def listar_apps_inicio():
-    """Lista apps de inicio automático (activas e inactivas, deshabilitadas por esta app)."""
-    if not IS_WINDOWS:
-        return []
-    import winreg
-    apps = []
-
-    def _leer_valores(root, ruta, activo):
-        try:
-            with winreg.OpenKey(root, ruta, 0, winreg.KEY_READ) as key:
-                i = 0
-                while True:
-                    try:
-                        nombre, valor, _ = winreg.EnumValue(key, i)
-                    except OSError:
-                        break
-                    apps.append({"nombre": nombre, "comando": valor, "activo": activo})
-                    i += 1
-        except Exception:
-            pass
-
-    _leer_valores(winreg.HKEY_CURRENT_USER, _startup_registry_path(), True)
-    _leer_valores(winreg.HKEY_CURRENT_USER, STARTUP_BACKUP_KEY, False)
-    apps.sort(key=lambda a: a["nombre"].lower())
-    return apps
+def contar_inicio_activo():
+    """Cuántos programas arrancan con Windows (registro y carpetas de Inicio;
+    sin las tareas programadas, que tardan). Para el semáforo de Inicio."""
+    return sum(1 for e in listar_inicio_completo() if e["activo"])
 
 
 def set_app_inicio_activa(nombre, comando_valor, activar):
@@ -1359,6 +1345,229 @@ def set_app_inicio_activa(nombre, comando_valor, activar):
         return True
     except Exception:
         return False
+
+
+# ---------------- Inicio de Windows completo (1.8.0) ----------------
+# Hasta la 1.7.0, Aplicaciones → Inicio de Windows solo veía la clave Run de
+# TU usuario, y para desactivar movía el valor a una clave propia de
+# TechClean. Eso dejaba fuera lo que arranca para todos los usuarios, lo de
+# 32 bits, las carpetas de Inicio y las tareas programadas al iniciar sesión
+# (justo donde se esconde mucho malware: el del equipo del desarrollador es
+# una tarea programada). Y como Windows no sabía nada de esa clave propia,
+# un programa desactivado desde el Administrador de tareas salía "Activo".
+#
+# Ahora se usa el mismo interruptor que el Administrador de tareas y
+# Configuración: el valor de StartupApproved, un binario de 12 bytes cuyo
+# primer byte es par si está activo (02) e impar si no (03, seguido de la
+# fecha en que se desactivó). El programa no se toca ni se borra nada.
+RUTA_APROBADO = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved"
+ORIGENES_REGISTRO = (
+    ("hkcu_run", "HKCU", r"Software\Microsoft\Windows\CurrentVersion\Run", "Run"),
+    ("hklm_run", "HKLM", r"Software\Microsoft\Windows\CurrentVersion\Run", "Run"),
+    ("hklm_run32", "HKLM", r"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "Run32"),
+)
+
+
+def _valores_registro(raiz, ruta):
+    """(nombre, valor) de una clave. `raiz`: "HKCU" o "HKLM" (ver
+    _raiz_registro, más abajo; había una segunda copia aquí que la pisaba)."""
+    import winreg
+    valores = []
+    try:
+        with winreg.OpenKey(_raiz_registro(raiz), ruta) as clave:
+            i = 0
+            while True:
+                try:
+                    nombre, valor, _ = winreg.EnumValue(clave, i)
+                except OSError:
+                    break
+                valores.append((nombre, valor))
+                i += 1
+    except OSError:
+        pass
+    return valores
+
+
+def leer_aprobado(raiz, sub, nombre, base=None):
+    """El valor de StartupApproved (bytes) o None si no lo hay."""
+    import winreg
+    try:
+        with winreg.OpenKey(_raiz_registro(raiz), (base or RUTA_APROBADO) + "\\" + sub) as clave:
+            valor = winreg.QueryValueEx(clave, nombre)[0]
+            return bytes(valor) if isinstance(valor, (bytes, bytearray)) else None
+    except OSError:
+        return None
+
+
+def esta_aprobado(valor):
+    """Sin valor = activo (es lo de fábrica). Primer byte impar = desactivado."""
+    return not valor or not (valor[0] & 1)
+
+
+def valor_aprobado(activar, momento=None):
+    """Los 12 bytes que escribe Windows: 02 y ceros si está activo; 03, tres
+    ceros y la fecha (FILETIME) en que se desactivó si no."""
+    import struct
+    if activar:
+        return bytes([2]) + bytes(11)
+    momento = time.time() if momento is None else momento
+    filetime = int((momento + 11644473600) * 10_000_000)
+    return bytes([3, 0, 0, 0]) + struct.pack("<Q", filetime)
+
+
+def ejecutable_de_comando(comando):
+    """El programa de una línea de comando del registro: entre comillas, o
+    hasta el .exe; con las variables (%ProgramFiles%...) expandidas."""
+    comando = os.path.expandvars(str(comando or "").strip())
+    if comando.startswith('"'):
+        return comando[1:].split('"', 1)[0]
+    m = re.search(r"^(.+?\.(exe|com|bat|cmd|lnk))(\s|$)", comando, re.I)
+    return m.group(1) if m else comando.split(" ", 1)[0]
+
+
+def _carpetas_inicio():
+    return (
+        ("carpeta_usuario", "HKCU",
+         os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
+        ("carpeta_todos", "HKLM",
+         os.path.join(os.environ.get("PROGRAMDATA", ""), r"Microsoft\Windows\Start Menu\Programs\Startup")),
+    )
+
+
+def listar_inicio_completo():
+    """Lo que arranca con Windows por el registro y las carpetas de Inicio
+    (rápido: sin PowerShell). Las tareas programadas, aparte
+    (listar_tareas_inicio), porque tardan."""
+    if not IS_WINDOWS:
+        return []
+    entradas = []
+    for origen, raiz, ruta, sub in ORIGENES_REGISTRO:
+        for nombre, comando in _valores_registro(raiz, ruta):
+            entradas.append({
+                "id": f"{origen}|{nombre}", "tipo": "registro", "origen": origen, "raiz": raiz, "sub": sub,
+                "nombre": nombre, "comando": str(comando), "exe": ejecutable_de_comando(comando),
+                "activo": esta_aprobado(leer_aprobado(raiz, sub, nombre)), "todos": raiz == "HKLM",
+            })
+    # Lo que desactivó una versión anterior de TechClean (con su clave propia).
+    for nombre, comando in _valores_registro("HKCU", STARTUP_BACKUP_KEY):
+        entradas.append({
+            "id": f"techclean|{nombre}", "tipo": "techclean", "origen": "techclean", "raiz": "HKCU",
+            "sub": "Run", "nombre": nombre, "comando": str(comando), "exe": ejecutable_de_comando(comando),
+            "activo": False, "todos": False,
+        })
+    for origen, raiz, carpeta in _carpetas_inicio():
+        try:
+            archivos = os.listdir(carpeta)
+        except OSError:
+            continue
+        for archivo in archivos:
+            if archivo.lower() == "desktop.ini":
+                continue
+            entradas.append({
+                "id": f"{origen}|{archivo}", "tipo": "carpeta", "origen": origen, "raiz": raiz,
+                "sub": "StartupFolder", "nombre": os.path.splitext(archivo)[0], "archivo": archivo,
+                "comando": os.path.join(carpeta, archivo), "exe": os.path.join(carpeta, archivo),
+                "activo": esta_aprobado(leer_aprobado(raiz, "StartupFolder", archivo)), "todos": raiz == "HKLM",
+            })
+    return entradas
+
+
+def listar_tareas_inicio():
+    """Tareas programadas que se lanzan al iniciar sesión o al encender,
+    activas o no (para poder volver a activarlas), menos las de Microsoft:
+    en un Windows normal hay cientos y son del sistema. PowerShell: tarda."""
+    if not IS_WINDOWS:
+        return []
+    script = (
+        "Get-ScheduledTask | Where-Object { $_.TaskPath -notlike '\\Microsoft\\*' -and "
+        "($_.Triggers | Where-Object { $_.CimClass.CimClassName -match 'LogonTrigger|BootTrigger' }) } | "
+        "ForEach-Object { $a = $_.Actions | Where-Object { $_.Execute } | Select-Object -First 1; "
+        "[pscustomobject]@{ nombre = $_.TaskName; carpeta = $_.TaskPath; estado = [string]$_.State; "
+        "exe = [Environment]::ExpandEnvironmentVariables(([string]$a.Execute).Trim('\"')); "
+        "args = [string]$a.Arguments } } | ConvertTo-Json -Compress"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                           capture_output=True, encoding="utf-8", errors="replace", timeout=60, creationflags=subprocess.CREATE_NO_WINDOW)
+        datos = json.loads((r.stdout or "").strip() or "[]")
+    except Exception:
+        return []
+    if isinstance(datos, dict):
+        datos = [datos]
+    entradas = []
+    for d in datos if isinstance(datos, list) else []:
+        if not isinstance(d, dict) or not d.get("nombre"):
+            continue
+        exe = d.get("exe") or ""
+        entradas.append({
+            "id": f"tarea|{d.get('carpeta', '')}{d['nombre']}", "tipo": "tarea", "origen": "tarea",
+            "nombre": d["nombre"], "carpeta": d.get("carpeta") or "\\",
+            "comando": (exe + " " + (d.get("args") or "")).strip(), "exe": exe,
+            "activo": (d.get("estado") or "") != "Disabled", "todos": True,
+        })
+    return entradas
+
+
+def set_inicio_aprobado(raiz, sub, nombre, activar, base=None):
+    """Activa o desactiva una entrada como lo hace el Administrador de
+    tareas. Devuelve (exito, valor anterior en hex o None, comando). Se
+    comprueba releyendo: el que escribe no es el que manda."""
+    import winreg
+    ruta = (base or RUTA_APROBADO) + "\\" + sub
+    comando = f"{raiz}\\{ruta} : {nombre} = {'02' if activar else '03'}"
+    if not IS_WINDOWS:
+        return False, None, comando
+    anterior = leer_aprobado(raiz, sub, nombre, base)
+    try:
+        with winreg.CreateKey(_raiz_registro(raiz), ruta) as clave:
+            winreg.SetValueEx(clave, nombre, 0, winreg.REG_BINARY, valor_aprobado(activar))
+    except OSError:
+        return False, anterior.hex() if anterior else None, comando
+    exito = esta_aprobado(leer_aprobado(raiz, sub, nombre, base)) == activar
+    return exito, anterior.hex() if anterior else None, comando
+
+
+def restaurar_inicio_aprobado(raiz, sub, nombre, anterior_hex, base=None):
+    """Deshacer: deja el valor exactamente como estaba (o lo quita si no
+    había). Devuelve (exito, comando)."""
+    import winreg
+    ruta = (base or RUTA_APROBADO) + "\\" + sub
+    comando = f"{raiz}\\{ruta} : {nombre} = {anterior_hex or '(sin valor)'}"
+    try:
+        with winreg.CreateKey(_raiz_registro(raiz), ruta) as clave:
+            if anterior_hex:
+                winreg.SetValueEx(clave, nombre, 0, winreg.REG_BINARY, bytes.fromhex(anterior_hex))
+            else:
+                try:
+                    winreg.DeleteValue(clave, nombre)
+                except FileNotFoundError:
+                    pass
+    except OSError:
+        return False, comando
+    ahora = leer_aprobado(raiz, sub, nombre, base)
+    return (ahora.hex() if ahora else None) == (anterior_hex or None), comando
+
+
+def _comillas_ps(texto):
+    return "'" + str(texto).replace("'", "''") + "'"
+
+
+def set_tarea_inicio(carpeta, nombre, activar):
+    """Enable-/Disable-ScheduledTask, comprobando el estado después.
+    Devuelve (exito, comando)."""
+    verbo = "Enable-ScheduledTask" if activar else "Disable-ScheduledTask"
+    comando = f"{verbo} -TaskPath {_comillas_ps(carpeta)} -TaskName {_comillas_ps(nombre)}"
+    if not IS_WINDOWS:
+        return False, comando
+    script = (f"{comando} -ErrorAction SilentlyContinue | Out-Null; "
+              f"(Get-ScheduledTask -TaskPath {_comillas_ps(carpeta)} -TaskName {_comillas_ps(nombre)}).State")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                           capture_output=True, encoding="utf-8", errors="replace", timeout=30, creationflags=subprocess.CREATE_NO_WINDOW)
+        estado = (r.stdout or "").strip().splitlines()[-1].strip() if (r.stdout or "").strip() else ""
+    except Exception:
+        return False, comando
+    return (estado != "Disabled") == activar and bool(estado), comando
 
 
 # ---------------- Desinstalador ----------------
@@ -1500,8 +1709,8 @@ def crear_punto_restauracion(descripcion="TechClean - antes de reparar"):
     antes = listar_puntos_restauracion()
     try:
         r = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", comando],
-            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + comando],
+            capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
         if r.returncode != 0:
             return False, comando
     except Exception:
@@ -1519,11 +1728,11 @@ def listar_puntos_restauracion():
         return None
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                            "Get-ComputerRestorePoint -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ "
+                            PS_UTF8 + "Get-ComputerRestorePoint -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ "
                             "numero = $_.SequenceNumber; descripcion = $_.Description; fecha = "
                             "[Management.ManagementDateTimeConverter]::ToDateTime($_.CreationTime).ToString('yyyy-MM-dd HH:mm') "
                             "} } | ConvertTo-Json -Compress"],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
         if r.returncode != 0:
             return None
         datos = json.loads((r.stdout or "").strip() or "[]")
@@ -1604,8 +1813,8 @@ def buscar_actualizaciones_pendientes():
         "$r.Updates | ForEach-Object { $_.Title }"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
         titulos = [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
         return r.returncode == 0, titulos, comando
@@ -2157,8 +2366,8 @@ def listar_servicios_por_consumo(limite=15):
     script = ("Get-CimInstance Win32_Service | Where-Object {$_.State -eq 'Running' -and $_.ProcessId -ne 0} "
                "| Select-Object Name, DisplayName, ProcessId | ConvertTo-Json -Compress")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=25)
         datos = json.loads(r.stdout) if r.stdout else []
         if isinstance(datos, dict):
@@ -2185,6 +2394,16 @@ def listar_servicios_por_consumo(limite=15):
     return resultado[:limite]
 
 
+# BUG corregido (1.8.0): ConvertTo-Json de Windows PowerShell 5.1 escribe los
+# enumerados como NÚMEROS (Status 4, no "Running"). La pantalla comparaba
+# contra "Running" y enseñaba TODOS los servicios como detenidos, con el botón
+# de Iniciar también en los que estaban en marcha. Se traducen aquí a los
+# nombres de .NET (y si algún día llegan ya como texto, se dejan tal cual).
+ESTADOS_SERVICIO = {1: "Stopped", 2: "StartPending", 3: "StopPending", 4: "Running",
+                    5: "ContinuePending", 6: "PausePending", 7: "Paused"}
+INICIOS_SERVICIO = {0: "Boot", 1: "System", 2: "Automatic", 3: "Manual", 4: "Disabled"}
+
+
 def listar_servicios_windows():
     if not IS_WINDOWS:
         return []
@@ -2192,8 +2411,8 @@ def listar_servicios_windows():
         "Get-Service | Select-Object Name, DisplayName, Status, StartType | ConvertTo-Json -Compress"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         if not r.stdout:
             return []
@@ -2201,7 +2420,8 @@ def listar_servicios_windows():
         if isinstance(datos, dict):
             datos = [datos]
         return [{"nombre": d.get("Name"), "nombre_visible": d.get("DisplayName"),
-                 "estado": d.get("Status"), "inicio": d.get("StartType")} for d in datos]
+                 "estado": ESTADOS_SERVICIO.get(d.get("Status"), d.get("Status")),
+                 "inicio": INICIOS_SERVICIO.get(d.get("StartType"), d.get("StartType"))} for d in datos]
     except Exception:
         return []
 
@@ -2220,8 +2440,8 @@ def set_servicio_windows(nombre, accion):
     comando = f'{cmdlet} -Name "{nombre}"{extra}'
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                             f'{comando} -ErrorAction Stop'],
-                            capture_output=True, text=True,
+                             PS_UTF8 + f'{comando} -ErrorAction Stop'],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=20)
         return r.returncode == 0, comando
     except Exception:
@@ -2288,10 +2508,10 @@ def enviar_a_papelera(rutas):
     if not IS_WINDOWS or not rutas:
         return 0, 0, []
 
-    bytes_totales = 0
+    tamanos = {}
     for r in rutas:
         try:
-            bytes_totales += os.path.getsize(r)
+            tamanos[r] = os.path.getsize(r)
         except OSError:
             pass
 
@@ -2324,11 +2544,16 @@ def enviar_a_papelera(rutas):
 
     try:
         resultado = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operacion))
-        if resultado == 0 and not operacion.fAnyOperationsAborted:
-            return len(rutas), bytes_totales, []
-        return 0, 0, [t("optmod_papelera_codigo", codigo=resultado)]
     except Exception as e:
         return 0, 0, [str(e)]
+    # BUG corregido (1.8.0): se daban por enviados TODOS en cuanto la
+    # llamada volvía con 0, sin mirar. Ahora cuenta lo que de verdad ya no
+    # está; si quedó algo (en uso, sin permiso), se dice.
+    quedan = [r for r in rutas if os.path.exists(r)]
+    enviados = [r for r in rutas if r in tamanos and r not in quedan]
+    liberado = sum(tamanos.get(r, 0) for r in enviados)
+    errores = [] if not quedan else [t("optmod_papelera_codigo", codigo=resultado)]
+    return len(enviados), liberado, errores
 
 
 # ---------------- Archivos grandes individuales ----------------
@@ -2577,7 +2802,8 @@ def _categorias_limpieza_sistema():
     Lo que NO está, a propósito:
     - Caché de sombreadores (DirectX/NVIDIA/AMD): borrarla hace que los
       juegos vuelvan a compilarlos y den tirones las primeras partidas. En
-      una app que tiene Modo Juego, eso es ir en contra de sí misma.
+      una app que tiene Modo Juego, eso es ir en contra de sí misma. (1.8.0:
+      solo las de juegos de Steam YA DESINSTALADOS, que no son de nadie.)
     - Prefetch: Windows lo usa para abrir los programas más rápido. Las
       "guías de optimización" que dicen borrarlo están equivocadas.
     - Windows.old: Windows lo borra solo a los 10 días y quitarlo a mano
@@ -2630,7 +2856,34 @@ def _categorias_limpieza_sistema():
             "rutas": [os.path.join(win, "Logs", "CBS")],
             "filtro": lambda fp: os.path.basename(fp).lower().startswith("cbspersist_"),
         },
+        {
+            "clave": "sombreadores",
+            "nombre": t("fondo_sombreadores"),
+            "desc": t("fondo_sombreadores_desc"),
+            "rutas": _sombreadores_huerfanos(),
+            "filtro": None,
+        },
     ]
+
+
+def _sombreadores_huerfanos():
+    """Las cachés de sombreadores de Steam (steamapps/shadercache/<id>) de
+    juegos que YA NO están instalados. Las de los instalados no se tocan
+    (ver _categorias_limpieza_sistema): borrarlas daría tirones."""
+    rutas = []
+    for biblioteca in _bibliotecas_steam():
+        steamapps = os.path.join(biblioteca, "steamapps")
+        cache = os.path.join(steamapps, "shadercache")
+        if not os.path.isdir(cache):
+            continue
+        try:
+            instalados = {f[len("appmanifest_"):-len(".acf")] for f in os.listdir(steamapps)
+                          if f.startswith("appmanifest_") and f.endswith(".acf")}
+            rutas += [os.path.join(cache, d) for d in os.listdir(cache)
+                      if d.isdigit() and d not in instalados and os.path.isdir(os.path.join(cache, d))]
+        except OSError:
+            continue
+    return rutas
 
 
 def listar_limpieza_sistema():
@@ -2781,8 +3034,8 @@ def _listar_unidades_powershell():
         "} | ConvertTo-Json -Compress"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + ps],
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW,
                            timeout=30)
         datos = json.loads((r.stdout or "").strip() or "[]")
     except Exception:
@@ -2901,8 +3154,8 @@ def leer_dns_actual():
         "fijos_v4 = [string]$v4; fijos_v6 = [string]$v6 } } | ConvertTo-Json -Compress -Depth 3"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + ps],
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW,
                            timeout=30)
         datos = json.loads((r.stdout or "").strip() or "[]")
     except Exception:
@@ -2965,8 +3218,8 @@ def _ps_lista(direcciones):
 
 def _ps(comando, timeout=30):
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", comando],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + comando],
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW,
                            timeout=timeout)
         return r.returncode == 0
     except Exception:
@@ -3274,9 +3527,9 @@ def puerta_de_enlace():
     salida = ""
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                            "(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and "
+                            PS_UTF8 + "(Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and "
                             "$_.NetAdapter.Status -eq 'Up' } | Select-Object -First 1).IPv4DefaultGateway.NextHop"],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         salida = (r.stdout or "").strip().splitlines()[0] if (r.stdout or "").strip() else ""
     except Exception:
         return None
@@ -3307,6 +3560,67 @@ def diagnosticar_lag(callback=None):
     internet = medir_ping("1.1.1.1", callback=(lambda i, n: callback("internet", i, n)) if callback else None)
     return {"router": router, "router_ip": router_ip, "internet": internet,
             "veredicto": veredicto_lag(router, internet)}
+
+
+def nota_bufferbloat(aumento_ms):
+    """La nota de "bufferbloat": cuánto SUBE el ping cuando la conexión está
+    ocupada. Con la escala que usa la prueba de Waveform, la referencia: A+
+    hasta 5 ms, A hasta 30, B hasta 60, C hasta 200, D hasta 400, F más.
+    None si no se pudo medir. Pura."""
+    if aumento_ms is None:
+        return None
+    for tope, nota in ((5, "A+"), (30, "A"), (60, "B"), (200, "C"), (400, "D")):
+        if aumento_ms < tope:
+            return nota
+    return "F"
+
+
+def prueba_bufferbloat(callback=None, segundos=8, flujos=2, tope_bytes=30_000_000):
+    """El lag que aparece cuando alguien de la casa descarga algo (1.8.0).
+
+    El medidor de lag mide con la conexión tranquila; lo que estropea una
+    partida suele ser otra cosa: el router acumula paquetes cuando la línea
+    va llena, y el ping sube de 20 a 300 ms. Aquí se mide el ping en reposo,
+    después se llena la línea con dos descargas (hasta ~60 MB en total, como
+    la prueba de velocidad) y se mide otra vez. Devuelve {"reposo",
+    "carga" (estadísticas de ping), "aumento_ms", "nota", "mbps"}."""
+    import threading
+    import urllib.request
+    ip = "1.1.1.1"
+    reposo = medir_ping(ip, cantidad=10, intervalo=0.2,
+                        callback=(lambda i, n: callback("reposo", i, n)) if callback else None)
+    parar = threading.Event()
+    bajado = [0]
+    cabeceras = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TechClean"}
+
+    def descargar():
+        try:
+            pedido = urllib.request.Request(f"https://speed.cloudflare.com/__down?bytes={int(tope_bytes)}",
+                                            headers=cabeceras)
+            with urllib.request.urlopen(pedido, timeout=15) as respuesta:
+                while not parar.is_set():
+                    trozo = respuesta.read(65536)
+                    if not trozo:
+                        break
+                    bajado[0] += len(trozo)
+        except Exception:
+            pass
+    hilos = [threading.Thread(target=descargar, daemon=True) for _ in range(flujos)]
+    inicio = time.time()
+    for h in hilos:
+        h.start()
+    time.sleep(1.0)      # que la línea se llene antes de medir
+    carga = medir_ping(ip, cantidad=int(segundos * 5), intervalo=0.2,
+                       callback=(lambda i, n: callback("carga", i, n)) if callback else None)
+    parar.set()
+    duracion = max(time.time() - inicio, 0.001)
+    for h in hilos:
+        h.join(timeout=3)
+    aumento = None
+    if reposo["media_ms"] is not None and carga["media_ms"] is not None:
+        aumento = round(max(0.0, carga["media_ms"] - reposo["media_ms"]), 1)
+    return {"reposo": reposo, "carga": carga, "aumento_ms": aumento, "nota": nota_bufferbloat(aumento),
+            "mbps": round(bajado[0] * 8 / 1_000_000 / duracion, 1)}
 
 
 # ---------------- Drivers (solo canales oficiales) ----------------
@@ -3364,8 +3678,8 @@ def buscar_actualizaciones_drivers():
         "$r.Updates | ForEach-Object { $_.Title }"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
         titulos = [l.strip() for l in (r.stdout or "").splitlines() if l.strip()]
         return r.returncode == 0, titulos, comando
@@ -3408,6 +3722,18 @@ def iniciar_escaneo_defender(tipo="rapido"):
         return False, comando
 
 
+def _dias_de_escaneo(valor):
+    """BUG corregido (1.8.0): si Defender nunca escaneó (pasa cuando otro
+    antivirus, como McAfee, está al mando), QuickScanAge/FullScanAge valen
+    4294967295 (el máximo de un entero de 32 bits) y la app decía "hace
+    4294967295 día(s)". None = nunca."""
+    try:
+        dias = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return dias if 0 <= dias < 36500 else None
+
+
 def obtener_estado_defender():
     """Última vez que se escaneó y si la protección en tiempo real está
     activa (Get-MpComputerStatus) — informativo."""
@@ -3416,8 +3742,8 @@ def obtener_estado_defender():
     script = ("Get-MpComputerStatus | Select-Object AntivirusEnabled, RealTimeProtectionEnabled, "
               "QuickScanAge, FullScanAge | ConvertTo-Json -Compress")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         if not r.stdout:
             return None
@@ -3425,8 +3751,8 @@ def obtener_estado_defender():
         return {
             "activo": bool(datos.get("AntivirusEnabled")),
             "tiempo_real": bool(datos.get("RealTimeProtectionEnabled")),
-            "dias_desde_ultimo_rapido": datos.get("QuickScanAge"),
-            "dias_desde_ultimo_completo": datos.get("FullScanAge"),
+            "dias_desde_ultimo_rapido": _dias_de_escaneo(datos.get("QuickScanAge")),
+            "dias_desde_ultimo_completo": _dias_de_escaneo(datos.get("FullScanAge")),
         }
     except Exception:
         return None
@@ -3500,8 +3826,8 @@ def listar_reglas_firewall_bloqueadas(limite=100):
     script = (f"Get-NetFirewallRule -Action Block -Enabled True | Select-Object -First {limite} "
               f"DisplayName, Direction | ConvertTo-Json -Compress")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         if not r.stdout:
             return []
@@ -3528,8 +3854,8 @@ def bloquear_app_firewall(ruta_exe):
         return False, nombre_regla, comando
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                             comando + " -ErrorAction Stop"],
-                            capture_output=True, text=True,
+                             PS_UTF8 + comando + " -ErrorAction Stop"],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=20)
         return r.returncode == 0, nombre_regla, comando
     except Exception:
@@ -3542,8 +3868,8 @@ def desbloquear_app_firewall(nombre_regla):
         return False, comando
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                             f'Get-NetFirewallRule -DisplayName "{nombre_regla}*" | Remove-NetFirewallRule -ErrorAction Stop'],
-                            capture_output=True, text=True,
+                             PS_UTF8 + f'Get-NetFirewallRule -DisplayName "{nombre_regla}*" | Remove-NetFirewallRule -ErrorAction Stop'],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=20)
         return r.returncode == 0, comando
     except Exception:
@@ -3657,8 +3983,8 @@ def listar_adaptadores_red():
         return []
     script = "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object Name, InterfaceDescription | ConvertTo-Json -Compress"
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         if not r.stdout:
             return []
@@ -3679,8 +4005,8 @@ def reiniciar_adaptador_red(nombre):
         return False, comando
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                             comando + " -ErrorAction Stop"],
-                            capture_output=True, text=True,
+                             PS_UTF8 + comando + " -ErrorAction Stop"],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         return r.returncode == 0, comando
     except Exception:
@@ -3802,9 +4128,9 @@ def listar_bloatware():
     salida = ""
     try:
         r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                            "Get-AppxPackage | Select-Object Name, PackageFamilyName, PackageFullName, NonRemovable "
+                            PS_UTF8 + "Get-AppxPackage | Select-Object Name, PackageFamilyName, PackageFullName, NonRemovable "
                             "| ConvertTo-Json -Compress"],
-                           capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
+                           capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW, timeout=60)
         salida = (r.stdout or "").strip()
         datos = json.loads(salida or "[]")
     except Exception:
@@ -3837,8 +4163,8 @@ def quitar_bloatware(paquetes):
             continue
         try:
             r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
-                                f"Remove-AppxPackage -Package '{p}' -ErrorAction Stop"],
-                               capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+                                PS_UTF8 + f"Remove-AppxPackage -Package '{p}' -ErrorAction Stop"],
+                               capture_output=True, encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW,
                                timeout=180)
             (quitados if r.returncode == 0 else fallidos).append(p)
         except Exception:
@@ -3921,16 +4247,18 @@ def buscar_duplicados(carpeta, min_bytes=1024 * 1024, presupuesto_seg=90, callba
 
 def actualizar_app_winget(id_o_nombre):
     """Actualiza UNA app puntual vía winget (no todas a la vez, para que
-    el usuario decida cuál). Corre en segundo plano (Popen) porque puede
-    tardar varios minutos según el tamaño del instalador."""
-    comando = f'winget upgrade --id "{id_o_nombre}" --silent --accept-package-agreements --accept-source-agreements'
-    if not IS_WINDOWS:
+    el usuario decida cuál). ESPERA a que termine (hasta 30 min): llamar
+    desde un hilo. Así quien llama puede comprobar después que la app ya
+    no sale en la lista de pendientes (1.8.0; antes se lanzaba y se daba
+    por hecho)."""
+    comando = f'winget upgrade --id "{id_o_nombre}" --exact --silent --accept-package-agreements --accept-source-agreements'
+    if not IS_WINDOWS or not id_o_nombre:
         return False, comando
     try:
-        subprocess.Popen(["winget", "upgrade", "--id", id_o_nombre, "--silent",
-                          "--accept-package-agreements", "--accept-source-agreements"],
-                          creationflags=subprocess.CREATE_NO_WINDOW)
-        return True, comando
+        r = subprocess.run(["winget", "upgrade", "--id", id_o_nombre, "--exact", "--silent",
+                            "--accept-package-agreements", "--accept-source-agreements"],
+                           capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW, timeout=1800)
+        return r.returncode == 0, comando
     except Exception:
         return False, comando
 
@@ -3947,8 +4275,8 @@ def listar_tareas_programadas_terceros(limite=100):
     script = (f"Get-ScheduledTask | Where-Object {{$_.State -ne 'Disabled'}} | "
               f"Select-Object -First {limite} TaskName, TaskPath | ConvertTo-Json -Compress")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=30)
         if not r.stdout:
             return []
@@ -4020,8 +4348,8 @@ def obtener_estado_bitlocker():
         return None
     script = "Get-BitLockerVolume -MountPoint C: | Select-Object VolumeStatus, ProtectionStatus | ConvertTo-Json -Compress"
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         if not r.stdout:
             return None
@@ -4142,30 +4470,43 @@ def abrir_configuracion_enfoque_asistido():
 # tamaño sería lento en juegos grandes, así que se deja en "N/D" a
 # propósito, para no romper la filosofía de "no consumir rendimiento".
 
-def _juegos_steam():
+def _bibliotecas_steam():
+    """Las carpetas de biblioteca de Steam (la suya y las de otros discos)."""
     if not IS_WINDOWS:
         return []
     import winreg
-    resultados = []
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
             steam_path = winreg.QueryValueEx(key, "SteamPath")[0]
     except Exception:
         return []
 
+    # BUG corregido (1.8.0): el registro guarda la carpeta como
+    # "c:/program files (x86)/steam" y libraryfolders.vdf como
+    # "C:\Program Files (x86)\Steam": comparadas como texto eran dos
+    # carpetas distintas y TODOS los juegos salían dos veces. Se comparan
+    # normalizadas (mayúsculas y barras).
     carpetas = [steam_path]
+    vistas = {os.path.normcase(os.path.normpath(steam_path))}
     try:
         with open(os.path.join(steam_path, "steamapps", "libraryfolders.vdf"),
                   "r", encoding="utf-8", errors="ignore") as f:
             contenido = f.read()
         for m in re.finditer(r'"path"\s*"([^"]+)"', contenido):
             ruta = m.group(1).replace("\\\\", "\\")
-            if ruta not in carpetas:
+            normal = os.path.normcase(os.path.normpath(ruta))
+            if normal not in vistas:
+                vistas.add(normal)
                 carpetas.append(ruta)
     except Exception:
         pass
+    return carpetas
 
-    for carpeta in carpetas:
+
+def _juegos_steam():
+    resultados = []
+    ids_vistos = set()
+    for carpeta in _bibliotecas_steam():
         steamapps = os.path.join(carpeta, "steamapps")
         if not os.path.isdir(steamapps):
             continue
@@ -4178,11 +4519,21 @@ def _juegos_steam():
                         contenido = f.read()
                     nombre_m = re.search(r'"name"\s*"([^"]+)"', contenido)
                     tamano_m = re.search(r'"SizeOnDisk"\s*"(\d+)"', contenido)
+                    appid_m = re.search(r'"appid"\s*"(\d+)"', contenido)
+                    carpeta_m = re.search(r'"installdir"\s*"([^"]+)"', contenido)
+                    appid = appid_m.group(1) if appid_m else archivo
+                    # 228980 = "Steamworks Common Redistributables": las
+                    # librerías (DirectX, VC++...) que Steam instala para
+                    # los juegos. No es un juego.
+                    if appid == "228980" or appid in ids_vistos:
+                        continue
+                    ids_vistos.add(appid)
                     if nombre_m:
                         resultados.append({
                             "nombre": nombre_m.group(1),
                             "plataforma": "Steam",
                             "bytes": int(tamano_m.group(1)) if tamano_m else None,
+                            "ruta": os.path.join(steamapps, "common", carpeta_m.group(1)) if carpeta_m else "",
                         })
                 except Exception:
                     continue
@@ -4208,7 +4559,8 @@ def _juegos_epic():
                     datos = json.load(f)
                 nombre = datos.get("DisplayName")
                 if nombre:
-                    resultados.append({"nombre": nombre, "plataforma": "Epic Games", "bytes": None})
+                    resultados.append({"nombre": nombre, "plataforma": "Epic Games", "bytes": None,
+                                       "ruta": datos.get("InstallLocation") or ""})
             except Exception:
                 continue
     except Exception:
@@ -4355,7 +4707,8 @@ def _juegos_gog(fuentes=None):
                 vistos_id.add(j["id"])
             if ruta:
                 vistas_rutas.add(ruta)
-            resultados.append({"nombre": j["nombre"], "plataforma": "GOG", "bytes": None})
+            resultados.append({"nombre": j["nombre"], "plataforma": "GOG", "bytes": None,
+                               "ruta": j.get("ruta") or ""})
     return resultados
 
 
@@ -4371,6 +4724,15 @@ def listar_juegos_instalados():
             continue
     juegos.sort(key=lambda j: (j["bytes"] is None, -(j["bytes"] or 0)))
     return juegos
+
+
+def carpetas_de_juegos(juegos=None):
+    """Las carpetas de los juegos instalados (normalizadas), para que el
+    Modo Juego reconozca un juego por DÓNDE está, no solo porque ocupe la
+    pantalla entera (1.8.0)."""
+    juegos = listar_juegos_instalados() if juegos is None else juegos
+    return sorted({os.path.normcase(os.path.normpath(j["ruta"])) + os.sep
+                   for j in juegos if j.get("ruta") and os.path.isdir(j["ruta"])})
 
 
 # ---------------- Audio: dispositivos, prueba de sonido y accesos oficiales ----------------
@@ -4389,8 +4751,8 @@ def listar_dispositivos_audio():
     script = ("Get-CimInstance -ClassName Win32_SoundDevice | "
               "Select-Object Name, Status | ConvertTo-Json -Compress")
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         if not r.stdout:
             return []
@@ -5215,8 +5577,8 @@ def listar_usuarios_sistema():
         return []
     try:
         script = "Get-LocalUser | Select-Object Name, Enabled, Description | ConvertTo-Json -Compress"
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         datos = json.loads(r.stdout) if r.stdout else []
         if isinstance(datos, dict):
@@ -5228,8 +5590,8 @@ def listar_usuarios_sistema():
     try:
         script_admins = ("(Get-LocalGroupMember -SID 'S-1-5-32-544' -ErrorAction SilentlyContinue) "
                           "| Select-Object -ExpandProperty Name")
-        r2 = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script_admins],
-                             capture_output=True, text=True,
+        r2 = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script_admins],
+                             capture_output=True, encoding="utf-8", errors="replace",
                              creationflags=subprocess.CREATE_NO_WINDOW, timeout=15)
         for linea in (r2.stdout or "").splitlines():
             linea = linea.strip()

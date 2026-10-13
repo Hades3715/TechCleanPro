@@ -13,7 +13,7 @@ import _rutas
 # ruta absoluta entera.
 ARCH = ["main.py","optimizer.py","system_monitor.py","idiomas.py","widget.py",
         "tray.py","autopilot.py","privacy.py","report.py","preferences.py",
-        "rutas.py","main_admin.py"]
+        "rutas.py","main_admin.py","temas.py","iconos.py","gpu.py","disco.py","informe.py"]
 arb = {f: ast.parse(_rutas.leer(f), f) for f in ARCH}
 
 print("2. Duplicados de clase/modulo:", end=" ")
@@ -82,7 +82,29 @@ def _heredados(f, nombre, vistos=None):
         if base_nombre and (f, base_nombre) in clases:
             recogido |= _miembros(clases[(f, base_nombre)])
             recogido |= _heredados(f, base_nombre, vistos)
+        elif isinstance(base, ast.Attribute):
+            recogido |= _de_libreria(base)
     return recogido
+
+
+# Padres de tkinter o customtkinter (tk.Canvas, ctk.CTkFrame...): se importan
+# y se leen sus métodos de verdad, en vez de ir sumando nombres a TK cada vez
+# que una clase nueva hereda de un widget distinto (1.8.0: Caja, GaleriaTemas).
+_LIBRERIAS = {"tk": "tkinter", "tkinter": "tkinter", "ctk": "customtkinter", "customtkinter": "customtkinter"}
+
+
+def _de_libreria(base):
+    partes = []
+    while isinstance(base, ast.Attribute):
+        partes.append(base.attr)
+        base = base.value
+    if not isinstance(base, ast.Name) or base.id not in _LIBRERIAS:
+        return set()
+    import importlib
+    objeto = importlib.import_module(_LIBRERIAS[base.id])
+    for parte in reversed(partes):
+        objeto = getattr(objeto, parte, None)
+    return set(dir(objeto)) if isinstance(objeto, type) else set()
 
 
 r = []
@@ -96,7 +118,10 @@ for f, a in arb.items():
         falta = cal - dfn - TK
         if falta: r.append(f"{f}:{n.name} -> {sorted(falta)}")
 print(r or "ninguno")
-hallazgos = list(r)
+# Los duplicados del paso 2 también cuentan como fallo. Antes solo se
+# imprimían: en la 1.8.0 un _accion_informe_bateria nuevo (Energía) pisó al de
+# la pestaña Técnico y el banco lo dio por bueno.
+hallazgos = list(d) + list(r)
 
 print("4. opt.X / sysmon.X inexistentes:", end=" ")
 pub = {}
@@ -202,6 +227,67 @@ else:
 
 print(problemas or "ninguno")
 hallazgos += problemas
+
+print("6. Variable local que tapa una funcion del modulo:", end=" ")
+# BUG que lo motivo (1.8.0): al cambiar ctk.CTkFont(...) por fuente(...) en
+# todo main.py, en _abrir_paleta quedo "fuente = fuente(size=13)". Asignar
+# un nombre lo hace local en TODA la funcion, y la primera llamada a
+# fuente(), unas lineas antes, reventaba con UnboundLocalError: el buscador
+# Ctrl+K no abria. Python no lo avisa hasta que esa linea se ejecuta.
+r = []
+for f, a in arb.items():
+    del_modulo = {n.name for n in a.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+    for func in ast.walk(a):
+        if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        globales = {g for n in ast.walk(func) if isinstance(n, ast.Global) for g in n.names}
+        locales = {n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+        locales |= {x.arg for x in func.args.args + func.args.kwonlyargs}
+        llamadas = {n.func.id for n in ast.walk(func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        r += [f"{f}:{func.name} -> {nombre}" for nombre in sorted((locales & del_modulo & llamadas) - globales)]
+print(r or "ninguno")
+hallazgos += r
+
+print("7. Nombres que se usan y no existen:", end=" ")
+# Lo que mas cazaria un analizador como pyflakes, sin instalar nada: un
+# nombre que una funcion lee como global y que el modulo no define, ni
+# importa, ni es de Python. Asi revento en agosto "NameError: name '_cim' is
+# not defined" (un helper que se renombro y quedo una llamada vieja), en una
+# pantalla que solo se abre a veces. symtable sabe de ambitos como Python.
+import builtins
+import symtable
+
+DE_PYTHON = set(dir(builtins)) | {"__file__", "__name__", "__doc__", "__spec__", "__loader__",
+                                  "__package__", "__builtins__", "__path__", "__annotations__"}
+
+
+def _definidos_en_modulo(tabla):
+    nombres = {s.get_name() for s in tabla.get_symbols()
+               if s.is_assigned() or s.is_imported() or s.is_namespace()}
+    pila = list(tabla.get_children())
+    while pila:
+        hija = pila.pop()
+        pila.extend(hija.get_children())
+        # "global x" + asignacion dentro de una funcion tambien define x.
+        nombres |= {s.get_name() for s in hija.get_symbols() if s.is_declared_global() and s.is_assigned()}
+    return nombres
+
+
+r = []
+for f in ARCH:
+    tabla = symtable.symtable(_rutas.leer(f), f, "exec")
+    del_modulo = _definidos_en_modulo(tabla) | DE_PYTHON
+    pila = [tabla]
+    while pila:
+        actual = pila.pop()
+        pila.extend(actual.get_children())
+        for s in actual.get_symbols():
+            if not s.is_referenced() or s.get_name() in del_modulo:
+                continue
+            if actual.get_type() == "module" or s.is_global():
+                r.append(f"{f}:{actual.get_name()} -> {s.get_name()}")
+print(sorted(set(r)) or "ninguno")
+hallazgos += r
 
 # El codigo de salida es lo que Verificar_Todo.bat mira para contar fallos.
 # Sin esto, la auditoria podia encontrar cosas y el banco la daba por buena.

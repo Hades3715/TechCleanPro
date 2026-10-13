@@ -12,7 +12,13 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
 - `codigo/tecnico.py` — herramientas de la edición Admin. `seguridad.py` —
   auditor de malware y de extensiones (solo lee). `atajos.py` — atajo de
   teclado global (`RegisterHotKey`, nunca ganchos de teclado).
-  `idiomas.py` — todos los textos.
+  `temas.py` — los 9 temas (colores, letra, forma). `iconos.py` — iconos
+  de línea dibujados con Pillow. `idiomas.py` — todos los textos.
+  `disco.py` — análisis completo de una unidad (8 hilos, solo lee).
+  `gpu.py` — GPU de cualquier marca (D3DKMT + contadores PDH).
+  `informe.py` — el informe en PDF (HTML con la cara de la app → Edge).
+- `PRIVACIDAD.md` — qué guarda la app y cuándo se conecta: si se añade una
+  conexión a internet nueva, actualizarlo (y `priv_app_texto`).
 - `herramientas/` — banco de pruebas. `compilar/` — PyInstaller e Inno Setup.
 
 ## Ediciones y builds
@@ -25,7 +31,7 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
   buscador de actualizaciones de la app compara las dos.
 
 ## Antes de dar algo por terminado
-`herramientas\Verificar_Todo.bat` (39 comprobaciones; la última gasta ~60 MB
+`herramientas\Verificar_Todo.bat` (43 comprobaciones; la última gasta ~60 MB
 de datos). Una suelta: `PYTHONIOENCODING=utf-8 python herramientas/<x>.py`.
 Al añadir una prueba, registrarla en el `.bat` (o `auditoria.py` falla); al
 añadir un módulo, sumarlo a `herramientas/_rutas.py` (`MODULOS`).
@@ -55,8 +61,25 @@ añadir un módulo, sumarlo a `herramientas/_rutas.py` (`MODULOS`).
   que corre solo.
 - **Nada que espere en el hilo de Tk**, ni un `psutil.cpu_percent(interval=…)`
   ni un `time.sleep`: congelaba Inicio el 15 % del tiempo (ver CONTEXTO,
-  "Versión 1.7.0"). Listas largas: un `CTkTextbox`, no un widget por fila.
-  `herramientas/prueba_rendimiento.py` lo vigila.
+  "Versión 1.7.0"). Listas largas: `ListaLienzo` (filas en un `tk.Canvas`)
+  o un `CTkTextbox`, no un widget por fila: en Windows cada widget es una
+  ventana del sistema, y 40 filas tardaban 1 s en colocarse (ver CONTEXTO,
+  "cada widget de Tk es una ventana"). `herramientas/prueba_rendimiento.py`
+  lo vigila.
+- **PowerShell que se lee como texto:** `PS_UTF8 +` delante del script y
+  `encoding="utf-8"` (si no, las tildes salen rotas), y los enumerados de
+  `ConvertTo-Json` llegan como NÚMEROS en PowerShell 5.1.
+- **Widgets baratos:** para ordenar, `Caja(padre)` y no un
+  `CTkFrame(fg_color="transparent")`; letras con `fuente(size, weight)`, no
+  `ctk.CTkFont(...)`; textos que se parten al ancho de su caja, con
+  `texto_fluido`; lo que se anima o se repite mucho, en un `tk.Canvas` (una
+  CTkProgressBar cuesta ~10 ms). El rediseño de la 1.8.0 hizo la app el
+  doble de lenta por esto (ver CONTEXTO, "El rediseño hizo la app el DOBLE
+  de lenta").
+- **Colores:** nunca escritos a mano (`"#2a2d36"`, `"gray60"`): una ficha del
+  tema, `T.panel`, `T.texto2`, `T.acento`... (`from temas import T`). Si no,
+  esa parte no cambia con el tema. Los temas son cerrados: van en el código,
+  nada se descarga. `prueba_temas.py` lo vigila (y el contraste).
 - `.bat` con finales de línea CRLF y rutas con `/`.
 
 ## Entorno del desarrollador

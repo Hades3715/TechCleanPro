@@ -72,6 +72,9 @@ TIPOS = {
     "dns": "desh_tipo_dns",
     "ajuste_juego": "desh_tipo_ajuste_juego",
     "ajuste_privacidad": "desh_tipo_ajuste_privacidad",
+    # 1.8.0: el inicio de Windows completo.
+    "inicio_aprobado": "desh_tipo_app_inicio",
+    "tarea_inicio": "desh_tipo_tarea_inicio",
 }
 
 
@@ -239,6 +242,15 @@ class RegistroDeshacer:
                                                datos.get("comando", ""),
                                                bool(datos.get("estaba_activa")))
             comando = f'set_app_inicio_activa({datos.get("nombre")!r}, activar={bool(datos.get("estaba_activa"))})'
+
+        elif tipo == "inicio_aprobado":
+            # Se guardó el valor de StartupApproved de ANTES: se deja igual.
+            exito, comando = opt.restaurar_inicio_aprobado(datos.get("raiz", "HKCU"), datos.get("sub", "Run"),
+                                                           datos.get("nombre", ""), datos.get("anterior"))
+
+        elif tipo == "tarea_inicio":
+            exito, comando = opt.set_tarea_inicio(datos.get("carpeta", "\\"), datos.get("nombre", ""),
+                                                  bool(datos.get("estaba_activa")))
 
         elif tipo == "servicio":
             # Si se detuvo, deshacer es iniciarlo, y al revés.

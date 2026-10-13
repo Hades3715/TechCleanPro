@@ -142,6 +142,53 @@ def _get_foreground_fullscreen_pid():
         return None
 
 
+# A pantalla completa pero NO son juegos (1.8.0): antes, ver una película o
+# una web en pantalla completa le subía la prioridad al navegador.
+NO_JUEGOS = {
+    "chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "opera_gx.exe", "brave.exe", "vivaldi.exe",
+    "vlc.exe", "mpc-hc.exe", "mpc-hc64.exe", "mpc-be64.exe", "potplayermini.exe", "potplayermini64.exe",
+    "wmplayer.exe", "powerpnt.exe", "applicationframehost.exe", "spotify.exe", "obs64.exe", "explorer.exe",
+}
+# Mientras se juega no se les baja la prioridad aunque usen CPU: el chat de
+# voz, el audio, la grabación y el lanzador del propio juego.
+NO_FRENAR = {
+    "audiodg.exe", "discord.exe", "teamspeak.exe", "ts3client_win64.exe", "obs64.exe", "obs32.exe",
+    "nvcontainer.exe", "nvidia share.exe", "radeonsoftware.exe", "amdrsserv.exe", "steam.exe",
+    "steamwebhelper.exe", "epicgameslauncher.exe", "battle.net.exe", "eadesktop.exe", "galaxyclient.exe",
+    "dwm.exe", "csrss.exe", "explorer.exe", "searchhost.exe", "msmpeng.exe", "mcshield.exe",
+}
+FRENAR_PCT = 25.0        # % de UN núcleo, sostenido dos vueltas seguidas
+
+
+def _pid_en_primer_plano():
+    if not IS_WINDOWS:
+        return None
+    try:
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return None
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return pid.value or None
+    except Exception:
+        return None
+
+
+def _exe_de(pid):
+    try:
+        return psutil.Process(pid).exe() or ""
+    except Exception:
+        return ""
+
+
+def en_carpeta_de_juego(exe, carpetas):
+    """¿Está este programa dentro de la carpeta de un juego instalado?"""
+    if not exe:
+        return False
+    ruta = os.path.normcase(os.path.normpath(exe))
+    return any(ruta.startswith(c) for c in carpetas)
+
+
 def _listar_procesos_basico():
     for p in psutil.process_iter(["pid", "name", "exe"]):
         yield p.info["pid"], p.info.get("name") or "", p.info.get("exe") or ""
@@ -177,8 +224,16 @@ def _lanzar_sin_elevar(exe):
 
 class Autopilot:
     def __init__(self, log_callback=None, intervalo_seg=8, umbral_ram=85, apps_cerrar=None,
-                 listar_procesos=None, terminar=None, lanzar=None):
+                 listar_procesos=None, terminar=None, lanzar=None, carpetas_juegos=None,
+                 frenar_acaparadores=None):
         self.activo = False
+        # 1.8.0: las carpetas de los juegos instalados (para reconocerlos
+        # aunque no estén a pantalla completa) y si se frena lo que acapara
+        # la CPU mientras se juega. Los dos se leen en cada vuelta.
+        self.carpetas_juegos = carpetas_juegos or (lambda: [])
+        self.frenar_acaparadores = frenar_acaparadores or (lambda: True)
+        self._frenados = {}        # pid -> nombre, para devolverles la prioridad
+        self._muestras_cpu = {}    # pid -> (tiempo de CPU, momento, vueltas por encima)
         # Apps que el usuario eligió cerrar mientras juega (nombres de
         # proceso). Se lee en cada juego, así el cambio en la pantalla de
         # Gaming vale sin reiniciar nada.
@@ -212,6 +267,7 @@ class Autopilot:
 
     def detener(self):
         self.activo = False
+        self._soltar_frenados()
         self._restaurar_prioridad()
         # Apagar el Modo Juego a mitad de partida también devuelve las apps.
         self._reabrir_apps()
@@ -246,11 +302,38 @@ class Autopilot:
                 bytes_ram=liberado, archivos_afectados=afectados,
             )
 
-    def _chequear_juego(self):
+    def _buscar_juego(self):
+        """El PID del juego en primer plano, o None.
+
+        1.8.0: antes bastaba con "ventana a pantalla completa sin barra de
+        título", y un navegador o un vídeo a pantalla completa contaban como
+        juego. Ahora: lo que está a pantalla completa, salvo los programas
+        que no son juegos (NO_JUEGOS); y además, aunque esté en ventana,
+        cualquier programa que viva en la carpeta de un juego instalado
+        (Steam, Epic, GOG)."""
         pid = _get_foreground_fullscreen_pid()
+        if pid and os.path.basename(_exe_de(pid)).lower() in NO_JUEGOS:
+            pid = None
+        if not pid:
+            delante = _pid_en_primer_plano()
+            if delante and delante != os.getpid():
+                try:
+                    carpetas = self.carpetas_juegos()
+                except Exception:
+                    carpetas = []
+                if carpetas and en_carpeta_de_juego(_exe_de(delante), carpetas):
+                    pid = delante
+        return pid
+
+    def _chequear_juego(self):
+        pid = self._buscar_juego()
+        if pid and pid == self._pid_priorizado:
+            self._frenar_acaparadores(pid)
+            return
         if pid == self._pid_priorizado:
             return
 
+        self._soltar_frenados()
         self._restaurar_prioridad()
 
         if pid:
@@ -312,6 +395,65 @@ class Autopilot:
                           seccion=t("seccion_automatico"), exito=bool(reabiertas))
         return reabiertas
 
+    def _frenar_acaparadores(self, pid_juego):
+        """Mientras se juega, a lo que se pasa de FRENAR_PCT de un núcleo dos
+        vueltas seguidas se le baja la prioridad a "por debajo de lo
+        normal" (lo que hace el ProBalance de Process Lasso). No se cierra
+        nada, nunca se toca el juego, ni lo del sistema, ni el chat de voz o
+        la grabación (NO_FRENAR), y al acabar la partida se devuelve todo."""
+        try:
+            if not self.frenar_acaparadores():
+                return
+        except Exception:
+            return
+        ahora = time.monotonic()
+        nucleos = psutil.cpu_count() or 1
+        vistos = set()
+        for proceso in psutil.process_iter(["pid", "name", "cpu_times"]):
+            pid = proceso.info["pid"]
+            nombre = (proceso.info.get("name") or "").lower()
+            tiempos = proceso.info.get("cpu_times")
+            if pid in (0, 4, pid_juego, os.getpid()) or not tiempos or nombre in NO_FRENAR:
+                continue
+            vistos.add(pid)
+            cpu = tiempos.user + tiempos.system
+            anterior = self._muestras_cpu.get(pid)
+            vueltas = 0
+            if anterior:
+                pct = (cpu - anterior[0]) / max(ahora - anterior[1], 0.001) * 100
+                vueltas = anterior[2] + 1 if pct > FRENAR_PCT else 0
+            self._muestras_cpu[pid] = (cpu, ahora, vueltas)
+            if vueltas >= 2 and pid not in self._frenados:
+                if opt.evaluar_riesgo_proceso(nombre)[0] == "bloqueado":
+                    continue
+                try:
+                    if proceso.nice() == psutil.NORMAL_PRIORITY_CLASS:
+                        proceso.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                        self._frenados[pid] = nombre
+                        self.log_callback(t("auto_frenado_accion"), f"SetPriorityClass(BELOW_NORMAL) PID {pid}",
+                                          t("auto_frenado_resultado", nombre=nombre, nucleos=nucleos),
+                                          seccion=t("seccion_automatico"), exito=True)
+                except Exception:
+                    pass
+        for pid in list(self._muestras_cpu):
+            if pid not in vistos:
+                del self._muestras_cpu[pid]
+
+    def _soltar_frenados(self):
+        for pid, nombre in list(self._frenados.items()):
+            try:
+                proceso = psutil.Process(pid)
+                if proceso.nice() == psutil.BELOW_NORMAL_PRIORITY_CLASS:
+                    proceso.nice(psutil.NORMAL_PRIORITY_CLASS)
+            except Exception:
+                pass
+        if self._frenados:
+            self.log_callback(t("auto_soltados_accion"), "SetPriorityClass(NORMAL)",
+                              t("auto_soltados_resultado", n=len(self._frenados)),
+                              seccion=t("seccion_automatico"), exito=True)
+        self._frenados = {}
+        self._muestras_cpu = {}
+
     def _restaurar_prioridad(self):
         if self._pid_priorizado:
             try:
@@ -325,6 +467,58 @@ class Autopilot:
             except Exception:
                 pass
             self._pid_priorizado = None
+
+
+class VigiaJuegos:
+    """Modo Juego automático por juego (1.8.0): los juegos marcados en
+    Gaming lo encienden solos al ponerse delante y lo apagan al cerrarse.
+
+    Solo corre si hay algún juego marcado, y mira poco y barato: cada 10 s,
+    qué programa está en primer plano y si vive en la carpeta de uno de esos
+    juegos. Si el Modo Juego ya estaba encendido a mano, no lo apaga."""
+
+    def __init__(self, carpetas=None, encender=None, apagar=None, intervalo_seg=10):
+        self.carpetas = carpetas or (lambda: [])
+        self.encender = encender or (lambda nombre: None)
+        self.apagar = apagar or (lambda: None)
+        self.intervalo_seg = intervalo_seg
+        self.activo = False
+        self._generacion = 0
+        self._pid_juego = None
+
+    def iniciar(self):
+        if self.activo:
+            return
+        self.activo = True
+        self._generacion += 1
+        threading.Thread(target=self._loop, args=(self._generacion,), daemon=True).start()
+
+    def detener(self):
+        self.activo = False
+
+    def _loop(self, mi_generacion):
+        while self.activo and mi_generacion == self._generacion:
+            try:
+                self.revisar()
+            except Exception:
+                pass
+            time.sleep(self.intervalo_seg)
+
+    def revisar(self):
+        """Una vuelta (separada del bucle para las pruebas)."""
+        if self._pid_juego is not None:
+            if not psutil.pid_exists(self._pid_juego):
+                self._pid_juego = None
+                self.apagar()
+            return
+        carpetas = self.carpetas()
+        if not carpetas:
+            return
+        pid = _pid_en_primer_plano()
+        exe = _exe_de(pid) if pid else ""
+        if pid and en_carpeta_de_juego(exe, carpetas):
+            self._pid_juego = pid
+            self.encender(os.path.splitext(os.path.basename(exe))[0])
 
 
 class LimpiezaAutomaticaRAM:

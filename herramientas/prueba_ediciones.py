@@ -56,7 +56,8 @@ BUSCAR = [
 print(f"=== edicion: {EDICION} ===")
 fallos = 0
 for etiqueta, texto, esperado in BUSCAR:
-    presente = texto in vistos
+    # El rediseño de la 1.8.0 quita el emoji de delante de los botones.
+    presente = texto in vistos or main._sin_emoji(texto) in vistos
     ok = presente == esperado
     if not ok:
         fallos += 1

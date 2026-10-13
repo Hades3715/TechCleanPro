@@ -52,6 +52,13 @@ import subprocess
 import time
 from datetime import datetime
 
+# PowerShell escribe por una tubería en la página de códigos OEM (cp850 en un
+# Windows en español) y Python lee con la ANSI (cp1252): "Optimización" salía
+# "Optimizaci¢n" en Servicios, Drivers, Tareas... (BUG corregido en la 1.8.0).
+# Las llamadas que leen texto le piden UTF-8 a PowerShell con esto delante del
+# script, y lo leen con encoding="utf-8".
+PS_UTF8 = "[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
+
 IS_WINDOWS = platform.system() == "Windows"
 
 
@@ -99,7 +106,7 @@ def tomar_foto(sysmon, opt):
     except Exception:
         pass
     try:
-        foto["apps_inicio_activas"] = sum(1 for a in opt.listar_apps_inicio() if a.get("activo"))
+        foto["apps_inicio_activas"] = opt.contar_inicio_activo()
     except Exception:
         pass
     try:
@@ -186,8 +193,8 @@ def _run_ps(script, timeout=20):
     if not IS_WINDOWS:
         return ""
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                            capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", PS_UTF8 + script],
+                            capture_output=True, encoding="utf-8", errors="replace",
                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=timeout)
         return r.stdout or ""
     except Exception:
@@ -415,19 +422,138 @@ class GrabadorMetricas:
 #  4. Salud de discos (SMART, vía los contadores de Windows)
 # ============================================================
 
+# ---- NVMe directo (1.8.0) ----
+# Se le pide al disco su registro de salud (el "log 0x02" de la norma NVMe)
+# con IOCTL_STORAGE_QUERY_PROPERTY, como CrystalDiskInfo. Probado en el
+# equipo del desarrollador: funciona SIN administrador (abriendo el disco sin
+# permisos de lectura ni escritura) y tarda milisegundos, frente a los 8 s de
+# Get-StorageReliabilityCounter con WMI lento, que además sin administrador
+# no rellena nada. Para discos SATA o USB no hay equivalente sin
+# administrador: esos siguen por PowerShell.
+_IOCTL_STORAGE_QUERY_PROPERTY = 0x002D1400
+_BUS = {7: "USB", 11: "SATA", 17: "NVMe", 3: "ATA", 8: "RAID", 10: "SAS", 12: "SD", 13: "MMC"}
+
+
+def _abrir_disco(numero):
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    k32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+                                wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    # Acceso 0: solo para preguntar al dispositivo, sin leer el disco. Así
+    # no hace falta administrador. Compartido lectura/escritura, OPEN_EXISTING.
+    manejador = k32.CreateFileW(rf"\\.\PhysicalDrive{int(numero)}", 0, 3, None, 3, 0, None)
+    if manejador in (None, wintypes.HANDLE(-1).value):
+        return None, k32
+    return manejador, k32
+
+
+def _consulta_disco(k32, manejador, entrada, tamano_salida):
+    import ctypes
+    from ctypes import wintypes
+    salida = ctypes.create_string_buffer(tamano_salida)
+    devueltos = wintypes.DWORD()
+    ok = k32.DeviceIoControl(wintypes.HANDLE(manejador), _IOCTL_STORAGE_QUERY_PROPERTY, entrada, len(entrada),
+                             salida, tamano_salida, ctypes.byref(devueltos), None)
+    return salida.raw[:devueltos.value] if ok else None
+
+
+def leer_registro_nvme(crudo):
+    """El registro de salud NVMe (512 bytes) en un diccionario. Pura, para
+    probarla con registros inventados."""
+    def entero(desde, largo):
+        return int.from_bytes(crudo[desde:desde + largo], "little")
+    kelvin = entero(1, 2)
+    return {
+        "aviso_critico": crudo[0],
+        "temperatura": kelvin - 273 if kelvin else None,
+        "repuesto": crudo[3], "repuesto_minimo": crudo[4],
+        "desgaste": crudo[5],
+        # "Unidades de datos": miles de bloques de 512 bytes.
+        "escritos_bytes": entero(48, 16) * 512000, "leidos_bytes": entero(32, 16) * 512000,
+        "ciclos": entero(112, 16), "horas": entero(128, 16),
+        "apagados_inseguros": entero(144, 16), "errores_medio": entero(160, 16),
+    }
+
+
+def _disco_directo(numero):
+    """Modelo, bus y, si es NVMe, su registro de salud. None si no hay
+    disco con ese número."""
+    import struct
+    manejador, k32 = _abrir_disco(numero)
+    if manejador is None:
+        return None
+    try:
+        # StorageDeviceProperty (0), PropertyStandardQuery (0).
+        desc = _consulta_disco(k32, manejador, struct.pack("<II4x", 0, 0), 1024)
+        if not desc or len(desc) < 32:
+            return None
+
+        def cadena(offset):
+            if not offset or offset >= len(desc):
+                return ""
+            return desc[offset:desc.index(b"\0", offset)].decode("ascii", "replace").strip()
+        vendor_off, producto_off = struct.unpack_from("<II", desc, 12)
+        bus = struct.unpack_from("<I", desc, 28)[0]
+        nombre = " ".join(x for x in (cadena(vendor_off), cadena(producto_off)) if x)
+        disco = {"numero": numero, "nombre": nombre, "bus": _BUS.get(bus, ""), "tipo": "SSD" if bus == 17 else ""}
+        if bus == 17:
+            # StorageDeviceProtocolSpecificProperty (50), NVMe (3), página de
+            # registro (2), registro 0x02; los datos van detrás de la cabecera
+            # de 40 bytes que describe la petición.
+            peticion = struct.pack("<II10I", 50, 0, 3, 2, 2, 0, 40, 512, 0, 0, 0, 0) + bytes(512)
+            respuesta = _consulta_disco(k32, manejador, peticion, len(peticion))
+            if respuesta and len(respuesta) >= 8 + 40 + 512:
+                disco.update(leer_registro_nvme(respuesta[8 + 40:8 + 40 + 512]))
+        return disco
+    finally:
+        k32.CloseHandle(manejador)
+
+
+def discos_directos(maximo=16):
+    """Los discos físicos que responden a una consulta directa."""
+    if not IS_WINDOWS:
+        return []
+    encontrados = []
+    for n in range(maximo):
+        try:
+            d = _disco_directo(n)
+        except Exception:
+            d = None
+        if d:
+            encontrados.append(d)
+    return encontrados
+
+
 def salud_discos():
     """Estado de cada disco físico. Devuelve una lista de diccionarios, o
     None si no se pudo preguntar.
 
-    Los contadores de fiabilidad (desgaste, temperatura, horas, errores)
-    salen de Get-StorageReliabilityCounter, que necesita administrador y
-    que algunos controladores no rellenan: un None ahí significa "Windows
-    no lo sabe", y se enseña así, nunca como un cero.
+    1.8.0: primero la consulta directa (NVMe: milisegundos y sin
+    administrador). Solo si queda algún disco sin datos (SATA, USB) se pasa
+    por Get-StorageReliabilityCounter, que necesita administrador y que
+    algunos controladores no rellenan: un None ahí significa "Windows no lo
+    sabe", y se enseña así, nunca como un cero.
     """
+    directos = discos_directos()
+    if directos and all(d.get("horas") is not None for d in directos):
+        for d in directos:
+            d["salud"] = "Healthy" if not d.get("aviso_critico") else "Warning"
+            d["errores_lectura"] = d.get("errores_medio")
+            d["veredicto"], d["motivos"] = veredicto_disco(d)
+        return directos
+    return _salud_discos_powershell(directos)
+
+
+def _salud_discos_powershell(directos=()):
+    """Get-PhysicalDisk + Get-StorageReliabilityCounter. Lo que ya se leyó
+    directo (un NVMe en un equipo que además tiene un SATA) se respeta."""
     script = (
         "Get-PhysicalDisk | ForEach-Object { $r = $null; "
         "try { $r = $_ | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}; "
-        "[pscustomobject]@{ nombre = $_.FriendlyName; tipo = [string]$_.MediaType; bus = [string]$_.BusType; "
+        "[pscustomobject]@{ numero = [string]$_.DeviceId; nombre = $_.FriendlyName; "
+        "tipo = [string]$_.MediaType; bus = [string]$_.BusType; "
         "salud = [string]$_.HealthStatus; tamano = [int64]$_.Size; "
         "desgaste = $r.Wear; temperatura = $r.Temperature; horas = $r.PowerOnHours; "
         "errores_lectura = $r.ReadErrorsUncorrected; errores_escritura = $r.WriteErrorsUncorrected } "
@@ -442,10 +568,18 @@ def salud_discos():
         return None
     if isinstance(datos, dict):
         datos = [datos]
+    por_numero = {str(d["numero"]): d for d in directos}
     discos = []
     for d in datos if isinstance(datos, list) else []:
         disco = {k: d.get(k) for k in ("nombre", "tipo", "bus", "salud", "tamano", "desgaste",
                                         "temperatura", "horas", "errores_lectura", "errores_escritura")}
+        directo = por_numero.get(str(d.get("numero")))
+        if directo:
+            for clave, valor in directo.items():
+                if valor is not None and disco.get(clave) in (None, ""):
+                    disco[clave] = valor
+            if disco.get("errores_lectura") is None:
+                disco["errores_lectura"] = directo.get("errores_medio")
         disco["veredicto"], disco["motivos"] = veredicto_disco(disco)
         discos.append(disco)
     return discos
@@ -467,6 +601,15 @@ def veredicto_disco(d):
     if salud and salud not in ("Healthy", "0"):
         subir("critico")
         motivos.append("salud_motivo_windows")
+    # NVMe (1.8.0): el propio disco avisa (repuesto por debajo del mínimo,
+    # temperatura, fiabilidad degradada, solo lectura...).
+    if d.get("aviso_critico"):
+        subir("critico")
+        motivos.append("salud_motivo_aviso_nvme")
+    repuesto, minimo = d.get("repuesto"), d.get("repuesto_minimo")
+    if isinstance(repuesto, int) and isinstance(minimo, int) and minimo and repuesto <= minimo:
+        subir("critico")
+        motivos.append("salud_motivo_repuesto")
     desgaste = d.get("desgaste")
     if isinstance(desgaste, (int, float)):
         if desgaste >= 90:
@@ -574,6 +717,110 @@ def abrir_informe_bateria_windows(carpeta):
     return None
 
 
+def nombre_app_srum(app):
+    r""""\Device\HarddiskVolume3\Program Files\Google\Chrome\chrome.exe" ->
+    "chrome"; "Microsoft.WindowsTerminal_8wekyb3d8bbwe!App" -> "Windows
+    Terminal"."""
+    import re
+    app = (app or "").strip()
+    if "\\" in app or app.lower().endswith(".exe"):
+        return os.path.splitext(app.replace("/", "\\").rsplit("\\", 1)[-1])[0] or app
+    familia = app.split("!", 1)[0].split("_", 1)[0]
+    parte = familia.rsplit(".", 1)[-1] if "." in familia else familia
+    return re.sub(r"(?<=[a-z])(?=[A-Z])", " ", parte) or app
+
+
+def leer_srum_csv(texto):
+    """El CSV de powercfg /srumutil -> [{app, nombre, energia, pct,
+    con_bateria}] de más a menos gasto, o None si no se reconoce.
+
+    Microsoft no documenta las columnas, así que se buscan por el nombre:
+    la de la app (AppId), la de energía total (TotalEnergyConsumption) o, si
+    no la hay, la suma de las de cada parte (CPU, pantalla, disco, red...:
+    las que acaban en EnergyConsumption, sin las de "WorkOnBehalf", que
+    repiten lo que hizo un proceso por otro), y OnBattery. Pura: la prueba
+    le pasa un CSV inventado."""
+    import csv
+    import io
+    filas = list(csv.reader(io.StringIO(texto or "")))
+    for i, fila in enumerate(filas):
+        bajos = [c.strip().lower() for c in fila]
+        col_app = next((j for j, c in enumerate(bajos) if c in ("appid", "appname", "app")), None)
+        if col_app is not None:
+            break
+    else:
+        return None
+    total = [j for j, c in enumerate(bajos) if c == "totalenergyconsumption"]
+    energia = total or [j for j, c in enumerate(bajos) if c.endswith("energyconsumption")
+                        and "workonbehalf" not in c and "loss" not in c]
+    if not energia:
+        return None
+    col_bateria = next((j for j, c in enumerate(bajos) if c == "onbattery"), None)
+    por_app, con_bateria = {}, {}
+    necesarias = max(energia + [col_app] + ([col_bateria] if col_bateria is not None else []))
+    for fila in filas[i + 1:]:
+        if len(fila) <= necesarias:
+            continue
+        app = fila[col_app].strip()
+        try:
+            gasto = sum(float(fila[j] or 0) for j in energia)
+        except ValueError:
+            continue
+        if not app or gasto <= 0:
+            continue
+        por_app[app] = por_app.get(app, 0.0) + gasto
+        if col_bateria is not None and fila[col_bateria].strip().lower() in ("1", "true"):
+            con_bateria[app] = con_bateria.get(app, 0.0) + gasto
+    suma = sum(por_app.values())
+    if not suma:
+        return []
+    # Varias entradas pueden ser el mismo programa (rutas distintas): por nombre.
+    juntas = {}
+    for app, gasto in por_app.items():
+        nombre = nombre_app_srum(app)
+        dato = juntas.setdefault(nombre.lower(), {"app": app, "nombre": nombre, "energia": 0.0, "con_bateria": 0.0})
+        dato["energia"] += gasto
+        dato["con_bateria"] += con_bateria.get(app, 0.0)
+    apps = sorted(juntas.values(), key=lambda a: a["energia"], reverse=True)
+    for a in apps:
+        a["pct"] = round(a["energia"] * 100 / suma, 1)
+    return apps
+
+
+def consumo_energia_apps():
+    """Qué apps gastaron más energía (últimos 7 días, la estimación de
+    Windows). {"apps": [...]} o {"error": "admin" | "fallo"}: powercfg
+    /srumutil solo funciona como administrador (sin él: "SruUpdateStats
+    failed", estado 5)."""
+    if not IS_WINDOWS:
+        return {"error": "fallo"}
+    import ctypes
+    import tempfile
+    ruta = os.path.join(tempfile.gettempdir(), f"techclean_srum_{os.getpid()}.csv")
+    try:
+        r = subprocess.run(["powercfg", "/srumutil", "/output", ruta, "/csv"], capture_output=True,
+                           creationflags=subprocess.CREATE_NO_WINDOW, timeout=120)
+        if r.returncode != 0 or not os.path.exists(ruta):
+            return {"error": "admin" if not ctypes.windll.shell32.IsUserAnAdmin() else "fallo"}
+        with open(ruta, "rb") as f:
+            crudo = f.read()
+    except Exception:
+        return {"error": "fallo"}
+    finally:
+        try:
+            os.remove(ruta)
+        except OSError:
+            pass
+    for codificacion in ("utf-8-sig", "utf-16", "cp1252"):
+        try:
+            apps = leer_srum_csv(crudo.decode(codificacion))
+        except UnicodeDecodeError:
+            continue
+        if apps is not None:
+            return {"apps": apps}
+    return {"error": "fallo"}
+
+
 # ============================================================
 #  6. Pantallazos azules y apagados inesperados
 # ============================================================
@@ -661,6 +908,171 @@ def historial_fallos(dias_apagados=90):
     return {"pantallazos": pantallazos, "apagados": apagados, "dias": int(dias_apagados)}
 
 
+def diagnostico_fallos(dias=30):
+    """Lo que el registro de eventos de Windows dice de los últimos `dias`,
+    para Reparar → Diagnóstico de fallos (1.8.0). None si no se pudo leer.
+
+    - apagados: cada evento 41 de Kernel-Power (el equipo se apagó sin un
+      apagado normal), con su código de pantallazo si lo hubo. Hasta la
+      1.7.0 los pantallazos se contaban solo por el evento 1001, que Windows
+      escribe al volver a arrancar SI llegó a guardar el informe: en el
+      equipo del desarrollador había un 0x9F el 28/09 que solo constaba en
+      el 41. También si pasó durante la suspensión.
+    - apps: las que se cerraron solas (evento 1000 de "Application Error").
+    - hardware: errores WHEA (la CPU, la RAM o el bus avisando de fallos).
+    - disco: avisos de los drivers de disco y del sistema de archivos.
+      SIEMPRE filtrando por proveedor: los números de evento se repiten
+      entre proveedores (el 153 de Kernel-Boot es un aviso de arranque; el 7
+      de BTHUSB, del Bluetooth). Contando solo por número salían 39 "errores
+      de disco" que no lo eran. Y aun por proveedor hay que leerlos: los 161
+      de volmgr dicen que no se pudo GUARDAR el volcado de un pantallazo
+      (por eso no hubo informe 1001), no que el disco falle.
+    """
+    script = (
+        f"$desde = (Get-Date).AddDays(-{int(dias)}); "
+        "function D($e, $n) { (([xml]$e.ToXml()).Event.EventData.Data | Where-Object { $_.Name -eq $n }).'#text' }; "
+        "$ap = @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-Kernel-Power'; "
+        "Id=41; StartTime=$desde} -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ "
+        "fecha = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm'); codigo = [string](D $_ 'BugcheckCode'); "
+        "suspension = [string](D $_ 'SleepInProgress'); boton = [string](D $_ 'PowerButtonTimestamp') } }); "
+        "$bs = @(Get-WinEvent -FilterHashtable @{LogName='System'; "
+        "ProviderName='Microsoft-Windows-WER-SystemErrorReporting'; Id=1001; StartTime=$desde} "
+        "-ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ "
+        "fecha = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm'); codigo = [string]$_.Properties[0].Value } }); "
+        "$apps = @(Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Application Error'; "
+        "Id=1000; StartTime=$desde} -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.Properties[0].Value } "
+        "| Group-Object | Sort-Object Count -Descending | Select-Object -First 5 | "
+        "ForEach-Object { [pscustomobject]@{ nombre = $_.Name; veces = $_.Count } }); "
+        "$hw = @(Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Windows-WHEA-Logger'; "
+        "StartTime=$desde} -ErrorAction SilentlyContinue).Count; "
+        "$dk = @(Get-WinEvent -FilterHashtable @{LogName='System'; "
+        "ProviderName='disk','Ntfs','stornvme','storahci','iaStorA','iaStorAC','volmgr'; Level=1,2,3; "
+        "StartTime=$desde} -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ "
+        "fecha = $_.TimeCreated.ToString('yyyy-MM-dd HH:mm'); proveedor = $_.ProviderName; id = $_.Id; "
+        "unidad = [string](D $_ 'DriveName') } }); "
+        "[pscustomobject]@{ apagados = $ap; pantallazos = $bs; apps = $apps; hardware = $hw; disco = $dk } "
+        "| ConvertTo-Json -Compress -Depth 3"
+    )
+    salida = _run_ps(script, timeout=90).strip()
+    if not salida:
+        return None
+    try:
+        datos = json.loads(salida)
+    except ValueError:
+        return None
+    return leer_diagnostico(datos, dias)
+
+
+def _lista(valor):
+    if valor is None:
+        return []
+    return valor if isinstance(valor, list) else [valor]
+
+
+def leer_diagnostico(datos, dias=30):
+    """El JSON de diagnostico_fallos, ordenado y con cada código explicado.
+    Pura: la prueba le pasa datos inventados."""
+    def numero(texto):
+        try:
+            return int(str(texto).strip(), 0) if str(texto).strip() else 0
+        except ValueError:
+            return 0
+
+    apagados = []
+    for a in _lista(datos.get("apagados")):
+        if not isinstance(a, dict):
+            continue
+        codigo = numero(a.get("codigo"))
+        base, nombre, causa = interpretar_codigo_parada(hex(codigo)) if codigo else (None, None, None)
+        apagados.append({
+            "fecha": a.get("fecha") or "", "codigo": base, "nombre": nombre, "causa": causa,
+            "suspension": numero(a.get("suspension")) != 0,
+            "boton": numero(a.get("boton")) != 0,
+        })
+    # Un pantallazo con informe (1001) suele tener su apagado (41) unos
+    # minutos antes: se cuentan una vez, por el código y el día.
+    con_codigo = {(a["codigo"], a["fecha"][:10]) for a in apagados if a["codigo"]}
+    pantallazos = [dict(a, origen="apagado") for a in apagados if a["codigo"]]
+    for p in _lista(datos.get("pantallazos")):
+        if not isinstance(p, dict):
+            continue
+        base, nombre, causa = interpretar_codigo_parada(p.get("codigo"))
+        if (base, (p.get("fecha") or "")[:10]) in con_codigo:
+            continue
+        pantallazos.append({"fecha": p.get("fecha") or "", "codigo": base, "nombre": nombre, "causa": causa,
+                            "origen": "informe"})
+    pantallazos.sort(key=lambda p: p["fecha"], reverse=True)
+    apagados.sort(key=lambda a: a["fecha"], reverse=True)
+    # "bad_module_info" es lo que pone Windows cuando no sabe qué programa era.
+    apps = [{"nombre": a.get("nombre") if a.get("nombre") not in (None, "", "bad_module_info") else None,
+             "veces": int(a.get("veces") or 0)}
+            for a in _lista(datos.get("apps")) if isinstance(a, dict)]
+
+    def entero(valor):
+        try:
+            return int(valor or 0)
+        except (TypeError, ValueError):
+            return 0
+    # Los avisos de disco, por lo que de verdad dicen.
+    sistema_archivos = {}
+    disco = []
+    volcado_fallido = False
+    for e in _lista(datos.get("disco")):
+        if not isinstance(e, dict):
+            continue
+        proveedor, ident = str(e.get("proveedor") or ""), entero(e.get("id"))
+        if proveedor.lower() == "volmgr" and ident in (45, 46, 161):
+            volcado_fallido = True
+        elif proveedor.lower() == "ntfs":
+            unidad = (e.get("unidad") or "").strip() or "?"
+            sistema_archivos.setdefault(unidad, e.get("fecha") or "")
+        else:
+            disco.append({"fecha": e.get("fecha") or "", "proveedor": proveedor, "id": ident})
+    return {"dias": int(dias), "apagados": apagados, "pantallazos": pantallazos, "apps": apps,
+            "hardware": entero(datos.get("hardware")), "disco": len(disco), "disco_eventos": disco,
+            "sistema_archivos": [{"unidad": u, "fecha": f} for u, f in sorted(sistema_archivos.items())],
+            "volcado_fallido": volcado_fallido}
+
+
+def veredicto_fallos(diag):
+    """("bien" | "atencion" | "critico", [claves de idiomas]) para el
+    resumen. Pura."""
+    motivos = []
+    nivel = "bien"
+    orden = ["bien", "atencion", "critico"]
+
+    def subir(a):
+        nonlocal nivel
+        if orden.index(a) > orden.index(nivel):
+            nivel = a
+    if diag["hardware"]:
+        subir("critico")
+        motivos.append("fallos_motivo_hardware")
+    if diag["disco"]:
+        subir("atencion")
+        motivos.append("fallos_motivo_disco")
+    if diag.get("sistema_archivos"):
+        subir("atencion")
+        motivos.append("fallos_motivo_ntfs")
+    if len(diag["pantallazos"]) >= 2:
+        subir("critico")
+        motivos.append("fallos_motivo_pantallazos")
+    elif diag["pantallazos"]:
+        subir("atencion")
+        motivos.append("fallos_motivo_pantallazo")
+    sin_codigo = [a for a in diag["apagados"] if not a["codigo"]]
+    if len(sin_codigo) >= 3:
+        subir("atencion")
+        motivos.append("fallos_motivo_apagados")
+    if any(a["suspension"] for a in diag["apagados"]):
+        subir("atencion")
+        motivos.append("fallos_motivo_suspension")
+    if sum(a["veces"] for a in diag["apps"]) >= 5:
+        subir("atencion")
+        motivos.append("fallos_motivo_apps")
+    return nivel, motivos
+
+
 # ============================================================
 #  7. Respaldo de controladores
 # ============================================================
@@ -693,10 +1105,15 @@ def exportar_drivers(carpeta, opt, callback_progreso=None, evento_cancelar=None)
     """pnputil /export-driver * — copia TODOS los controladores de terceros
     (los que no vienen con Windows) a una carpeta. Es lo que hay que hacer
     antes de formatear: después se reinstalan sin buscar uno por uno en la
-    web del fabricante. Devuelve (exito, cantidad, bytes, resumen)."""
+    web del fabricante. Devuelve (exito, cantidad, bytes, resumen, esperados,
+    exportados).
+
+    BUG corregido (1.8.0): con una carpeta no válida devolvía solo 4 valores;
+    el mensaje de error de la interfaz lee el 5.º y el 6.º, el hilo moría y
+    la pantalla se quedaba en "Trabajando..." para siempre."""
     carpeta = _ruta_segura(carpeta)
     if carpeta is None:
-        return False, 0, 0, ""
+        return False, 0, 0, "", None, None
     exito, resumen, cancelado = opt._ejecutar_reparacion_cancelable(
         ["pnputil", "/export-driver", "*", carpeta], timeout_seg=1800,
         callback_progreso=callback_progreso, evento_cancelar=evento_cancelar)
@@ -754,99 +1171,62 @@ NIVELES_SALUD = {"bien": "salud_nivel_bien", "atencion": "salud_nivel_atencion",
 
 
 def generar_informe_html(datos, t):
-    """El informe que el técnico le entrega al cliente, en HTML listo para
-    imprimir o guardar como PDF desde el navegador (Ctrl+P). HTML y no PDF
-    a propósito: generar PDF exigiría una librería más dentro del .exe, y
-    cualquier navegador ya sabe imprimir a PDF.
+    """El informe que el técnico le entrega al cliente: el antes y el
+    después, el trabajo hecho y la salud del equipo. Desde la 1.8.0 con la
+    cara de TechClean (informe.generar_html) y en PDF (lo imprime main con
+    informe.a_pdf); si no hay Edge, este HTML se imprime desde el navegador.
 
     `datos`: {"equipo", "tecnico", "cliente", "antes", "despues", "filas",
     "acciones", "discos", "baterias", "fallos", "notas"}; todo opcional.
     `t` se pasa como parámetro para poder probarlo sin la app.
     """
-    from html import escape as e
-
-    def fila(*celdas, clase=""):
-        return f'<tr class="{clase}">' + "".join(f"<td>{c}</td>" for c in celdas) + "</tr>"
+    import informe
 
     equipo = datos.get("equipo") or {}
-    partes = [
-        "<!doctype html><html><head><meta charset='utf-8'>",
-        f"<title>{e(t('inf_titulo'))}</title>",
-        "<style>body{font-family:Segoe UI,Arial,sans-serif;max-width:820px;margin:32px auto;color:#1d2330;"
-        "padding:0 16px}h1{margin:0 0 4px;font-size:24px}h2{font-size:16px;margin:28px 0 8px;"
-        "border-bottom:2px solid #e3e6ec;padding-bottom:4px}table{width:100%;border-collapse:collapse;"
-        "font-size:13px}td{padding:6px 8px;border-bottom:1px solid #eef0f4;vertical-align:top}"
-        ".meta{color:#5b6475;font-size:13px}.mejor{color:#1e8e4e;font-weight:600}"
-        ".peor{color:#c0392b;font-weight:600}.atencion{color:#b7791f;font-weight:600}"
-        ".critico{color:#c0392b;font-weight:600}.bien{color:#1e8e4e;font-weight:600}"
-        ".pie{margin-top:36px;font-size:11px;color:#8a92a3}@media print{body{margin:0}}</style>",
-        "</head><body>",
-        f"<h1>{e(t('inf_titulo'))}</h1>",
-        f"<div class='meta'>{e(t('inf_fecha', fecha=datetime.now().strftime('%Y-%m-%d %H:%M')))}",
-    ]
-    if datos.get("tecnico"):
-        partes.append(" · " + e(t("inf_tecnico", nombre=datos["tecnico"])))
-    if datos.get("cliente"):
-        partes.append(" · " + e(t("inf_cliente", nombre=datos["cliente"])))
-    partes.append("</div>")
+    filas_equipo = [(t(etiqueta), equipo[clave]) for clave, etiqueta in (
+        ("hostname", "inf_eq_nombre"), ("sistema_operativo", "inf_eq_so"), ("procesador", "inf_eq_cpu"),
+        ("ram", "inf_eq_ram"), ("placa_madre", "inf_eq_placa")) if equipo.get(clave)]
 
-    partes.append(f"<h2>{e(t('inf_equipo'))}</h2><table>")
-    for clave, etiqueta in (("hostname", "inf_eq_nombre"), ("sistema_operativo", "inf_eq_so"),
-                            ("procesador", "inf_eq_cpu"), ("ram", "inf_eq_ram"),
-                            ("placa_madre", "inf_eq_placa")):
-        if equipo.get(clave):
-            partes.append(fila(e(t(etiqueta)), e(str(equipo[clave]))))
-    partes.append("</table>")
+    problemas = []
+    for d in datos.get("discos") or []:
+        nombre = t("inf_disco", nombre=d.get("nombre") or "?")
+        filas_equipo.append((nombre, t(NIVELES_SALUD.get(d.get("veredicto"), "salud_nivel_bien"))))
+        if d.get("veredicto") in ("atencion", "critico"):
+            problemas.append({"nivel": d["veredicto"], "titulo": nombre,
+                              "detalle": ", ".join(t(m) for m in d.get("motivos") or [])})
+    for b in datos.get("baterias") or []:
+        resumen = t("bat_resumen", porcentaje=b.get("porcentaje"), ciclos=b.get("ciclos") or "?")
+        filas_equipo.append((t("inf_bateria"), resumen))
+        if b.get("veredicto") in ("atencion", "critico"):
+            problemas.append({"nivel": b["veredicto"], "titulo": t("inf_bateria"), "detalle": resumen})
+    fallos = datos.get("fallos")
+    if fallos:
+        n = len(fallos.get("pantallazos") or [])
+        valor = t("inf_estabilidad_valor", pantallazos=n, apagados=fallos.get("apagados", 0),
+                  dias=fallos.get("dias", 90))
+        filas_equipo.append((t("inf_estabilidad"), valor))
+        if n or fallos.get("apagados"):
+            problemas.append({"nivel": "atencion", "titulo": t("inf_estabilidad"), "detalle": valor})
 
     filas = datos.get("filas") or []
+    antes = datos.get("antes") or {}
+    despues = datos.get("despues") or {}
+    antes_despues = None
     if filas:
-        antes = datos.get("antes") or {}
-        despues = datos.get("despues") or {}
-        partes.append(f"<h2>{e(t('inf_antes_despues'))}</h2>")
-        partes.append(f"<div class='meta'>{e(t('inf_momentos', antes=antes.get('momento', ''), despues=despues.get('momento', '')))}</div><table>")
-        partes.append(fila(f"<b>{e(t('inf_col_medida'))}</b>", f"<b>{e(t('inf_col_antes'))}</b>",
-                           f"<b>{e(t('inf_col_despues'))}</b>", f"<b>{e(t('inf_col_cambio'))}</b>"))
-        for f in filas:
-            signo = "+" if f["diferencia"] > 0 else ""
-            cambio = f"{signo}{_formatear_valor(f['diferencia'], f['unidad'])}"
-            partes.append(fila(e(t(f["clave"])), e(_formatear_valor(f["antes"], f["unidad"])),
-                               e(_formatear_valor(f["despues"], f["unidad"])),
-                               f"<span class='{f['sentido']}'>{e(cambio)}</span>"))
-        partes.append("</table>")
+        antes_despues = {
+            "momentos": t("inf_momentos", antes=antes.get("momento", ""), despues=despues.get("momento", "")),
+            "filas": [(t(f["clave"]), _formatear_valor(f["antes"], f["unidad"]),
+                       _formatear_valor(f["despues"], f["unidad"]),
+                       ("+" if f["diferencia"] > 0 else "") + _formatear_valor(f["diferencia"], f["unidad"]),
+                       f["sentido"]) for f in filas]}
+    acciones = [{"fecha": (a.get("timestamp") or "")[:16], "accion": a.get("accion", ""),
+                 "resultado": a.get("resultado", ""), "exito": a.get("exito")} for a in datos.get("acciones") or []]
+    return informe.generar_html({
+        "titulo": t("inf_titulo"), "version": datos.get("version") or "",
+        "fecha": datetime.now().strftime("%Y-%m-%d %H:%M"), "equipo_nombre": equipo.get("hostname") or "",
+        "tecnico": datos.get("tecnico"), "cliente": datos.get("cliente"), "logo": datos.get("logo"),
+        "problemas": problemas if (datos.get("discos") or datos.get("baterias") or fallos) else None,
+        "equipo": filas_equipo, "antes_despues": antes_despues,
+        "acciones": acciones if datos.get("acciones") is not None else None, "notas": datos.get("notas"),
+    }, t)
 
-    acciones = datos.get("acciones") or []
-    if acciones:
-        partes.append(f"<h2>{e(t('inf_trabajo'))}</h2><table>")
-        for a in acciones:
-            marca = "✓" if a.get("exito") else "✗"
-            partes.append(fila(e(a.get("timestamp", "")[11:16]), f"{marca} {e(a.get('accion', ''))}",
-                               e(str(a.get("resultado", ""))[:220])))
-        partes.append("</table>")
-
-    discos = datos.get("discos") or []
-    baterias = datos.get("baterias") or []
-    fallos = datos.get("fallos")
-    if discos or baterias or fallos:
-        partes.append(f"<h2>{e(t('inf_salud'))}</h2><table>")
-        for d in discos:
-            detalle = ", ".join(t(m) for m in d.get("motivos") or []) or t("salud_sin_problemas")
-            partes.append(fila(e(t("inf_disco", nombre=d.get("nombre") or "?")),
-                               f"<span class='{d['veredicto']}'>{e(t(NIVELES_SALUD[d['veredicto']]))}</span>",
-                               e(detalle)))
-        for b in baterias:
-            partes.append(fila(e(t("inf_bateria")),
-                               f"<span class='{b['veredicto']}'>{e(t(NIVELES_SALUD[b['veredicto']]))}</span>",
-                               e(t("bat_resumen", porcentaje=b.get("porcentaje"), ciclos=b.get("ciclos") or "?"))))
-        if fallos:
-            n = len(fallos.get("pantallazos") or [])
-            partes.append(fila(e(t("inf_estabilidad")),
-                               f"<span class='{'atencion' if n or fallos.get('apagados') else 'bien'}'>"
-                               f"{e(t('inf_estabilidad_valor', pantallazos=n, apagados=fallos.get('apagados', 0), dias=fallos.get('dias', 90)))}</span>",
-                               ""))
-        partes.append("</table>")
-
-    if datos.get("notas"):
-        partes.append(f"<h2>{e(t('inf_notas'))}</h2><p>{e(datos['notas'])}</p>")
-
-    partes.append(f"<div class='pie'>{e(t('inf_pie'))}</div></body></html>")
-    return "".join(partes)

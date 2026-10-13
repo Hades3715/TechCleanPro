@@ -2,11 +2,13 @@
 chcp 65001 >nul
 title TechClean - Compilar el instalador
 cd /d "%~dp0"
+set VERSION=
+for /f "tokens=3" %%V in ('findstr /b /c:"#define VersionApp" TechClean.iss') do set VERSION=%%~V
 echo ============================================================
 echo   TechClean - Generando el instalador
 echo ============================================================
 echo.
-echo Esto crea un TechClean_1.5.0_Instalador.exe: un instalador de
+echo Esto crea un TechClean_%VERSION%_Instalador.exe: un instalador de
 echo verdad, que deja la app en Archivos de programa, la pone en
 echo "Agregar o quitar programas" y la desinstala limpia.
 echo.
@@ -86,7 +88,7 @@ echo.
 echo ============================================================
 echo   Listo. El instalador quedo en:
 echo.
-echo     compilar\salida\TechClean_1.5.0_Instalador.exe
+echo     compilar\salida\TechClean_%VERSION%_Instalador.exe
 echo.
 echo   Ese es el archivo que se sube a Releases. Quien lo descargue
 echo   solo tiene que abrirlo y darle a Siguiente.

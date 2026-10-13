@@ -83,7 +83,19 @@ for f in glob.glob(os.path.join(_rutas.CODIGO, "*.py")):
                 escritos_a_mano.append(f"{os.path.basename(f)}:{nodo.lineno} {v.value!r}")
 print(f"textos de interfaz sin traducir: {escritos_a_mano or 'ninguno'}")
 
+# Claves repetidas dentro de un mismo idioma. En un diccionario la segunda
+# pisa a la primera sin avisar: en la 1.8.0, un script que añadía textos
+# detrás de una línea igual en los dos idiomas metió los de los dos en cada
+# uno, y la build en inglés habría salido con "Programas instalados".
+import collections
+repetidas = []
+for nodo in ast.walk(ast.parse(open(os.path.join(_rutas.CODIGO, "idiomas.py"), encoding="utf-8").read())):
+    if isinstance(nodo, ast.Dict) and len(nodo.keys) > 100:
+        claves = [k.value for k in nodo.keys if isinstance(k, ast.Constant)]
+        repetidas += [k for k, n in collections.Counter(claves).items() if n > 1]
+print(f"claves repetidas en un idioma: {repetidas or 'ninguna'}")
+
 # El codigo de salida es lo que mira Verificar_Todo.bat. Sin esto, este
 # script imprimia los problemas y el banco lo daba por bueno igual.
-problemas = (es ^ en) or (directas - es) or (es - usadas) or malos or escritos_a_mano
+problemas = (es ^ en) or (directas - es) or (es - usadas) or malos or escritos_a_mano or repetidas
 sys.exit(1 if problemas else 0)

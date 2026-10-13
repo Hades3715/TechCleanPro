@@ -121,12 +121,19 @@ llamadas = []
 original_refrescar = app._refrescar_gauges
 app._refrescar_gauges = lambda: llamadas.append(1)
 try:
+    # Se vacia la cuenta JUSTO antes de cada llamada: el refresco programado
+    # (cada 2 s) puede saltar dentro del update() de al lado, y con el equipo
+    # cargado (el banco entero corriendo) llego a contarse doble: "2
+    # refrescos" sin que la app hiciera nada mal. Lo que se mira es que hace
+    # UNA llamada.
     app.withdraw()
     app.update()
+    del llamadas[:]
     app._tick_dashboard()
     comprobar("oculta: no refresca los indicadores", llamadas == [], f"{len(llamadas)} refrescos")
     app.deiconify()
     app.update()
+    del llamadas[:]
     app._tick_dashboard()
     comprobar("visible: si los refresca", llamadas == [1], f"{len(llamadas)} refrescos")
 finally:

@@ -19,8 +19,8 @@ import main, widget as widget_mod
 root = ctk.CTk()
 root.withdraw()
 
-# ---------------- Gauge de Inicio ----------------
-g = main.Gauge(root, "CPU")
+# ---------------- Tarjeta de Inicio (TarjetaMetrica, antes Gauge) ----------------
+g = main.TarjetaMetrica(root, "CPU", "componentes")
 g.pack()
 root.update()
 
@@ -28,7 +28,7 @@ capturas = []
 original = g._dibujar
 g._dibujar = lambda v: (capturas.append(round(v, 1) if v is not None else None), original(v))[1]
 
-print("== Gauge: 0% -> 80%, con animacion ==")
+print("== Tarjeta de Inicio: 0% -> 80%, con animacion ==")
 main.ANIMAR_BARRAS = True
 g.set_value(80, "prueba")
 inicio = time.time()
@@ -42,7 +42,7 @@ print(f"  monotono (nunca retrocede): {crece}")
 print(f"  termina exacto en 80: {capturas[-1] == 80.0}")
 
 capturas.clear()
-print("== Gauge: 80% -> 20%, SIN animacion (Modo Ligero) ==")
+print("== Tarjeta de Inicio: 80% -> 20%, SIN animacion (Modo Ligero) ==")
 main.ANIMAR_BARRAS = False
 g.set_value(20, "prueba")
 root.update()
@@ -50,13 +50,13 @@ print(f"  cuadros dibujados: {len(capturas)} (debe ser 1)  valores: {capturas}")
 
 capturas.clear()
 main.ANIMAR_BARRAS = True
-print("== Gauge: valor None (N/D) no revienta ==")
+print("== Tarjeta de Inicio: valor None (N/D) no revienta ==")
 g.set_value(None, "sin dato")
 root.update()
 print(f"  valores: {capturas}")
 
 capturas.clear()
-print("== Gauge: dos cambios seguidos no dejan animaciones pisadas ==")
+print("== Tarjeta de Inicio: dos cambios seguidos no dejan animaciones pisadas ==")
 g.set_value(10)
 g.set_value(90)
 inicio = time.time()

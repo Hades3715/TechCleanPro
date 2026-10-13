@@ -123,6 +123,39 @@ for _ in range(20):
 peor = max(ms(app._refrescar_gauges) for _ in range(5))
 comprobar(peor < 100, f"refrescar los indicadores: {peor:.0f} ms (antes mas de 300 cada 2 s)")
 
+print("== Listas en un lienzo (1.8.0) ==")
+# Un widget por fila son ~12 ventanas de Windows por fila: 40 filas tardaban
+# casi un segundo en colocarse. ListaLienzo las dibuja en una sola.
+caja = main.Caja(app.contenido)
+caja.grid(row=5, column=0, columnspan=3, sticky="we")
+lienzo = main.ListaLienzo(caja)
+lienzo.pack(fill="x")
+pedidos = []
+filas = [{"icono": "carpeta", "titulo": f"Carpeta {i}", "detalle": "detalle", "fraccion": i / 40,
+          "valor": f"{i} GB", "entrar": lambda: None} for i in range(40)]
+filas[0] = {"titulo": "Con interruptor", "interruptor": False,
+            "al_cambiar": lambda nuevo, listo: pedidos.append((nuevo, listo))}
+lienzo.poner(filas)
+for _ in range(20):
+    app.update()
+inicio = time.perf_counter()
+lienzo.poner(filas)
+app.update()
+tarda = (time.perf_counter() - inicio) * 1000
+comprobar(tarda < 300, f"40 filas se dibujan en {tarda:.0f} ms")
+lienzo._alternar(filas[0])
+comprobar(filas[0]["interruptor"] is True and filas[0].get("ocupado"),
+          "al pulsar el interruptor cambia al momento y queda en espera")
+lienzo._alternar(filas[0])
+comprobar(len(pedidos) == 1, "mientras espera, otro clic no pide otro cambio")
+pedidos[0][1](False)
+comprobar(filas[0]["interruptor"] is False and not filas[0].get("ocupado"),
+          "si el cambio falla, vuelve a donde estaba (no miente)")
+lienzo._alternar(filas[0])
+pedidos[1][1](True)
+comprobar(filas[0]["interruptor"] is True, "si sale bien, se queda")
+caja.destroy()
+
 app.destroy()
 print("\nRESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS"))
 sys.exit(1 if fallos else 0)

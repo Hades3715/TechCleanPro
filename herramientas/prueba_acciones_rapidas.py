@@ -114,7 +114,8 @@ comprobar(app.contenido.winfo_exists() and app.contenido is not vieja, "la nueva
 print("== La app: novedades ==")
 correr(app, 1.2)          # la comprobacion salta a los 1.5 s de abrir
 ventanas = [w for w in app.winfo_children() if isinstance(w, main.ctk.CTkToplevel)]
-comprobar(any("1.7.0" in w.title() for w in ventanas), "quien venia de la 1.6.0 ve las novedades")
+comprobar(any(main.APP_VERSION in w.title() for w in ventanas),
+          "quien venia de una version anterior ve las novedades")
 comprobar(prefs.cargar().get("ultima_version_vista") == main.APP_VERSION, "y se apunta que ya las vio")
 for w in ventanas:
     w.destroy()
