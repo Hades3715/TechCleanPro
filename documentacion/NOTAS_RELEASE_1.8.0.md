@@ -30,8 +30,8 @@ Descarga **uno solo**, el que te sirva. No hace falta instalar nada más.
 
 | Archivo | SHA-256 |
 |---|---|
-| TechClean_ES.exe | `452278E18325A7080709340B392D2E2D522230AD1F0986899032FDF4117F51D4` |
-| TechClean_EN.exe | `82843BD0794F64DBABF7391C28A738480C6F12DEEE305A6F89A4AABB3D2B0952` |
+| TechClean_ES.exe | `62316833BF3D67D0651B79C0109F6BCEBA39553BE1F8821E174582B78BFB8BE6` |
+| TechClean_EN.exe | `C3157C200C2D59061B9E347F5819ACA1868BDB35CA509540FF2886B0C07FDBC8` |
 
 **Privacidad:** TechClean no recoge ni envía datos tuyos. Todo lo que guarda
 se queda en tu equipo, y solo se conecta a internet para buscar
