@@ -1714,6 +1714,33 @@ Admin hacía un HTML sin marca para el cliente.
   el mismo consumo; con la ventana quieta, 0,45 % de CPU (0,35 %): Inicio
   ahora lee también la GPU de AMD e Intel. Memoria: 97 MB (86 MB).
 
+### Reportar un problema (`reportar.py`)
+
+Lo pidió el desarrollador (2026-10-13): que si a alguien le falla la app,
+le pueda mandar el error y cómo es su equipo. Se descartó un envío
+automático: haría falta un servidor, o meter en el `.exe` una clave (un
+webhook de Discord, un token) que cualquiera podría sacar y usar; y
+rompería "TechClean no envía nada" de `PRIVACIDAD.md`.
+
+- El aviso de errores tiene **Enviar este error**, y Ajustes, **Reportar un
+  problema** (con el último error de la sesión, si hubo). La ventana
+  enseña EXACTAMENTE el texto (Markdown), y la persona puede añadir qué
+  estaba haciendo.
+- `reportar.limpiar` quita la carpeta de usuario (en sus tres formas: con
+  `\`, con `/` y escapada con `\\` como sale en un `repr`), el nombre de
+  usuario y el del equipo, como palabra suelta y de 3 letras o más. El más
+  largo primero: con el usuario "Ana" y el equipo "ANA-PC", quitar antes
+  el usuario dejaba "<usuario>-PC".
+- *Abrir en GitHub* = la dirección de nuevo issue con `title` y `body`.
+  GitHub rechaza direcciones de más de ~8 KB: si no cabe, se recorta el
+  error por el medio (se quedan el principio y las últimas líneas, que son
+  las que dicen qué pasó) y el texto completo se copia al portapapeles.
+- La gráfica se pide en un hilo (`get_gpu_info` lee contadores del
+  sistema).
+- Probar Edge desde la consola Bash de las herramientas de desarrollo
+  fallaba en silencio (código 0, sin PDF); desde PowerShell o la app,
+  bien. No es la app: es ese entorno.
+
 ### Pendiente de comprobar como administrador
 
 El consumo de energía por app (SRUM), la salud de los discos SATA y el
@@ -1732,9 +1759,17 @@ el 2026-04-16: tarea programada "\Orion Terrorist Ghana 32308-S-1-5-21-…"
 renombrado** desde `%APPDATA%\Autodesk\Inventor Interoperability 2026\FileCache`
 (carpeta falsa; Autodesk real está instalado) con `node_modules.asar` =
 `exec(b85decode(...))` → capa RC4 → capa ofuscada. McAfee (activo y al día)
-no lo detectó en seis meses. **El desarrollador decidió NO borrarlo todavía**
-para usarlo como muestra al construir el antivirus; no tocarlo sin
-preguntar. Es el caso real de `prueba_seguridad.py`.
+no lo detectó en seis meses. Es el caso real que imita
+`prueba_seguridad.py` (con datos inventados: la prueba no depende de él).
+
+**Quitado el 2026-10-13**, a petición del desarrollador. Estaba corriendo y
+con una conexión abierta a 172.67.223.17:443 (Cloudflare). Se exportó y
+borró la tarea, se paró el proceso, y la carpeta y `Inicio\server.lnk`
+quedaron en `C:\Users\<usuario>\Cuarentena_TechClean\2026-10-13_Orion\`
+como `.zip` (con huellas, la tarea en XML y un LEEME): la muestra sigue
+disponible para el antivirus, fuera de OneDrive a propósito. Una búsqueda
+a fondo después (tareas, Run, servicios, WMI, IFEO, binarios renombrados,
+conexiones) no encontró nada más.
 
 ## Ideas ya discutidas y descartadas (para no proponerlas de nuevo sin repensar)
 

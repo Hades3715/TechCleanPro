@@ -113,6 +113,15 @@ proxy, DNS, certificados raíz y directivas del navegador.
 Qué apps usaron tu **cámara, micrófono y ubicación**, y cuándo. Y en Ajustes,
 qué guarda TechClean y cuándo se conecta.
 
+### 🐞 Reportar un problema
+
+Si algo falla, el aviso tiene **Enviar este error** (y en Ajustes está
+**Reportar un problema**). Enseña exactamente lo que se envía: el error y
+cómo es tu equipo, **sin tu nombre de usuario, el del equipo ni tus
+carpetas**. La app no lo envía: *Abrir en GitHub* abre la página con el
+texto puesto y lo publicas tú; *Copiar* lo deja listo para mandarlo por
+donde quieras.
+
 ### 🎮 Gaming
 
 - **Modo Juego automático por juego**: marca un juego y lo enciende solo al

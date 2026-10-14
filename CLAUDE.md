@@ -17,6 +17,8 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
   `disco.py` — análisis completo de una unidad (8 hilos, solo lee).
   `gpu.py` — GPU de cualquier marca (D3DKMT + contadores PDH).
   `informe.py` — el informe en PDF (HTML con la cara de la app → Edge).
+  `reportar.py` — el texto de "Reportar un problema" (quita usuario,
+  equipo y carpetas; abre un issue de GitHub, la app no envía nada).
 - `PRIVACIDAD.md` — qué guarda la app y cuándo se conecta: si se añade una
   conexión a internet nueva, actualizarlo (y `priv_app_texto`).
 - `herramientas/` — banco de pruebas. `compilar/` — PyInstaller e Inno Setup.

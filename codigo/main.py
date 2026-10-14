@@ -40,6 +40,7 @@ import deshacer as desh
 import tecnico as tec
 import disco
 import informe
+import reportar
 import seguridad as seg
 import widget as widget_mod
 import tray as tray_mod
@@ -227,7 +228,7 @@ NOMBRES_TEMA = {
 NOVEDADES = ("nov_180_temas", "nov_180_rediseno", "nov_180_informe", "nov_180_disco", "nov_180_fallos",
              "nov_180_componentes_salud", "nov_180_inicio_windows", "nov_180_proteccion", "nov_180_privacidad",
              "nov_180_gaming", "nov_180_energia", "nov_180_drivers", "nov_180_segundo_plano",
-             "nov_180_rapida", "nov_180_privacidad_app", "nov_180_cerrados", "nov_180_ligera", "nov_180_arreglos",
+             "nov_180_rapida", "nov_180_privacidad_app", "nov_180_reportar", "nov_180_cerrados", "nov_180_ligera", "nov_180_arreglos",
              "nov_180_textos", "nov_180_componentes")
 
 
@@ -2351,6 +2352,7 @@ class TechCleanApp(ctk.CTk):
         global _instancia_app
         _instancia_app = self
         self._ultimo_aviso_error = 0.0
+        self._ultimo_error = ""  # para Ajustes → Reportar un problema
 
         # ---- Puente seguro entre los hilos de fondo y la interfaz ----
         #
@@ -9698,6 +9700,7 @@ class TechCleanApp(ctk.CTk):
 
     def _reportar_error_interno(self, texto_error):
         # Se registra SIEMPRE, pase lo que pase con el resto de este método.
+        self._ultimo_error = texto_error
         try:
             ultima_linea = texto_error.strip().splitlines()[-1][:250]
             self.reporte.add(t("seccion_sistema"), t("hist_error_interno_accion"), ultima_linea,
@@ -9746,7 +9749,134 @@ class TechCleanApp(ctk.CTk):
         caja.pack(fill="both", expand=True, padx=20, pady=(0, 12))
         caja.insert("1.0", texto_error)
         caja.configure(state="disabled")
-        ctk.CTkButton(dialogo, text=t("comun_cerrar"), command=dialogo.destroy).pack(pady=(0, 16))
+        fila = Caja(dialogo)
+        fila.pack(pady=(0, 16))
+
+        def enviar():
+            dialogo.destroy()
+            self._abrir_reporte(texto_error)
+        ctk.CTkButton(fila, text=t("reporte_btn_error"), command=enviar).pack(side="left", padx=6)
+        boton_secundario(fila, t("comun_cerrar"), dialogo.destroy).pack(side="left", padx=6)
+
+    # ---------------- Reportar un problema (1.8.0) ----------------
+    def _abrir_reporte(self, error=""):
+        """Ajustes → Reportar un problema, y «Enviar este error» en el aviso
+        de errores. Enseña EXACTAMENTE lo que se envía (sin el nombre de
+        usuario, el del equipo ni las carpetas: reportar.limpiar), y nada
+        sale de aquí hasta que la persona lo publica: «Abrir en GitHub» abre
+        la página de nuevo issue con el texto puesto, «Copiar» lo deja en el
+        portapapeles. La app no se conecta a nada (ver PRIVACIDAD.md)."""
+        dialogo = ctk.CTkToplevel(self)
+        dialogo.title(t("reporte_titulo"))
+        dialogo.geometry("640x600")
+        dialogo.minsize(520, 460)
+        dialogo.configure(fg_color=T.fondo)
+        dialogo.grab_set()
+        Texto(dialogo, t("reporte_encabezado"), size=16, weight="bold").pack(fill="x", padx=20, pady=(18, 4))
+        texto_fluido(Texto(dialogo, t("reporte_explicacion"), size=12, color=T.texto2, wraplength=580),
+                     dialogo, 40).pack(fill="x", padx=20)
+        Texto(dialogo, t("reporte_que_hacias"), size=12, weight="bold").pack(fill="x", padx=20, pady=(14, 4))
+        descripcion = ctk.CTkTextbox(dialogo, height=70, wrap="word", font=fuente(size=12))
+        descripcion.pack(fill="x", padx=20)
+        Texto(dialogo, t("reporte_se_envia"), size=12, weight="bold").pack(fill="x", padx=20, pady=(14, 4))
+        fila = Caja(dialogo)
+        fila.pack(side="bottom", fill="x", padx=20, pady=(8, 16))
+        estado = Texto(dialogo, "", size=12, color=T.texto2, wraplength=580)
+        estado.pack(side="bottom", fill="x", padx=20, pady=(8, 0))
+        vista = ctk.CTkTextbox(dialogo, wrap="word", font=fuente(family="Consolas", size=11))
+        vista.pack(fill="both", expand=True, padx=20)
+        vista.insert("1.0", t("reporte_preparando"))
+        vista.configure(state="disabled")
+        btn_github = ctk.CTkButton(fila, text=t("reporte_btn_github"), state="disabled")
+        btn_github.pack(side="left")
+        btn_copiar = boton_secundario(fila, t("reporte_btn_copiar"), None, state="disabled")
+        btn_copiar.pack(side="left", padx=8)
+        boton_secundario(fila, t("comun_cerrar"), dialogo.destroy).pack(side="right")
+        datos = {}
+
+        def texto_actual():
+            escrito = descripcion.get("1.0", "end").strip()
+            return reportar.preparar(t, APP_VERSION, datos["error"], self._limpiar_reporte(escrito),
+                                     datos["equipo"], datos["acciones"])
+
+        def mostrar(*_):
+            if not datos or not vista.winfo_exists():
+                return
+            vista.configure(state="normal")
+            vista.delete("1.0", "end")
+            vista.insert("1.0", texto_actual()[0])
+            vista.configure(state="disabled")
+
+        def copiar(completo):
+            self.clipboard_clear()
+            self.clipboard_append(completo)
+
+        def a_github():
+            completo, url, _ = texto_actual()
+            copiar(completo)
+            threading.Thread(target=lambda: webbrowser.open(url), daemon=True).start()
+            estado.configure(text=t("reporte_abierto"))
+            self._log_dev(t("reporte_log"), "github.com/.../issues/new", t("reporte_log_github"),
+                          seccion=t("seccion_sistema"), exito=True)
+
+        def a_portapapeles():
+            copiar(texto_actual()[0])
+            estado.configure(text=t("reporte_copiado"))
+            self._log_dev(t("reporte_log"), "clipboard", t("reporte_log_copiado"), seccion=t("seccion_sistema"), exito=True)
+
+        def listo(equipo):
+            if not dialogo.winfo_exists():
+                return
+            datos.update(error=self._limpiar_reporte(error), equipo=equipo, acciones=acciones)
+            mostrar()
+            btn_github.configure(state="normal", command=a_github)
+            btn_copiar.configure(state="normal", command=a_portapapeles)
+            descripcion.bind("<KeyRelease>", lambda e: self._programar_vista_reporte(dialogo, mostrar))
+
+        # Lo último que hizo la app: solo sección, acción y si salió bien
+        # (el resultado puede llevar rutas y nombres de archivo).
+        acciones = [self._limpiar_reporte(f"{e.get('seccion')} → {e.get('accion')} "
+                                          f"({t('reporte_accion_ok') if e.get('exito') else t('reporte_accion_fallo')})")
+                    for e in list(self.reporte.entries)[-5:]]
+        zoom = round(ctk.ScalingTracker.get_window_scaling(self) * 100)
+        tema = t(NOMBRES_TEMA[T.nombre][0])
+
+        def worker():
+            # La gráfica (gpu.py, contadores del sistema) y la caché de
+            # get_system_info: fuera del hilo de Tk.
+            info = dict(self._system_info_cache)
+            try:
+                grafica = (sysmon.get_gpu_info() or {}).get("nombre")
+            except Exception:
+                grafica = None
+            permisos = t("consola_estado_admin") if opt.is_admin() else t("consola_estado_usuario")
+            edicion = (t("consola_estado_edicion_admin") if EDICION == "admin"
+                       else t("consola_estado_edicion_cliente"))
+            windows = info.get("sistema_operativo") or ""
+            version = info.get("version_so") or ""
+            if version and version.rsplit(".", 1)[-1] in windows:
+                version = ""  # "Windows 11 Home (26H2, build 26300)" ya la lleva
+            equipo = [(t("reporte_eq_app"), t("reporte_eq_app_valor", version=APP_VERSION, edicion=edicion,
+                                          idioma=idiomas.IDIOMA_ACTUAL, permisos=permisos)),
+                      (t("reporte_eq_windows"), " ".join(x for x in (windows, version, info.get("arquitectura")) if x)),
+                      (t("inf_eq_cpu"), info.get("procesador")),
+                      (t("inf_eq_ram"), opt.format_bytes(psutil.virtual_memory().total)),
+                      (t("informe_eq_gpu"), grafica),
+                      (t("reporte_eq_pantalla"), t("reporte_eq_pantalla_valor", zoom=zoom, tema=tema))]
+            equipo = [(k, self._limpiar_reporte(str(v))) for k, v in equipo if v]
+            self.after(0, lambda: listo(equipo))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _programar_vista_reporte(self, dialogo, mostrar):
+        """Al escribir en «¿Qué estabas haciendo?», la vista se rehace 300 ms
+        después de la última tecla, no con cada una."""
+        if getattr(dialogo, "_vista_pendiente", None):
+            dialogo.after_cancel(dialogo._vista_pendiente)
+        dialogo._vista_pendiente = dialogo.after(300, mostrar)
+
+    @staticmethod
+    def _limpiar_reporte(texto):
+        return reportar.limpiar(texto, getpass.getuser(), os.path.expanduser("~"), socket.gethostname())
 
     # ---------------- Consola de desarrollador (solo Edición Administrador) ----------------
     def mostrar_consola(self):
@@ -11316,15 +11446,19 @@ class TechCleanApp(ctk.CTk):
         self.lbl_credito.bind("<Button-1>", self._click_easter_egg)
         Texto(panel, t("ajustes_descripcion_app"), size=12, color=T.texto2).pack(fill="x", padx=18, pady=(2, 12))
         fila_actualizacion = Caja(panel)
-        fila_actualizacion.pack(fill="x", padx=18, pady=(0, 18))
+        fila_actualizacion.pack(fill="x", padx=18, pady=(0, 8))
         boton_secundario(fila_actualizacion, _sin_emoji(t("ajustes_buscar_actualizaciones")),
                          self._accion_buscar_actualizacion_manual, icono="bandeja").pack(side="left")
         boton_secundario(fila_actualizacion, t("nov_btn_ver"), self._mostrar_novedades, icono="marca").pack(
             side="left", padx=(8, 0))
-        boton_secundario(fila_actualizacion, t("priv_app_btn"), self._mostrar_privacidad_app,
-                         icono="privacidad").pack(side="left", padx=(8, 0))
         self.lbl_resultado_actualizacion = Texto(fila_actualizacion, "", size=12, color=T.texto2)
         self.lbl_resultado_actualizacion.pack(side="left", padx=12)
+        fila_ayuda = Caja(panel)
+        fila_ayuda.pack(fill="x", padx=18, pady=(0, 18))
+        boton_secundario(fila_ayuda, t("priv_app_btn"), self._mostrar_privacidad_app,
+                         icono="privacidad").pack(side="left")
+        boton_secundario(fila_ayuda, t("reporte_btn_ajustes"), lambda: self._abrir_reporte(self._ultimo_error),
+                         icono="fallo").pack(side="left", padx=(8, 0))
 
         self._seccion_apariencia(cuerpo)
 

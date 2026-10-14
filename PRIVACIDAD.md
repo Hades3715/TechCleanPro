@@ -31,6 +31,29 @@ dato tuyo ni de tu equipo.
 | Comparar o cambiar el DNS (solo si lo pulsas) | Cloudflare, Google, Quad9, OpenDNS | Consultas de nombres de prueba |
 | Actualizar apps (solo si lo pulsas) | El catálogo de `winget` de Microsoft | Lo mismo que winget por su cuenta |
 | Página de soporte del fabricante, Ko-fi | Se abren en tu navegador | — |
+| Reportar un problema (solo si lo pulsas y luego lo publicas tú) | Se abre GitHub en tu navegador | Lo que ves en la ventana del reporte (abajo) |
+
+## Si eliges reportar un problema
+
+Cuando algo falla, el aviso de error tiene un botón **Enviar este error**,
+y en Ajustes está **Reportar un problema**. Los dos abren una ventana que
+enseña **exactamente** lo que se enviaría:
+
+- el error (el texto técnico que dice qué falló y dónde);
+- cómo es tu equipo: versión de TechClean y de Windows, procesador,
+  memoria, tarjeta gráfica, zoom de pantalla y tema;
+- lo último que hizo la app (solo el nombre de la acción y si salió bien);
+- lo que tú escribas, si quieres.
+
+Antes de enseñarlo se quitan **tu nombre de usuario, el nombre del equipo
+y tus carpetas** (`C:\Users\TuNombre\...` pasa a `%USERPROFILE%\...`). No
+lleva números de serie, ni tu IP, ni archivos.
+
+**TechClean no lo envía.** *Abrir en GitHub* abre en tu navegador la
+página para crear un *issue* con ese texto ya puesto: lo revisas, lo
+cambias si quieres y lo publicas tú. Hace falta una cuenta de GitHub, y lo
+que se publica ahí **se ve en público**. Si prefieres, *Copiar* lo deja en
+el portapapeles para mandarlo por donde quieras.
 
 ## Qué mira de tu equipo, y para qué
 
@@ -102,6 +125,14 @@ Dudas, fallos o sugerencias: en la página del proyecto en GitHub
   status, browser extension descriptions — never your browsing history or
   passwords) stays on your computer. The PDF report is saved to your
   Desktop and sent nowhere.
+- **Reporting a problem** (the *Send this error* button, or Settings →
+  *Report a problem*) shows you exactly what would be sent: the error, your
+  TechClean and Windows versions, processor, memory, graphics card, screen
+  zoom and theme, the last few actions, and anything you type. Your user
+  name, computer name and folders are removed first. TechClean doesn't send
+  it: *Open on GitHub* opens the new-issue page in your browser with the
+  text filled in, and you post it yourself (it needs a GitHub account and
+  it's public). *Copy* puts it on your clipboard instead.
 - **Administrator rights** are needed for several Windows repairs; they're
   not used for anything you didn't ask for.
 - **No digital signature** yet (it costs hundreds of dollars a year), so

@@ -13,7 +13,7 @@ import _rutas
 # ruta absoluta entera.
 ARCH = ["main.py","optimizer.py","system_monitor.py","idiomas.py","widget.py",
         "tray.py","autopilot.py","privacy.py","report.py","preferences.py",
-        "rutas.py","main_admin.py","temas.py","iconos.py","gpu.py","disco.py","informe.py"]
+        "rutas.py","main_admin.py","temas.py","iconos.py","gpu.py","disco.py","informe.py","reportar.py"]
 arb = {f: ast.parse(_rutas.leer(f), f) for f in ARCH}
 
 print("2. Duplicados de clase/modulo:", end=" ")

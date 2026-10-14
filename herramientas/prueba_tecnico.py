@@ -275,6 +275,42 @@ comprobar("si no puede, lo dice (no da por hecho un PDF que no existe)",
 import shutil
 shutil.rmtree(carpeta, ignore_errors=True)
 
+print("\n== Reportar un problema (1.8.0) ==")
+import reportar
+from urllib.parse import unquote
+crudo = ('Traceback (most recent call last):\n  File "C:\\Users\\Ana\\Downloads\\x.py", line 3\n'
+         "OSError: no se pudo abrir 'c:/users/ana/OneDrive/Escritorio/foto.png' en ANA-PC\n"
+         "repr: 'C:\\\\Users\\\\Ana\\\\AppData' de ana; mariana y banana no se tocan")
+limpio = reportar.limpiar(crudo, "Ana", "C:\\Users\\Ana", "ANA-PC")
+comprobar("quita la carpeta de usuario en sus tres formas",
+          "%USERPROFILE%\\Downloads" in limpio and "%USERPROFILE%/OneDrive" in limpio
+          and "%USERPROFILE%\\\\AppData" in limpio and "Users\\Ana" not in limpio)
+comprobar("quita el nombre del equipo y el de usuario suelto", "<equipo>" in limpio and "de <usuario>;" in limpio)
+comprobar("no se come palabras que contienen el nombre", "mariana y banana" in limpio)
+comprobar("un nombre de 2 letras no se toca (se comeria medio error)",
+          reportar.limpiar("ed: Error en el editor", "ed", "", "") == "ed: Error en el editor")
+error = "Traceback (most recent call last):\n" + "".join(f'  File "main.py", line {i}, in f{i}\n' for i in range(3000)) \
+        + "ZeroDivisionError: division by zero"
+equipo = [("Procesador", "AMD Ryzen 7"), ("Grafica", None)]
+completo, url, recortado = reportar.preparar(t, "9.9.9", error, "Abri Componentes", equipo, ["Optimizar → Liberar RAM (bien)"])
+comprobar("un error de 3000 lineas cabe en la direccion de GitHub", recortado and len(url) <= reportar.MAX_URL, len(url))
+cuerpo = unquote(url.split("&body=", 1)[1])
+comprobar("recortado, se quedan el principio y la ultima linea (la que dice que paso)",
+          cuerpo.count("ZeroDivisionError") == 1 and "Traceback" in cuerpo and t("reporte_md_recortado_aviso") in cuerpo)
+comprobar("el completo (el que se copia) va entero", completo.count("line 2999") == 1 and len(completo) > len(cuerpo))
+comprobar("el titulo es la ultima linea del error",
+          unquote(url.split("title=", 1)[1].split("&", 1)[0]) == t("reporte_titulo_error", version="9.9.9",
+                                                                     error="ZeroDivisionError: division by zero"))
+comprobar("lo que no se sabe no sale (sin 'Grafica: None')", "Grafica" not in completo and "AMD Ryzen 7" in completo)
+corto, url_corto, recortado_corto = reportar.preparar(t, "9.9.9", "", "", equipo, [])
+comprobar("sin error: titulo generico, sin seccion de error y sin recortar",
+          not recortado_corto and t("reporte_md_error") not in corto and t("reporte_md_sin_descripcion") in corto
+          and "title=" + reportar.quote(t("reporte_titulo_problema", version="9.9.9")) in url_corto)
+largo = reportar.preparar(t, "9.9.9", "", "x" * 20000, equipo, [])
+comprobar("una descripcion enorme tambien cabe", largo[2] and len(largo[1]) <= reportar.MAX_URL, len(largo[1]))
+comprobar("la direccion es la de nuevo issue del repo",
+          url.startswith(f"https://github.com/{reportar.REPO}/issues/new?title="))
+
 print("\n== Exportacion a medias ==")
 comprobar("lee totales y exportados de pnputil", tecnico.contar_exportados("x\nPaquetes totales:      91\nPaquetes exportados:   54\n") == (91, 54))
 comprobar("sin esas lineas no inventa numeros", tecnico.contar_exportados("nada") == (None, None))
