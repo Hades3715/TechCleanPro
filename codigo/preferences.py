@@ -61,12 +61,16 @@ _DEFAULTS = {
     "ultima_version_vista": "",                              # para enseñar las novedades una sola vez
     # 1.8.0
     "tema": "pulido",                                        # uno de temas.ORDEN; cualquier otro valor = el de fábrica
+    "terminos_aceptados": "",                                # versión de las condiciones aceptadas (main.TERMINOS_VERSION)
+    "terminos_fecha": "",                                    # cuándo se aceptaron
 }
 
 # Claves que no tiene sentido traer de otro equipo al importar ajustes: son
 # registros de ESTE equipo (cuándo se avisó de qué), no preferencias.
+# Las condiciones aceptadas tampoco: las acepta quien usa ESTE equipo, no
+# viajan en un archivo de ajustes.
 _NO_IMPORTABLES = {"avisos_disco", "aviso_reinicio", "ultima_revision_actualizacion",
-                   "ultima_version_vista", "widget_pos"}
+                   "ultima_version_vista", "widget_pos", "terminos_aceptados", "terminos_fecha"}
 
 
 def filtrar_importables(datos):

@@ -9658,6 +9658,13 @@ class TechCleanApp(ctk.CTk):
         cuándo se conecta y qué no hace."""
         self._mostrar_popup_info(t("priv_app_titulo"), t("priv_app_texto"))
 
+    def _mostrar_terminos(self):
+        """Ajustes → Condiciones de uso: las que se aceptaron al abrir la app
+        por primera vez, y cuándo."""
+        fecha = prefs.cargar().get("terminos_fecha")
+        texto = t("terminos_texto") + (f"\n\n{t('terminos_aceptadas', fecha=fecha)}" if fecha else "")
+        self._mostrar_popup_info(t("terminos_titulo_ventana"), texto)
+
     def _mostrar_popup_info(self, titulo, mensaje):
         """Un aviso con su texto, del tamaño del texto. BUG corregido (1.8.0):
         era una ventana fija de 420x150 y un texto largo se cortaba (el
@@ -11459,6 +11466,8 @@ class TechCleanApp(ctk.CTk):
         fila_ayuda.pack(fill="x", padx=18, pady=(0, 18))
         boton_secundario(fila_ayuda, t("priv_app_btn"), self._mostrar_privacidad_app,
                          icono="privacidad").pack(side="left")
+        boton_secundario(fila_ayuda, t("terminos_btn"), self._mostrar_terminos,
+                         icono="archivo").pack(side="left", padx=(8, 0))
         boton_secundario(fila_ayuda, t("reporte_btn_ajustes"), lambda: self._abrir_reporte(self._ultimo_error),
                          icono="fallo").pack(side="left", padx=(8, 0))
 
@@ -12502,15 +12511,84 @@ class TechCleanApp(ctk.CTk):
         ctk.CTkButton(dialogo, text=t("huevo_ok"), command=dialogo.destroy).pack(pady=10)
 
 
+# ---------------- Condiciones de uso (1.8.0) ----------------
+# Lo pidió el desarrollador: que nadie use la app sin haber aceptado antes
+# las condiciones (sin garantía, bajo su responsabilidad, solo en equipos
+# suyos o con permiso) y la privacidad. Se piden ANTES de crear la app: hasta
+# aceptarlas no arranca nada (ni la bandeja, ni el buscador de
+# actualizaciones, ni lo que corre en segundo plano). Si cambia el texto de
+# terminos_texto, se sube TERMINOS_VERSION y se vuelven a pedir.
+TERMINOS_VERSION = "1"
+
+
+def terminos_aceptados(datos=None):
+    datos = prefs.cargar() if datos is None else datos
+    return datos.get("terminos_aceptados") == TERMINOS_VERSION
+
+
+def pedir_terminos(al_abrir=None):
+    """La ventana de las condiciones, con el tema y el idioma de la app.
+    Aceptar solo se puede con la casilla marcada; cerrarla es no aceptar.
+    Devuelve True si se aceptaron (y lo deja guardado, con la fecha).
+    `al_abrir(ventana)` es para el banco de pruebas."""
+    datos = prefs.cargar()
+    idiomas.establecer_idioma(IDIOMA_BUILD if EDICION == "cliente" else datos.get("idioma", IDIOMA_BUILD))
+    temas.aplicar(datos.get("tema", temas.POR_DEFECTO))
+    _sincronizar_colores()
+    ventana = ctk.CTk(fg_color=T.fondo)
+    temas.resolver_fuentes(ventana)
+    ventana.title(t("terminos_titulo_ventana"))
+    try:
+        ventana.iconbitmap(rutas.recurso("icono.ico"))
+    except Exception:
+        pass
+    ventana.geometry("640x620")
+    ventana.minsize(520, 460)
+    resultado = {"aceptado": False}
+
+    def aceptar():
+        resultado["aceptado"] = True
+        prefs.guardar({"terminos_aceptados": TERMINOS_VERSION,
+                       "terminos_fecha": datetime.now().strftime("%Y-%m-%d %H:%M")})
+        ventana.destroy()
+
+    Texto(ventana, t("terminos_titulo"), size=18, weight="bold").pack(fill="x", padx=24, pady=(22, 4))
+    texto_fluido(Texto(ventana, t("terminos_intro"), size=12, color=T.texto2, wraplength=580),
+                 ventana, 48).pack(fill="x", padx=24)
+    fila = Caja(ventana)
+    fila.pack(side="bottom", fill="x", padx=24, pady=(12, 20))
+    boton = ctk.CTkButton(fila, text=t("terminos_aceptar"), state="disabled", command=aceptar)
+    boton.pack(side="right")
+    boton_secundario(fila, t("terminos_rechazar"), ventana.destroy).pack(side="right", padx=(0, 8))
+    marca = casilla(ventana, text=t("terminos_casilla"))
+    marca.configure(command=lambda: boton.configure(state="normal" if marca.get() else "disabled"))
+    marca.pack(side="bottom", anchor="w", padx=24, pady=(12, 0))
+    caja = ctk.CTkTextbox(ventana, wrap="word", font=fuente(size=12))
+    caja.pack(fill="both", expand=True, padx=24, pady=(14, 0))
+    caja.insert("1.0", t("terminos_texto"))
+    caja.configure(state="disabled")
+    ventana.protocol("WM_DELETE_WINDOW", ventana.destroy)
+    ventana._terminos = {"casilla": marca, "aceptar": boton}
+    if al_abrir is not None:
+        ventana.after(300, lambda: al_abrir(ventana))
+    ventana.mainloop()
+    return resultado["aceptado"]
+
+
 if __name__ == "__main__":
     if "--limpieza-programada" in sys.argv:
         # Tarea programada (Task Scheduler): limpieza silenciosa, sin
         # abrir ninguna ventana ni icono de bandeja — solo hace el trabajo
         # y termina. Así no interrumpe al usuario si está usando el equipo.
-        opt.trim_process_memory()
-        opt.clear_temp_files()
+        # Sin las condiciones aceptadas (alguien que actualiza desde la
+        # 1.7.0 y aún no abrió la nueva) no se hace nada.
+        if terminos_aceptados():
+            opt.trim_process_memory()
+            opt.clear_temp_files()
         sys.exit(0)
 
+    if not terminos_aceptados() and not pedir_terminos():
+        sys.exit(0)
     app = TechCleanApp()
     if "--minimizado" in sys.argv:
         app.after(50, app._minimizar_a_bandeja)

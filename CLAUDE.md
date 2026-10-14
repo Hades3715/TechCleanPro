@@ -20,7 +20,9 @@ cada error ya corregido está en `documentacion/CONTEXTO_PROYECTO.md`:
   `reportar.py` — el texto de "Reportar un problema" (quita usuario,
   equipo y carpetas; abre un issue de GitHub, la app no envía nada).
 - `PRIVACIDAD.md` — qué guarda la app y cuándo se conecta: si se añade una
-  conexión a internet nueva, actualizarlo (y `priv_app_texto`).
+  conexión a internet nueva, actualizarlo (y `priv_app_texto`). Las
+  condiciones de uso (`terminos_texto`) se aceptan antes de abrir la app
+  (`main.pedir_terminos`): si cambian, subir `TERMINOS_VERSION`.
 - `herramientas/` — banco de pruebas. `compilar/` — PyInstaller e Inno Setup.
 
 ## Ediciones y builds

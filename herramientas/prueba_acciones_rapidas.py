@@ -98,6 +98,8 @@ comprobar(aceptadas == {"umbral_ram_auto": 80, "auto_ram_activa": False, "alerta
 comprobar(set(descartadas) == {"umbral_salud_disco", "auto_ram_activa_x", "avisos_disco", "dias_reinicio"},
           "descarta un texto donde va un numero, claves inventadas, registros del otro equipo y un True donde va un numero")
 comprobar(prefs.filtrar_importables([1, 2]) == ({}, [1, 2]), "algo que no es un diccionario: nada")
+comprobar(prefs.filtrar_importables({"terminos_aceptados": "1", "terminos_fecha": "2026-01-01 10:00"})[0] == {},
+          "las condiciones aceptadas no se importan: las acepta quien usa ESTE equipo")
 
 print("== La app: cambiar de pantalla ==")
 app = main.TechCleanApp()
@@ -195,6 +197,40 @@ comprobar(app._aplicar_atajo_ram() == "apagado" and app.atajo_ram is None, "al a
 time.sleep(0.2)
 comprobar(hilo is None or not hilo.is_alive(), "y su hilo termina (no queda nada escuchando)")
 
+app.destroy()
+
+print("== Condiciones de uso: antes de abrir la app (1.8.0) ==")
+prefs.guardar({"terminos_aceptados": "", "terminos_fecha": ""})
+comprobar(not main.terminos_aceptados(), "sin aceptar, se piden")
+pasos = []
+
+
+def marcar_y_aceptar(ventana):
+    casilla_ok, boton = ventana._terminos["casilla"], ventana._terminos["aceptar"]
+    pasos.append(boton.cget("state"))
+    boton.invoke()                       # sin la casilla no hace nada
+    pasos.append(ventana.winfo_exists())
+    casilla_ok.toggle()
+    pasos.append(boton.cget("state"))
+    boton.invoke()
+
+
+comprobar(main.pedir_terminos(marcar_y_aceptar) is True, "marcar la casilla y aceptar: se abre la app")
+comprobar(pasos[:3] == ["disabled", 1, "normal"],
+          f"Aceptar esta apagado hasta marcar la casilla, y pulsarlo apagado no hace nada ({pasos})")
+comprobar(main.terminos_aceptados() and prefs.cargar().get("terminos_fecha"),
+          "queda guardado que se aceptaron, y cuando")
+prefs.guardar({"terminos_aceptados": "", "terminos_fecha": ""})
+comprobar(main.pedir_terminos(lambda v: v.destroy()) is False and not main.terminos_aceptados(),
+          "cerrar la ventana es no aceptar: la app no se abre")
+prefs.guardar({"terminos_aceptados": "0"})
+comprobar(not main.terminos_aceptados(), "si cambian las condiciones (otra version), se vuelven a pedir")
+# Despues de la ventana de las condiciones se crea la app: dos ventanas
+# principales de Tk seguidas en el mismo proceso.
+app = main.TechCleanApp()
+correr(app, 1.0)
+comprobar(app.winfo_exists() and app._pantalla_actual == "mostrar_dashboard",
+          "despues de la ventana de condiciones, la app abre normal")
 app.destroy()
 print()
 print("RESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS"))

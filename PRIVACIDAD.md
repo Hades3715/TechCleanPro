@@ -93,7 +93,12 @@ desde el código.
   reparaciones grandes, la app crea un punto de restauración; aun así, ten
   copia de tus archivos importantes.
 - El desarrollador no se hace responsable de daños o pérdidas de datos
-  derivados de su uso.
+  derivados de su uso, en la medida en que la ley lo permita.
+- Úsala solo en equipos que sean tuyos o en los que su dueño te haya dado
+  permiso.
+- La primera vez que se abre, la app enseña estas condiciones y hay que
+  aceptarlas para usarla (otra vez si cambian). Se guarda en tu equipo que
+  las aceptaste y cuándo; se pueden releer en Ajustes → *Condiciones de uso*.
 - El código se puede leer, pero no redistribuir ni vender como propio:
   ver [LICENSE.md](LICENSE.md).
 
@@ -139,5 +144,11 @@ Dudas, fallos o sugerencias: en la página del proyecto en GitHub
   SmartScreen warns the first time. You can check the file against the
   SHA-256 hash published with each release, or build it from the source.
 - TechClean is **free** and provided **as is, without warranty**. Keep
-  backups of important files. The source can be read but not
-  redistributed or sold: see [LICENSE.md](LICENSE.md).
+  backups of important files. To the extent permitted by law, the
+  developer isn't liable for damage or data loss resulting from its use.
+  Only use it on computers that are yours or whose owner has given you
+  permission. The source can be read but not redistributed or sold: see
+  [LICENSE.md](LICENSE.md).
+- The first time it opens, the app shows these terms and you have to
+  accept them to use it (again if they change). Settings → *Terms of use*
+  shows them again.

@@ -1714,6 +1714,31 @@ Admin hacía un HTML sin marca para el cliente.
   el mismo consumo; con la ventana quieta, 0,45 % de CPU (0,35 %): Inicio
   ahora lee también la GPU de AMD e Intel. Memoria: 97 MB (86 MB).
 
+### Condiciones de uso antes de abrir la app (1.8.0)
+
+Lo pidió el desarrollador ("quizá un usuario me meta en problemas"): que
+haya que aceptar las condiciones antes de usarla. Antes se le había
+desaconsejado en el .exe portable; decidió que sí, y es su decisión.
+
+- `main.pedir_terminos()` se llama en `__main__`, ANTES de crear
+  `TechCleanApp`: hasta aceptar no arranca nada (bandeja, buscador de
+  actualizaciones, vigilante). Es una ventana `ctk.CTk` propia que se
+  destruye antes de crear la de la app: dos raíces de Tk seguidas en el
+  mismo proceso funcionan (prueba_acciones_rapidas.py lo comprueba).
+  Como no está en `TechCleanApp.__init__`, el banco (que crea la app
+  directamente) no la ve.
+- Aceptar solo con la casilla marcada; cerrar la ventana es no aceptar y
+  la app sale. Se guarda `terminos_aceptados` (= `TERMINOS_VERSION`) y la
+  fecha; las dos claves no se importan con "Importar ajustes".
+- `--limpieza-programada` sin aceptar no limpia: alguien que actualiza
+  desde la 1.7.0 con la limpieza programada puesta no ha visto todavía las
+  condiciones nuevas.
+- Solo en la edición cliente (`__main__` de main.py); la Admin la usa el
+  propio desarrollador.
+- Texto en llano, no revisado por un abogado: sin garantía, bajo su
+  responsabilidad "en la medida en que la ley lo permita", solo en equipos
+  propios o con permiso, privacidad y licencia.
+
 ### El widget flotante con el tema (1.8.0)
 
 Lo vio el desarrollador con la app compilada: el rediseño no llegó al

@@ -38,6 +38,10 @@ se queda en tu equipo, y solo se conecta a internet para buscar
 actualizaciones o cuando usas algo que lo necesita. Detalle en
 [PRIVACIDAD.md](https://github.com/Hades3715/TechCleanPro/blob/main/PRIVACIDAD.md) (y en la app: Ajustes → Privacidad).
 
+**Al abrirla por primera vez** te enseña las condiciones de uso (sin
+garantía, bajo tu responsabilidad, solo en equipos tuyos o con permiso) y
+hay que aceptarlas para usarla. También si venías de la 1.7.0.
+
 ---
 
 ## Novedades
