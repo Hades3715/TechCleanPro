@@ -215,6 +215,8 @@ lista de Inicio de Windows de 1 s a 0,25 s.
   reprogramaba, la frecuencia no se guardaba y el interruptor del widget no
   decía si estaba visible.
 - Actualizar una app con winget se daba por hecho sin comprobarlo.
+- Ajustes → Buscar actualizaciones decía «No se pudo consultar» a quien ya
+  estaba al día.
 
 ---
 

@@ -199,6 +199,35 @@ comprobar(hilo is None or not hilo.is_alive(), "y su hilo termina (no queda nada
 
 app.destroy()
 
+print("== Buscar actualizaciones (sin conectarse: GitHub simulado) ==")
+import io
+import urllib.request
+respuesta = {"tag": "v1.8.0"}
+
+
+class _RespuestaFalsa(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+urlopen_real = urllib.request.urlopen
+urllib.request.urlopen = lambda req, timeout=10: _RespuestaFalsa(json.dumps(
+    {"tag_name": respuesta["tag"], "html_url": "https://github.com/x/y/releases/tag/" + respuesta["tag"],
+     "body": "notas"}).encode("utf-8"))
+r = main.opt.buscar_actualizacion_app("1.8.0")
+comprobar(r["hay_nueva"] is False and r["version"] == "1.8.0",
+          f"al dia: dice la version publicada (antes None, y Ajustes decia 'no se pudo consultar') ({r})")
+r = main.opt.buscar_actualizacion_app("1.7.0")
+comprobar(r["hay_nueva"] is True and r["version"] == "1.8.0" and r["url"].endswith("v1.8.0"),
+          "con una version vieja: hay nueva, cual y donde")
+respuesta["tag"] = "v1.10.0"
+comprobar(main.opt.buscar_actualizacion_app("1.9.0")["hay_nueva"] is True,
+          "1.10.0 es mayor que 1.9.0 (se compara como numeros, no como texto)")
+urllib.request.urlopen = urlopen_real
+
 print("== Condiciones de uso: antes de abrir la app (1.8.0) ==")
 prefs.guardar({"terminos_aceptados": "", "terminos_fecha": ""})
 comprobar(not main.terminos_aceptados(), "sin aceptar, se piden")

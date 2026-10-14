@@ -5165,7 +5165,7 @@ def _version_es_mayor(v1, v2):
 def buscar_actualizacion_app(version_actual):
     """
     Consulta la última versión publicada en GitHub Releases. Devuelve un
-    dict: {"hay_nueva": bool, "version": str o None, "url": str o None,
+    dict: {"hay_nueva": bool, "version": la última publicada o None, "url": str o None,
     "notas": str o None}. Si no hay internet, el repo no existe todavía,
     o ya estás al día, "hay_nueva" es False sin ser un error — es un
     estado normal, no algo que deba mostrarse como falla.
@@ -5187,6 +5187,10 @@ def buscar_actualizacion_app(version_actual):
         version_remota = (datos.get("tag_name") or "").lstrip("vV")
         if not version_remota:
             return resultado
+        # BUG corregido (1.8.0): la versión solo se rellenaba si era MAYOR, y
+        # Ajustes, al ver None, decía "no se pudo consultar" a quien estaba
+        # al día. "version" es la última publicada, haya o no novedad.
+        resultado["version"] = version_remota
         if _version_es_mayor(version_remota, version_actual):
             resultado["hay_nueva"] = True
             resultado["version"] = version_remota
