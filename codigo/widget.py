@@ -31,6 +31,12 @@ Lo que se rehízo en el repaso estético:
     dónde estás; la forma dice si vas subiendo o si fue un pico y ya pasó.
   * RESPUESTA AL RATÓN en los atajos y en los botones del encabezado.
     Antes no pasaba nada al pasar por encima y no parecían pulsables.
+
+Y en la 1.8.0, con el rediseño: los colores, la letra y las esquinas son
+los del tema elegido (antes iban escritos a mano y no pegaban con ninguno),
+las tarjetas son redondeadas como las de la app, y los emojis y los
+caracteres ⚙ ✕ ▾ son ahora los iconos de línea de la app (iconos.py).
+Al cambiar de tema, main.py vuelve a crear el widget.
 """
 
 import time
@@ -42,34 +48,59 @@ import system_monitor as sysmon
 from idiomas import t
 import optimizer as opt
 import preferences as prefs
+import iconos
+import temas
+from temas import T
 
-COLOR_BG = "#14161c"
-COLOR_CARD = "#1c1f29"
-COLOR_CARD_ALT = "#22262f"
-COLOR_OK = "#2ecc71"
-COLOR_WARN = "#f1c40f"
-COLOR_CRIT = "#e74c3c"
-COLOR_ACCENT = "#3d8bfd"
-COLOR_TXT = "#e8e8e8"
-COLOR_TXT_DIM = "#8a8f99"
+# 1.8.0: los colores, la letra y las esquinas salen del tema activo, como en
+# el resto de la app. Hasta la 1.7.0 eran los de siempre escritos a mano, y
+# con Pulido, Claro o Bosque el widget seguía gris azulado y no pegaba con
+# nada. _tomar_colores() los relee al crear el widget, y main.py lo vuelve
+# a crear al cambiar de tema.
+COLOR_BG = COLOR_CARD = COLOR_CARD_ALT = COLOR_HOVER = ""
+COLOR_OK = COLOR_WARN = COLOR_CRIT = COLOR_ACCENT = ""
+COLOR_TXT = COLOR_TXT_DIM = COLOR_TXT_SUAVE = COLOR_PISTA = COLOR_BORDE = COLOR_GLOBO = ""
+RADIO_VENTANA = RADIO_TARJETA = RADIO_BOTON = BORDE_ANCHO = 0
 
-# Tonos que trajo el repaso estético.
-COLOR_HOVER = "#2d3340"      # atajo bajo el cursor
-COLOR_PISTA = "#2a2d38"      # canal por el que corre la barrita
-COLOR_BORDE = "#262a33"      # separadores finísimos y el filo de la ventana
+
+def _tomar_colores():
+    """Las fichas del tema activo. Se leen del diccionario del tema y no de
+    T.<ficha>: T solo se rellena con temas.aplicar(), y el banco de pruebas
+    crea el widget sin la app."""
+    global COLOR_BG, COLOR_CARD, COLOR_CARD_ALT, COLOR_HOVER, COLOR_OK, COLOR_WARN, COLOR_CRIT
+    global COLOR_ACCENT, COLOR_TXT, COLOR_TXT_DIM, COLOR_TXT_SUAVE, COLOR_PISTA, COLOR_BORDE, COLOR_GLOBO
+    global RADIO_VENTANA, RADIO_TARJETA, RADIO_BOTON, BORDE_ANCHO
+    f = temas.TEMAS[temas.nombre_valido(T.nombre)]
+    COLOR_BG, COLOR_CARD, COLOR_GLOBO = f["fondo"], f["panel"], f["fila"]
+    COLOR_CARD_ALT, COLOR_HOVER = f["boton2"], f["boton2_hover"]
+    COLOR_OK, COLOR_WARN, COLOR_CRIT, COLOR_ACCENT = f["ok"], f["aviso"], f["critico"], f["acento"]
+    COLOR_TXT, COLOR_TXT_DIM, COLOR_TXT_SUAVE = f["texto"], f["texto2"], f["texto3"]
+    COLOR_PISTA, COLOR_BORDE = f["pista"], f["borde"]
+    # El widget es pequeño: las esquinas de Claro (18) se comían media fila.
+    RADIO_VENTANA = max(2, min(f["radio_panel"], 14))
+    RADIO_TARJETA = max(2, min(f["radio_fila"], 10))
+    RADIO_BOTON = max(2, min(f["radio_boton"], 8))
+    BORDE_ANCHO = f["borde_ancho"]
+
+
+_tomar_colores()
+
+
+def _letra(tam, peso="normal"):
+    return (T.familia, tam, peso) if peso != "normal" else (T.familia, tam)
+
 
 # Color clave para las esquinas redondeadas: Windows lo trata como "aquí no
 # hay ventana". Tiene que ser un color que NO aparezca en ningún otro sitio
 # del widget, o se abrirían agujeros donde no toca. Este magenta no está en
-# la paleta ni por casualidad.
+# ningún tema (prueba_widget.py lo comprueba).
 COLOR_CLAVE = "#ff00fe"
-RADIO_VENTANA = 12
 
 
 def _color(valor):
     """Color para un PORCENTAJE de uso (CPU, RAM, disco, GPU)."""
     if valor is None:
-        return "#777777"
+        return COLOR_TXT_SUAVE
     if valor < 60:
         return COLOR_OK
     if valor < 85:
@@ -262,11 +293,49 @@ class _MiniBarra(tk.Canvas):
                                   fill=color, outline="")
 
 
+class _Tarjeta(tk.Canvas):
+    """Una tarjeta redondeada con borde (1.8.0), como Tarjeta de main.py: el
+    fondo es el del lienzo, las esquinas son cuatro imágenes suavizadas del
+    tema (iconos.esquinas) y el borde, cuatro rectángulos. Al cambiar de
+    tamaño solo se mueven piezas, no se redibuja nada. Lo de dentro va con
+    pack y con un margen de al menos el radio, para no tapar las esquinas."""
+
+    def __init__(self, padre, escala):
+        self._r = max(0, round(RADIO_TARJETA * escala))
+        self._b = max(0, round(BORDE_ANCHO * escala))
+        tk.Canvas.__init__(self, padre, bg=COLOR_CARD, highlightthickness=0, bd=0, width=1, height=1)
+        self._piezas = []
+        if self._r:
+            for imagen, ancla in zip(iconos.esquinas(self._r, self._b, COLOR_CARD, COLOR_BORDE, COLOR_BG, self),
+                                     ("nw", "ne", "sw", "se")):
+                self._piezas.append(self.create_image(0, 0, image=imagen, anchor=ancla))
+        if self._b:
+            self._piezas += [self.create_rectangle(0, 0, 0, 0, width=0, fill=COLOR_BORDE) for _ in range(4)]
+        self.bind("<Configure>", self._colocar, add="+")
+
+    def _colocar(self, evento):
+        ancho, alto, r, b = evento.width, evento.height, self._r, self._b
+        i = 0
+        if r:
+            for x, y in ((0, 0), (ancho, 0), (0, alto), (ancho, alto)):
+                self.coords(self._piezas[i], x, y)
+                i += 1
+        if b:
+            for caja in ((r, 0, ancho - r, b), (r, alto - b, ancho - r, alto),
+                         (0, r, b, alto - r), (ancho - b, r, ancho, alto - r)):
+                self.coords(self._piezas[i], *caja)
+                i += 1
+
+
 class PerformanceWidget(tk.Toplevel):
-    def __init__(self, master, on_cerrar=None):
+    def __init__(self, master, on_cerrar=None, expandido=False):
+        _tomar_colores()
         super().__init__(master)
         self.overrideredirect(True)
         self.attributes("-topmost", True)
+        # Los iconos son imágenes en píxeles: con el zoom de Windows al 125 %
+        # tienen que crecer como crece la letra.
+        self._escala = max(1.0, self.winfo_fpixels("1i") / 96.0)
 
         self.on_cerrar = on_cerrar
         self._expandido = False
@@ -283,6 +352,8 @@ class PerformanceWidget(tk.Toplevel):
 
         self._preparar_ventana_redondeada()
         self._construir_ui()
+        if expandido:
+            self._toggle_expandir()
         self._posicionar_esquina()
         self._bind_arrastre()
         self._sincronizar_boton_modo_juego()
@@ -319,8 +390,10 @@ class PerformanceWidget(tk.Toplevel):
         # La transparencia general se pide DESPUÉS del color clave: las dos
         # se apoyan en la misma ventana en capas de Windows, y pedirlas al
         # revés deja sin efecto a la primera.
+        # 0,98 y no 0,96 (1.8.0): con los temas claros se leía el texto de
+        # la ventana de detrás a través de las tarjetas.
         try:
-            self.attributes("-alpha", 0.96)
+            self.attributes("-alpha", 0.98)
         except Exception:
             pass
 
@@ -348,161 +421,176 @@ class PerformanceWidget(tk.Toplevel):
             return
         self._fondo.delete("all")
         self._fondo.create_polygon(
-            _puntos_redondeados(0, 0, ancho - 1, alto - 1, RADIO_VENTANA),
+            _puntos_redondeados(0, 0, ancho - 1, alto - 1, round(RADIO_VENTANA * self._escala)),
             fill=COLOR_BG, outline=COLOR_BORDE, smooth=True)
 
     # ---------- UI ----------
-    def _tarjeta(self, master, titulo=None):
-        """Contenedor tipo 'card': fondo un tono más claro que la ventana,
-        con esquinas rectas pero espaciado generoso — el efecto de tarjeta
-        separada viene del contraste de color, no de bordes redondeados
-        (tkinter plano no los soporta sin dependencias extra).
+    def _icono(self, nombre, color, tam=16):
+        return iconos.foto(nombre, color, tam, self._escala, self)
 
-        El título lleva delante una marca del color de acento. Sin ella los
-        tres títulos eran tres líneas grises iguales y las tarjetas se leían
-        como una sola lista larga."""
-        tarjeta = tk.Frame(master, bg=COLOR_CARD)
+    def _boton_icono(self, padre, nombre, color, color_encima, comando, tam=16):
+        """Un icono del encabezado que se pulsa: cambia de color al pasar el
+        ratón (antes eran los caracteres ✕ y ▾, que con la letra de cada
+        tema salían de un tamaño distinto)."""
+        lbl = tk.Label(padre, image=self._icono(nombre, color, tam), bg=COLOR_BG, cursor="hand2",
+                       bd=0, padx=3, pady=2)
+        lbl._icono = (nombre, color, color_encima, tam)
+        lbl.bind("<Button-1>", lambda e: comando())
+        lbl.bind("<Enter>", lambda e: lbl.configure(image=self._icono(lbl._icono[0], lbl._icono[2], lbl._icono[3])),
+                 add="+")
+        lbl.bind("<Leave>", lambda e: lbl.configure(image=self._icono(lbl._icono[0], lbl._icono[1], lbl._icono[3])),
+                 add="+")
+        return lbl
+
+    def _tarjeta(self, master, titulo=None, icono=None):
+        """Una tarjeta del tema (redondeada, con su borde) y, si lleva título,
+        su cabecera: el icono de la sección en el color de acento y el
+        nombre, como las tarjetas de la app."""
+        tarjeta = _Tarjeta(master, self._escala)
         tarjeta.pack(fill="x", padx=10, pady=(0, 6))
         if titulo:
             fila = tk.Frame(tarjeta, bg=COLOR_CARD)
-            fila.pack(fill="x", padx=10, pady=(9, 3))
-            tk.Frame(fila, bg=COLOR_ACCENT, width=3, height=10).pack(
-                side="left", padx=(0, 6))
-            tk.Label(fila, text=titulo, bg=COLOR_CARD, fg=COLOR_TXT_DIM,
-                      font=("Segoe UI", 8, "bold")).pack(side="left")
+            fila.pack(fill="x", padx=12, pady=(10, 4))
+            if icono:
+                tk.Label(fila, image=self._icono(icono, COLOR_ACCENT, 14), bg=COLOR_CARD, bd=0).pack(
+                    side="left", padx=(0, 6))
+            tk.Label(fila, text=titulo, bg=COLOR_CARD, fg=COLOR_TXT_DIM, font=_letra(8, "bold")).pack(side="left")
         return tarjeta
 
-    def _hover(self, widget, normal, encima):
-        """Cambia el fondo al pasar el ratón. Los atajos eran etiquetas
+    def _imagen_atajo(self, nombre, estado):
+        """El icono de un atajo sobre su cuadrito redondeado: "reposo",
+        "encima" (al pasar el ratón) o "activo" (Modo Juego encendido, con
+        el color de acento, como lo seleccionado en la app)."""
+        relleno, color = {"reposo": (COLOR_CARD_ALT, COLOR_TXT), "encima": (COLOR_HOVER, COLOR_TXT),
+                          "activo": (COLOR_ACCENT, temas.TEMAS[temas.nombre_valido(T.nombre)]["sobre_acento"])}[estado]
+        return iconos.icono_cuadro(nombre, color, relleno, COLOR_CARD, 34, RADIO_BOTON, 18, self._escala, self)
+
+    def _hover(self, widget, nombre):
+        """Cambia el cuadrito al pasar el ratón. Los atajos eran etiquetas
         muertas: nada indicaba que se pudieran pulsar."""
-        widget.bind("<Enter>", lambda e: widget.configure(bg=encima), add="+")
-        widget.bind("<Leave>", lambda e: widget.configure(bg=normal), add="+")
+        widget._img_reposo = self._imagen_atajo(nombre, "reposo")
+        widget._img_encima = self._imagen_atajo(nombre, "encima")
+        widget.bind("<Enter>", lambda e: widget.configure(image=widget._img_encima), add="+")
+        widget.bind("<Leave>", lambda e: widget.configure(image=widget._img_reposo), add="+")
 
     def _construir_ui(self):
-        # ---- Encabezado: título + arrastre + expandir + cerrar ----
+        # ---- Encabezado: marca + título, plegar y cerrar ----
         self.frame_header = tk.Frame(self, bg=COLOR_BG)
-        self.frame_header.pack(fill="x", padx=14, pady=(9, 4))
-        tk.Label(self.frame_header, text="⚙", bg=COLOR_BG, fg=COLOR_ACCENT,
-                  font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
+        self.frame_header.pack(fill="x", padx=12, pady=(9, 5))
+        tk.Label(self.frame_header, image=self._icono("marca", COLOR_ACCENT, 15), bg=COLOR_BG, bd=0).pack(
+            side="left", padx=(2, 6))
         tk.Label(self.frame_header, text="TechClean", bg=COLOR_BG, fg=COLOR_TXT_DIM,
-                  font=("Segoe UI", 8, "bold")).pack(side="left")
-        self.btn_cerrar = tk.Label(self.frame_header, text="✕", bg=COLOR_BG, fg="gray50",
-                                    font=("Segoe UI", 9), cursor="hand2", padx=4)
-        self.btn_cerrar.pack(side="right")
-        self.btn_cerrar.bind("<Button-1>", lambda e: self._cerrar_desde_boton())
+                 font=_letra(9, "bold")).pack(side="left")
         # El de cerrar se pone rojo al apuntarlo: de los dos botones del
         # encabezado es el único que hace algo que hay que volver a deshacer,
         # y conviene que no se confunda con el de plegar.
-        self.btn_cerrar.bind("<Enter>", lambda e: self.btn_cerrar.configure(fg=COLOR_CRIT), add="+")
-        self.btn_cerrar.bind("<Leave>", lambda e: self.btn_cerrar.configure(fg="gray50"), add="+")
-        self.btn_expandir = tk.Label(self.frame_header, text="▾", bg=COLOR_BG, fg=COLOR_TXT,
-                                      font=("Segoe UI", 10), cursor="hand2", padx=4)
-        self.btn_expandir.pack(side="right", padx=(0, 6))
-        self.btn_expandir.bind("<Button-1>", lambda e: self._toggle_expandir())
-        self.btn_expandir.bind("<Enter>", lambda e: self.btn_expandir.configure(fg=COLOR_ACCENT), add="+")
-        self.btn_expandir.bind("<Leave>", lambda e: self.btn_expandir.configure(fg=COLOR_TXT), add="+")
+        self.btn_cerrar = self._boton_icono(self.frame_header, "cerrar", COLOR_TXT_SUAVE, COLOR_CRIT,
+                                            self._cerrar_desde_boton, 14)
+        self.btn_cerrar.pack(side="right")
+        self.btn_expandir = self._boton_icono(self.frame_header, "abajo", COLOR_TXT_DIM, COLOR_ACCENT,
+                                              self._toggle_expandir, 16)
+        self.btn_expandir.pack(side="right", padx=(0, 4))
 
         # ---- Barra compacta (siempre visible) ----
-        self.frame_compacto = tk.Frame(self, bg=COLOR_CARD)
-        self.frame_compacto.pack(fill="x", padx=10, pady=(0, 6))
+        self.frame_compacto = _Tarjeta(self, self._escala)
+        self.frame_compacto.pack(fill="x", padx=10, pady=(0, 8))
+        fila_compacta = tk.Frame(self.frame_compacto, bg=COLOR_CARD)
+        fila_compacta.pack(fill="x", padx=6, pady=2)
         metricas = prefs.cargar().get("widget_metricas") or ["cpu", "ram", "red", "gpu"]
         # El orden en que se crean es el orden en que salen (side="left").
         # Va CPU, RAM, GPU para que coincida con la tarjeta de Rendimiento:
         # antes la GPU quedaba en medio de las dos que uno mira juntas.
-        self.lbl_cpu = self._crear_metric_label(self.frame_compacto) if "cpu" in metricas else None
-        self.lbl_ram = self._crear_metric_label(self.frame_compacto) if "ram" in metricas else None
-        self.lbl_gpu = self._crear_metric_label(self.frame_compacto) if "gpu" in metricas else None
+        self.lbl_cpu = self._crear_metric_label(fila_compacta) if "cpu" in metricas else None
+        self.lbl_ram = self._crear_metric_label(fila_compacta) if "ram" in metricas else None
+        self.lbl_gpu = self._crear_metric_label(fila_compacta) if "gpu" in metricas else None
         if "red" in metricas:
             # Separador antes de la red: la red no es un porcentaje como las
             # otras tres, y pegada a ellas se leía como si lo fuera.
-            tk.Frame(self.frame_compacto, bg=COLOR_BORDE, width=1).pack(
-                side="left", fill="y", pady=6, padx=4)
-        self.lbl_net_down = (self._crear_metric_label(self.frame_compacto, ancho=6)
-                             if "red" in metricas else None)
-        self.lbl_net_up = (self._crear_metric_label(self.frame_compacto, ancho=6)
-                           if "red" in metricas else None)
+            tk.Frame(fila_compacta, bg=COLOR_BORDE, width=1).pack(side="left", fill="y", pady=8, padx=4)
+        self.lbl_net_down = self._crear_metric_label(fila_compacta, ancho=6) if "red" in metricas else None
+        self.lbl_net_up = self._crear_metric_label(fila_compacta, ancho=6) if "red" in metricas else None
 
         # ---- Panel expandido: tarjetas de Rendimiento / Atajos / Sistema ----
         self.frame_expandido = tk.Frame(self, bg=COLOR_BG)
 
-        tarjeta_rend = self._tarjeta(self.frame_expandido, t("wid_card_rendimiento"))
+        tarjeta_rend = self._tarjeta(self.frame_expandido, t("wid_card_rendimiento"), "componentes")
         fila_rend = tk.Frame(tarjeta_rend, bg=COLOR_CARD)
-        fila_rend.pack(fill="x", padx=10, pady=(0, 10))
+        fila_rend.pack(fill="x", padx=12, pady=(0, 12))
         self._metricas_grandes = {}
         for clave, etiqueta in [("cpu", "CPU"), ("ram", "RAM"), ("gpu", "GPU")]:
             col = tk.Frame(fila_rend, bg=COLOR_CARD)
             col.pack(side="left", padx=(0, 14))
-            tk.Label(col, text=etiqueta, bg=COLOR_CARD, fg=COLOR_TXT_DIM,
-                      font=("Segoe UI", 8)).pack(anchor="w")
+            tk.Label(col, text=etiqueta, bg=COLOR_CARD, fg=COLOR_TXT_DIM, font=_letra(8)).pack(anchor="w")
             # Ancho fijo y dígitos de ancho fijo: si no, al pasar de 9% a 10%
             # el número ensancha su columna y las tres se recolocan.
             lbl_num = tk.Label(col, text="--%", bg=COLOR_CARD, fg=COLOR_TXT,
-                                 font=("Consolas", 15, "bold"), width=5, anchor="w")
+                               font=("Consolas", 15, "bold"), width=5, anchor="w")
             lbl_num.pack(anchor="w")
-            barra = _MiniBarra(col, ancho=76, alto=26)
+            barra = _MiniBarra(col, ancho=round(76 * self._escala), alto=round(26 * self._escala))
             barra.pack(anchor="w", pady=(3, 0))
             self._metricas_grandes[clave] = lbl_num
             self._barras[clave] = barra
 
-        # ---- Atajos: cuadrícula de íconos, estilo panel de utilidades ----
-        tarjeta_atajos = self._tarjeta(self.frame_expandido, t("wid_card_atajos"))
+        # ---- Atajos: los iconos de la app sobre su cuadrito ----
+        tarjeta_atajos = self._tarjeta(self.frame_expandido, t("wid_card_atajos"), "energia")
         fila_atajos = tk.Frame(tarjeta_atajos, bg=COLOR_CARD)
-        fila_atajos.pack(padx=10, pady=(0, 10), anchor="w")
+        fila_atajos.pack(padx=12, pady=(0, 12), anchor="w")
         # Cada atajo lleva una CLAVE interna ademas del tooltip traducido: el
         # boton de Modo Juego se guarda aparte para poder pintarlo despues, y
         # antes eso se decidia comparando el tooltip contra el literal
         # "Modo Juego" — al traducirlo, esa comparacion habria fallado y el
         # boton nunca se habria coloreado al activar el modo.
+        # 1.8.0: los iconos de línea de la app en vez de emojis, que salían
+        # cada uno de su color y no pegaban con ningún tema.
         atajos = [
-            ("🧹", "ram", t("wid_atajo_ram"), self._liberar_ram_manual),
-            ("🗑", "papelera", t("wid_atajo_papelera"), self._vaciar_papelera_manual),
-            ("🎮", "modo_juego", t("wid_atajo_modo_juego"), self._toggle_modo_juego_manual),
-            ("🎯", "fps", t("wid_atajo_fps"), self._abrir_fps_manual),
-            ("🖥", "panel", t("wid_atajo_panel"), self._abrir_panel_completo),
+            ("memoria", "ram", t("wid_atajo_ram"), self._liberar_ram_manual),
+            ("papelera", "papelera", t("wid_atajo_papelera"), self._vaciar_papelera_manual),
+            ("gaming", "modo_juego", t("wid_atajo_modo_juego"), self._toggle_modo_juego_manual),
+            ("diana", "fps", t("wid_atajo_fps"), self._abrir_fps_manual),
+            ("inicio", "panel", t("wid_atajo_panel"), self._abrir_panel_completo),
         ]
         for icono, clave_atajo, tooltip, accion in atajos:
-            # "Segoe UI Emoji" y no "Segoe UI": con la fuente normal Windows
-            # dibuja estos simbolos en blanco y negro y quedaban como un
-            # contorno lavado. Con la de emoji salen en color.
-            btn = tk.Label(fila_atajos, text=icono, bg=COLOR_CARD_ALT, fg=COLOR_TXT,
-                            font=("Segoe UI Emoji", 12), cursor="hand2", width=3, height=1)
+            btn = tk.Label(fila_atajos, image=self._imagen_atajo(icono, "reposo"), bg=COLOR_CARD, bd=0,
+                           cursor="hand2")
             btn.pack(side="left", padx=(0, 6))
+            btn._nombre_icono = icono
             btn.bind("<Button-1>", lambda e, fn=accion: fn())
             self._crear_tooltip(btn, tooltip)
             if clave_atajo == "modo_juego":
-                # El de Modo Juego no lleva hover a proposito: su fondo YA
-                # dice si el modo esta encendido, y pintarlo al pasar el
+                # El de Modo Juego no lleva hover a proposito: su color YA
+                # dice si el modo esta encendido, y cambiarlo al pasar el
                 # raton haria dudar de si esta activo o solo apuntado.
                 self._botones_atajos["modo_juego"] = btn
             else:
-                self._hover(btn, COLOR_CARD_ALT, COLOR_HOVER)
+                self._hover(btn, icono)
 
         # ---- Sistema: filas con su propio icono + texto ----
-        tarjeta_sistema = self._tarjeta(self.frame_expandido, t("wid_card_sistema"))
+        tarjeta_sistema = self._tarjeta(self.frame_expandido, t("wid_card_sistema"), "monitor")
         self.filas_sistema = {}
         # Antes las cuatro filas empezaban con el mismo punto: para saber
         # cual era cual habia que leerlas enteras. Cada una con su icono se
-        # distingue de un vistazo, que es de lo que va un overlay.
-        iconos = {"disco": "▤", "bateria": "▮", "temp": "▲", "uptime": "◷"}
+        # distingue de un vistazo, que es de lo que va un overlay. El icono
+        # se pinta del color de cómo va (verde, ámbar, rojo).
+        self._iconos_sistema = {"disco": "disco", "bateria": "bateria", "temp": "temperatura",
+                                "uptime": "historial"}
         for clave in ("disco", "bateria", "temp", "uptime"):
             fila = tk.Frame(tarjeta_sistema, bg=COLOR_CARD)
-            fila.pack(fill="x", padx=10, pady=2)
-            punto = tk.Label(fila, text=iconos[clave], bg=COLOR_CARD, fg=COLOR_TXT_DIM,
-                              font=("Segoe UI", 8), width=2)
+            fila.pack(fill="x", padx=12, pady=2)
+            punto = tk.Label(fila, image=self._icono(self._iconos_sistema[clave], COLOR_TXT_DIM, 14),
+                             bg=COLOR_CARD, bd=0)
             punto.pack(side="left")
-            texto = tk.Label(fila, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
-                               font=("Segoe UI", 9), anchor="w")
-            texto.pack(side="left", padx=(2, 0))
+            texto = tk.Label(fila, text="--", bg=COLOR_CARD, fg=COLOR_TXT, font=_letra(9), anchor="w")
+            texto.pack(side="left", padx=(6, 0))
             self.filas_sistema[clave] = (punto, texto)
-        tk.Frame(tarjeta_sistema, bg=COLOR_CARD, height=8).pack()  # respiro final
+        tk.Frame(tarjeta_sistema, bg=COLOR_CARD, height=10).pack()  # respiro final
 
     def _crear_tooltip(self, widget, texto):
         """Tooltip simple (sin dependencias): aparece al pasar el mouse encima."""
         globo = {"win": None}
         # Se apuntan todos para poder cerrarlos de golpe: un tooltip es una
         # ventana APARTE, así que si el widget se ocultaba con uno abierto,
-        # el globito negro se quedaba flotando solo en el escritorio, sin
-        # nada a lo que pertenecer y sin forma de quitarlo.
+        # el globito se quedaba flotando solo en el escritorio, sin nada a
+        # lo que pertenecer y sin forma de quitarlo.
         self._tooltips.append(globo)
 
         def mostrar(_e):
@@ -511,8 +599,7 @@ class PerformanceWidget(tk.Toplevel):
             win = tk.Toplevel(self)
             win.overrideredirect(True)
             win.attributes("-topmost", True)
-            tk.Label(win, text=texto, bg="#0b0d12", fg=COLOR_TXT,
-                     font=("Segoe UI", 8), padx=7, pady=3,
+            tk.Label(win, text=texto, bg=COLOR_GLOBO, fg=COLOR_TXT, font=_letra(8), padx=8, pady=4,
                      highlightbackground=COLOR_BORDE, highlightthickness=1).pack()
             win.update_idletasks()
             # Se coloca debajo del atajo, pero sin salirse por la derecha:
@@ -549,8 +636,8 @@ class PerformanceWidget(tk.Toplevel):
         mirabas. Con ancho fijo en caracteres y una tipografía donde todos
         los dígitos miden lo mismo, el texto cambia y nada se mueve."""
         lbl = tk.Label(parent, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
-                        font=("Consolas", 10, "bold"), padx=5, pady=7,
-                        width=ancho, anchor="w")
+                       font=("Consolas", 10, "bold"), padx=5, pady=7,
+                       width=ancho, anchor="w")
         lbl.pack(side="left")
         return lbl
 
@@ -558,10 +645,11 @@ class PerformanceWidget(tk.Toplevel):
         self._expandido = not self._expandido
         if self._expandido:
             self.frame_expandido.pack(fill="x", pady=(0, 6))
-            self.btn_expandir.configure(text="▴")
         else:
             self.frame_expandido.pack_forget()
-            self.btn_expandir.configure(text="▾")
+        icono = self.btn_expandir._icono
+        self.btn_expandir._icono = ("arriba" if self._expandido else "abajo",) + icono[1:]
+        self.btn_expandir.configure(image=self._icono(self.btn_expandir._icono[0], icono[1], icono[3]))
         # La ventana cambia de alto: el fondo redondeado hay que redibujarlo
         # con la medida nueva o la curva de abajo se queda donde estaba.
         self.after_idle(self._repintar_fondo)
@@ -580,12 +668,9 @@ class PerformanceWidget(tk.Toplevel):
         es la instancia de TechCleanApp) — no duplica el comportamiento."""
         try:
             self.master._toggle_autopilot()
-            activo = self.master.autopilot.activo
-            btn = self._botones_atajos.get("modo_juego")
-            if btn is not None:
-                btn.configure(bg=COLOR_OK if activo else COLOR_CARD_ALT)
         except Exception:
             pass
+        self._sincronizar_boton_modo_juego()
 
     def _abrir_panel_completo(self):
         try:
@@ -594,13 +679,15 @@ class PerformanceWidget(tk.Toplevel):
             pass
 
     def _sincronizar_boton_modo_juego(self):
+        """Modo Juego encendido: el cuadrito en el color de acento, como lo
+        seleccionado en la app."""
         try:
-            activo = self.master.autopilot.activo
-            btn = self._botones_atajos.get("modo_juego")
-            if btn is not None:
-                btn.configure(bg=COLOR_OK if activo else COLOR_CARD_ALT)
+            activo = bool(self.master.autopilot.activo)
         except Exception:
-            pass
+            activo = False
+        btn = self._botones_atajos.get("modo_juego")
+        if btn is not None and btn.winfo_exists():
+            btn.configure(image=self._imagen_atajo(btn._nombre_icono, "activo" if activo else "reposo"))
 
     # ---------- Posición / arrastre ----------
     def _posicionar_esquina(self):
@@ -759,7 +846,7 @@ class PerformanceWidget(tk.Toplevel):
                 }
                 for clave, (texto, color) in filas_valores.items():
                     punto, lbl_texto = self.filas_sistema[clave]
-                    punto.configure(fg=color)
+                    punto.configure(image=self._icono(self._iconos_sistema[clave], color, 14))
                     lbl_texto.configure(text=texto)
         except Exception:
             pass

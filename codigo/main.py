@@ -11957,8 +11957,9 @@ class TechCleanApp(ctk.CTk):
 
     def _aplicar_tema(self, nombre):
         """Cambia de tema al momento: colores, letra, bordes y la forma de la
-        barra lateral, y vuelve a dibujar la pantalla abierta. Las ventanas
-        sueltas (el widget flotante, la consola) toman el tema al reabrirse.
+        barra lateral, y vuelve a dibujar la pantalla abierta. El widget
+        flotante se vuelve a crear con el tema nuevo; la consola es una
+        terminal, oscura en todos los temas.
 
         El foco pasa antes a la ventana: al cambiar entre claro y oscuro,
         customtkinter recuerda quién lo tenía y se lo devuelve 1 ms después,
@@ -11974,7 +11975,26 @@ class TechCleanApp(ctk.CTk):
         self.configure(fg_color=T.fondo)
         self._construir_sidebar()
         getattr(self, self._pantalla_actual, self.mostrar_dashboard)()
+        self._rehacer_widget()
         return nombre
+
+    def _rehacer_widget(self):
+        """El widget flotante es una ventana aparte con sus colores puestos
+        al crearla: con un tema nuevo se vuelve a crear, como estaba
+        (visible u oculto, desplegado o no; la posición la guarda él)."""
+        viejo = self.performance_widget
+        if viejo is None:
+            return
+        try:
+            visible = viejo.state() != "withdrawn"
+            expandido = viejo._expandido
+        except tk.TclError:
+            visible, expandido = False, False
+        viejo.destruir()
+        self.performance_widget = None
+        if visible:
+            self.performance_widget = widget_mod.PerformanceWidget(
+                self, on_cerrar=self._widget_cerrado_manualmente, expandido=expandido)
 
     def _guardar_numero_pref(self, clave, valor):
         """Un número de Ajustes que el vigilante lee en cada vuelta: basta

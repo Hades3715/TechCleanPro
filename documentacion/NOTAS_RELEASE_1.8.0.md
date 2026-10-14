@@ -74,6 +74,10 @@ Barra lateral agrupada con iconos de línea, tarjetas, y cada opción
 explicada en su fila. Las listas largas (carpetas, programas, servicios,
 el Historial) se dibujan de otra forma y ya no congelan la ventana.
 
+El **widget flotante** también: toma los colores, la letra y las esquinas
+del tema que elijas (antes seguía con los colores de siempre y no pegaba
+con ninguno), con tarjetas redondeadas y los mismos iconos que la app.
+
 ### 💽 Espacio en disco: la unidad entera
 
 Antes se miraban dos niveles de carpetas. Ahora se recorre **todo el disco**

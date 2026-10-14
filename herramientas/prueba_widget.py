@@ -348,39 +348,63 @@ hermanos = [h for h in btn_juego.master.winfo_children() if h is not btn_juego]
 comprobar("hay otros atajos ademas del de Modo Juego", len(hermanos) >= 3,
           f"{len(hermanos)}")
 otro = hermanos[0]
-fondo_reposo = str(otro.cget("bg"))
-# El fondo se lee INMEDIATAMENTE despues de generar el <Enter>, sin pasar por
-# root.update(). event_generate ejecuta la vinculacion ahi mismo, pero al
-# procesar la cola de eventos aparece el globo del tooltip, que es una
+# 1.8.0: el atajo es su icono sobre un cuadrito redondeado (una imagen), y
+# al pasar el raton cambia la imagen, no el fondo de la etiqueta.
+imagen_reposo = str(otro.cget("image"))
+# La imagen se lee INMEDIATAMENTE despues de generar el <Enter>, sin pasar
+# por root.update(). event_generate ejecuta la vinculacion ahi mismo, pero
+# al procesar la cola de eventos aparece el globo del tooltip, que es una
 # ventana nueva encima, y el gestor de ventanas manda entonces un <Leave> de
 # verdad al boton — el raton de carne y hueso no esta ahi. Leyendo despues
-# del update se ve el fondo YA restaurado y parece que el hover no funciona.
+# del update se ve la imagen YA restaurada y parece que el hover no funciona.
 otro.event_generate("<Enter>")
-fondo_encima = str(otro.cget("bg"))
-comprobar("al pasar el raton por encima cambia de fondo",
-          fondo_encima != fondo_reposo, f"{fondo_reposo} -> {fondo_encima}")
-comprobar("y el fondo de encima es el tono de hover",
-          fondo_encima.lower() == widget_mod.COLOR_HOVER.lower(), fondo_encima)
+imagen_encima = str(otro.cget("image"))
+comprobar("al pasar el raton por encima cambia el cuadrito",
+          imagen_encima != imagen_reposo, f"{imagen_reposo} -> {imagen_encima}")
+comprobar("y es el del tono de hover", imagen_encima == str(otro._img_encima), imagen_encima)
 otro.event_generate("<Leave>")
-comprobar("al salir vuelve al fondo de reposo", str(otro.cget("bg")) == fondo_reposo,
-          str(otro.cget("bg")))
+comprobar("al salir vuelve al de reposo", str(otro.cget("image")) == imagen_reposo,
+          str(otro.cget("image")))
 root.update()
 
-# El de Modo Juego NO debe reaccionar al raton: su fondo dice si el modo esta
-# encendido, y pintarlo al apuntarlo haria dudar de si esta activo.
-fondo_juego = str(btn_juego.cget("bg"))
+# El de Modo Juego NO debe reaccionar al raton: su color dice si el modo esta
+# encendido, y cambiarlo al apuntarlo haria dudar de si esta activo.
+imagen_juego = str(btn_juego.cget("image"))
 btn_juego.event_generate("<Enter>")
-comprobar("el de Modo Juego no cambia de fondo al apuntarlo (su color dice si esta activo)",
-          str(btn_juego.cget("bg")) == fondo_juego,
-          f"{fondo_juego} -> {btn_juego.cget('bg')}")
+comprobar("el de Modo Juego no cambia al apuntarlo (su color dice si esta activo)",
+          str(btn_juego.cget("image")) == imagen_juego,
+          f"{imagen_juego} -> {btn_juego.cget('image')}")
 btn_juego.event_generate("<Leave>")
 root.update()
 
 print("\n== Las filas de Sistema se distinguen sin leerlas ==")
-iconos = [str(punto.cget("text")) for punto, _ in w.filas_sistema.values()]
-comprobar("cada fila tiene su propio icono", len(set(iconos)) == len(iconos),
-          " ".join(f"U+{ord(i):04X}" for i in iconos))
+iconos = [str(punto.cget("image")) for punto, _ in w.filas_sistema.values()]
+comprobar("cada fila tiene su propio icono", len(set(iconos)) == len(iconos), " ".join(iconos))
 comprobar("y son cuatro", len(iconos) == 4)
+comprobar("los iconos del widget existen todos",
+          all(n in widget_mod.iconos.TRAZOS for n in list(w._iconos_sistema.values())
+              + [b._nombre_icono for b in hermanos + [btn_juego]] + ["marca", "cerrar", "abajo", "arriba"]))
+
+print("\n== Sigue al tema de la app (1.8.0) ==")
+import temas
+for nombre in ("claro", "retro", temas.POR_DEFECTO):
+    temas.T.nombre = nombre
+    otro_widget = widget_mod.PerformanceWidget(root, expandido=True)
+    otro_widget.geometry("+4000+4000")
+    root.update()
+    fichas = temas.TEMAS[nombre]
+    comprobar(f"{nombre}: el fondo, las tarjetas y el texto son los del tema",
+              otro_widget.frame_header.cget("bg") == fichas["fondo"]
+              and otro_widget.frame_compacto.cget("bg") == fichas["panel"]
+              and otro_widget.filas_sistema["disco"][1].cget("fg") == fichas["texto"],
+              f'{otro_widget.frame_header.cget("bg")} / {otro_widget.frame_compacto.cget("bg")}')
+    comprobar(f"{nombre}: los colores de estado son los del tema",
+              widget_mod._color_temp(40) == fichas["ok"] and widget_mod._color(95) == fichas["critico"])
+    comprobar(f"{nombre}: se puede crear ya desplegado", otro_widget._expandido)
+    comprobar(f"{nombre}: el color clave no coincide con ningun color del tema",
+              widget_mod.COLOR_CLAVE.lower() not in {str(v).lower() for v in fichas.values()})
+    otro_widget.destruir()
+    root.update()
 
 # ---------------- 12. Destruir a media animacion ----------------
 print("\n== Destruir con animaciones en curso ==")

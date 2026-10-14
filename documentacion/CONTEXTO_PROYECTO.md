@@ -1714,6 +1714,30 @@ Admin hacía un HTML sin marca para el cliente.
   el mismo consumo; con la ventana quieta, 0,45 % de CPU (0,35 %): Inicio
   ahora lee también la GPU de AMD e Intel. Memoria: 97 MB (86 MB).
 
+### El widget flotante con el tema (1.8.0)
+
+Lo vio el desarrollador con la app compilada: el rediseño no llegó al
+widget, que seguía con los colores de la 1.6 escritos a mano y no pegaba
+con Pulido (el de fábrica) ni con ningún otro tema.
+
+- `widget._tomar_colores()` lee las fichas del tema activo al crear el
+  widget. Del diccionario `temas.TEMAS[T.nombre]` y no de `T.<ficha>`: T
+  solo se rellena con `temas.aplicar()`, y el banco crea el widget sin la
+  app. Las esquinas se limitan (ventana ≤ 14, tarjetas ≤ 10): las de Claro
+  (18) se comían media fila en algo tan pequeño.
+- Tarjetas redondeadas como las de la app (`_Tarjeta`, la misma idea que
+  `Tarjeta` de main.py: esquinas de `iconos.esquinas`, borde de cuatro
+  rectángulos). Los emojis de los atajos y los caracteres ⚙ ✕ ▾ pasaron a
+  los iconos de línea (`iconos.foto` / `icono_cuadro`; nuevos: cerrar,
+  abajo, arriba, bateria, temperatura, diana). Modo Juego encendido se
+  pinta con el acento, como lo seleccionado en la app.
+- Al cambiar de tema, `main._rehacer_widget` lo vuelve a crear como
+  estaba (visible u oculto, desplegado o no). Antes había que cerrarlo y
+  abrirlo.
+- Las cifras siguen en Consolas: con una letra proporcional, pasar de 9 %
+  a 10 % volvía a mover la barra (ver "LOS NÚMEROS YA NO TIEMBLAN" en
+  widget.py).
+
 ### Reportar un problema (`reportar.py`)
 
 Lo pidió el desarrollador (2026-10-13): que si a alguien le falla la app,
