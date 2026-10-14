@@ -1697,6 +1697,17 @@ Admin hacía un HTML sin marca para el cliente.
   `Variable.__del__`: las `BooleanVar` de las casillas las liberaba el
   recolector de Python desde un hilo de fondo. `casilla()` crea la
   CTkCheckBox sin variable (ella guarda su estado; `.get()` da 1 o 0).
+- **"bad window path name" al cambiar de tema** (lo vio el desarrollador
+  con la app compilada, 2026-10-13): al pasar entre un tema claro y uno
+  oscuro, customtkinter oculta y vuelve a enseñar la ventana para cambiar
+  el color de la barra de título, y 1 ms después devuelve el foco a quien
+  lo tenía. Si era un botón de la barra lateral (pulsar una sección le da
+  el foco), ese botón ya no existía: `_aplicar_tema` reconstruye la barra.
+  Ahora el foco pasa antes a la ventana. El banco no lo veía: cambiaba de
+  tema sin haber pulsado nada, y su ventana no siempre tiene el foco de
+  Windows (si el equipo se está usando). `prueba_temas.py` le da a
+  customtkinter el que Tk recuerda (`focus -lastfor`) y mira a quién se lo
+  devuelve.
 - Medido contra la 1.7.0 (mediana de 4, alternando): las pantallas tardan
   entre 0,1 y 0,5 s más en abrirse (enseñan bastante más; Drivers, de 0,36
   a 0,94 s); Aplicaciones, Privacidad y Gaming igual o menos. En la bandeja,
@@ -1705,10 +1716,13 @@ Admin hacía un HTML sin marca para el cliente.
 
 ### Pendiente de comprobar como administrador
 
-El consumo de energía por app (SRUM), activar/desactivar lo que arranca
-para todos los usuarios (HKLM), la salud de los discos SATA y el análisis
-de disco de las carpetas del sistema. La app compilada siempre corre como
-administrador (`--uac-admin`); el banco, no.
+El consumo de energía por app (SRUM), la salud de los discos SATA y el
+análisis de disco de las carpetas del sistema. La app compilada siempre
+corre como administrador (`--uac-admin`); el banco, no.
+
+Ya comprobado (2026-10-13, Admin 1.8.0 compilada): desactivar lo que
+arranca para todos los usuarios (HKLM `Run` y `Run32`): el valor de
+`StartupApproved` queda en 03 y la acción entra en Deshacer.
 
 ## Malware encontrado en el equipo del desarrollador (2026-10-04)
 

@@ -11824,7 +11824,13 @@ class TechCleanApp(ctk.CTk):
     def _aplicar_tema(self, nombre):
         """Cambia de tema al momento: colores, letra, bordes y la forma de la
         barra lateral, y vuelve a dibujar la pantalla abierta. Las ventanas
-        sueltas (el widget flotante, la consola) toman el tema al reabrirse."""
+        sueltas (el widget flotante, la consola) toman el tema al reabrirse.
+
+        El foco pasa antes a la ventana: al cambiar entre claro y oscuro,
+        customtkinter recuerda quién lo tenía y se lo devuelve 1 ms después,
+        y si era un botón de la barra lateral (que se vuelve a construir
+        aquí mismo) saltaba "bad window path name" en el aviso de errores."""
+        self.focus_set()
         nombre = temas.aplicar(nombre)
         temas.resolver_fuentes(self)
         _sincronizar_colores()

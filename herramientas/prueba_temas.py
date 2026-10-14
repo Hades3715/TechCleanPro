@@ -163,6 +163,38 @@ comprobar(temas.T.nombre == "bosque" and app._pantalla_actual == "mostrar_ajuste
 ultima = app.reporte.entries[-1] if app.reporte.entries else {}
 comprobar("Bosque" in str(ultima.get("resultado")), "el cambio queda en el Historial")
 
+# Al pasar entre claro y oscuro, customtkinter devuelve el foco 1 ms despues
+# a quien lo tenia. Si era un boton de la barra lateral (se reconstruye al
+# cambiar de tema) saltaba "bad window path name" en el aviso de errores.
+# Si salta o no depende de cuando corre ese 1 ms, y de que la ventana tenga
+# el foco de Windows (mientras alguien usa el equipo, no siempre). Por eso
+# customtkinter recibe aqui el foco que Tk recuerda para la ventana, y se
+# mira a quien se lo va a devolver: que siga existiendo.
+errores_tk, focos = [], []
+despues = app.after
+
+
+def anotar(ms, func=None, *args):
+    if getattr(func, "__name__", "") in ("focus", "focus_set"):
+        focos.append(func.__self__)
+    return despues(ms, func, *args)
+
+
+app.report_callback_exception = lambda tipo, valor, tb: errores_tk.append(f"{tipo.__name__}: {valor}")
+app.focus_get = lambda: app.nametowidget(app.tk.call("focus", "-lastfor", app))
+for nombre in ("claro", "oled", "claro"):
+    app._nav_botones["mostrar_ajustes"]["boton"].focus_set()
+    app.after = anotar
+    app._aplicar_tema(nombre)
+    del app.after
+    correr(0.3)
+del app.focus_get
+del app.report_callback_exception
+muertos = [str(w) for w in focos if not w.winfo_exists()]
+comprobar(len(focos) == 3 and not muertos and not errores_tk,
+          f"claro <-> oscuro con el foco en la barra lateral: se devuelve a algo que existe "
+          f"({len(focos)} de 3, {muertos[:1]}, {errores_tk[:1]})")
+
 print("== Textos largos: se parten al ancho de su caja ==")
 app._aplicar_tema("claro")
 app.mostrar_gaming()
