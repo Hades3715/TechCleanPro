@@ -36,7 +36,7 @@ Descarga **uno solo**, el que te sirva. No hace falta instalar nada más.
 **Privacidad:** TechClean no recoge ni envía datos tuyos. Todo lo que guarda
 se queda en tu equipo, y solo se conecta a internet para buscar
 actualizaciones o cuando usas algo que lo necesita. Detalle en
-[PRIVACIDAD.md](PRIVACIDAD.md) (y en la app: Ajustes → Privacidad).
+[PRIVACIDAD.md](https://github.com/Hades3715/TechCleanPro/blob/main/PRIVACIDAD.md) (y en la app: Ajustes → Privacidad).
 
 ---
 
@@ -223,5 +223,5 @@ lista de Inicio de Windows de 1 s a 0,25 s.
 ---
 
 Desarrollado por **Edwin Javier Cortez Cardoza (Hades)**.
-Gratis de usar y de leer — ver [LICENSE.md](LICENSE.md) y
-[PRIVACIDAD.md](PRIVACIDAD.md).
+Gratis de usar y de leer — ver [LICENSE.md](https://github.com/Hades3715/TechCleanPro/blob/main/LICENSE.md) y
+[PRIVACIDAD.md](https://github.com/Hades3715/TechCleanPro/blob/main/PRIVACIDAD.md).
