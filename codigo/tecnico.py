@@ -960,6 +960,8 @@ def diagnostico_fallos(dias=30):
         datos = json.loads(salida)
     except ValueError:
         return None
+    if not isinstance(datos, dict):
+        return None
     return leer_diagnostico(datos, dias)
 
 
