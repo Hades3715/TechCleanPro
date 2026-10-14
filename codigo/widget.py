@@ -58,22 +58,33 @@ from temas import T
 # nada. _tomar_colores() los relee al crear el widget, y main.py lo vuelve
 # a crear al cambiar de tema.
 COLOR_BG = COLOR_CARD = COLOR_CARD_ALT = COLOR_HOVER = ""
-COLOR_OK = COLOR_WARN = COLOR_CRIT = COLOR_ACCENT = ""
+COLOR_OK = COLOR_WARN = COLOR_CRIT = COLOR_ACCENT = COLOR_SOBRE_ACENTO = ""
 COLOR_TXT = COLOR_TXT_DIM = COLOR_TXT_SUAVE = COLOR_PISTA = COLOR_BORDE = COLOR_GLOBO = ""
 RADIO_VENTANA = RADIO_TARJETA = RADIO_BOTON = BORDE_ANCHO = 0
+ESCALA_TEMA = 1.0
+# Telemetría es el tema "de panel de control" (la barra lateral en columna):
+# en el widget, títulos en mayúsculas y los números en el color de acento.
+ESTILO_HUD = False
 
 
 def _tomar_colores():
     """Las fichas del tema activo. Se leen del diccionario del tema y no de
     T.<ficha>: T solo se rellena con temas.aplicar(), y el banco de pruebas
-    crea el widget sin la app."""
+    crea el widget sin la app.
+
+    Como en la app (color_uso de main.py): lo que va bien lleva el ACENTO
+    del tema, y solo lo que se llena se pone en aviso o crítico. Antes todo
+    lo que iba bien era verde, y por eso el widget se veía casi igual con
+    cualquier tema."""
     global COLOR_BG, COLOR_CARD, COLOR_CARD_ALT, COLOR_HOVER, COLOR_OK, COLOR_WARN, COLOR_CRIT
-    global COLOR_ACCENT, COLOR_TXT, COLOR_TXT_DIM, COLOR_TXT_SUAVE, COLOR_PISTA, COLOR_BORDE, COLOR_GLOBO
-    global RADIO_VENTANA, RADIO_TARJETA, RADIO_BOTON, BORDE_ANCHO
+    global COLOR_ACCENT, COLOR_SOBRE_ACENTO, COLOR_TXT, COLOR_TXT_DIM, COLOR_TXT_SUAVE, COLOR_PISTA
+    global COLOR_BORDE, COLOR_GLOBO, RADIO_VENTANA, RADIO_TARJETA, RADIO_BOTON, BORDE_ANCHO
+    global ESCALA_TEMA, ESTILO_HUD
     f = temas.TEMAS[temas.nombre_valido(T.nombre)]
     COLOR_BG, COLOR_CARD, COLOR_GLOBO = f["fondo"], f["panel"], f["fila"]
     COLOR_CARD_ALT, COLOR_HOVER = f["boton2"], f["boton2_hover"]
-    COLOR_OK, COLOR_WARN, COLOR_CRIT, COLOR_ACCENT = f["ok"], f["aviso"], f["critico"], f["acento"]
+    COLOR_ACCENT, COLOR_SOBRE_ACENTO = f["acento"], f["sobre_acento"]
+    COLOR_OK, COLOR_WARN, COLOR_CRIT = f["acento"], f["aviso"], f["critico"]
     COLOR_TXT, COLOR_TXT_DIM, COLOR_TXT_SUAVE = f["texto"], f["texto2"], f["texto3"]
     COLOR_PISTA, COLOR_BORDE = f["pista"], f["borde"]
     # El widget es pequeño: las esquinas de Claro (18) se comían media fila.
@@ -81,13 +92,27 @@ def _tomar_colores():
     RADIO_TARJETA = max(2, min(f["radio_fila"], 10))
     RADIO_BOTON = max(2, min(f["radio_boton"], 8))
     BORDE_ANCHO = f["borde_ancho"]
+    ESCALA_TEMA = f["escala"]
+    ESTILO_HUD = f["lateral_estilo"] == "rail"
 
 
 _tomar_colores()
 
 
 def _letra(tam, peso="normal"):
+    """La letra del tema (Segoe UI Variable, Bahnschrift, Consolas...), al
+    tamaño del tema (Alto contraste lo agranda todo un 12 %)."""
+    tam = round(tam * ESCALA_TEMA)
     return (T.familia, tam, peso) if peso != "normal" else (T.familia, tam)
+
+
+def _letra_num(tam):
+    """La de los números del tema, como las cifras grandes de Inicio."""
+    return (T.familia_num, round(tam * ESCALA_TEMA), "bold")
+
+
+def _titulo(texto):
+    return texto.upper() if ESTILO_HUD else texto
 
 
 # Color clave para las esquinas redondeadas: Windows lo trata como "aquí no
@@ -124,6 +149,18 @@ def _color_temp(grados):
     if grados < 80:
         return COLOR_WARN
     return COLOR_CRIT
+
+
+def _color_numero(valor):
+    """El número de un porcentaje, como en las tarjetas de Inicio: en el
+    color del texto mientras va bien (en el acento con el estilo de panel
+    de control) y en aviso o crítico cuando se llena, que en un overlay es
+    lo que hay que ver de reojo."""
+    if valor is None:
+        return COLOR_TXT_SUAVE
+    if valor >= 60:
+        return _color(valor)
+    return COLOR_ACCENT if ESTILO_HUD else COLOR_TXT
 
 
 def _mezclar(color_a, color_b, proporcion):
@@ -328,14 +365,16 @@ class _Tarjeta(tk.Canvas):
 
 
 class PerformanceWidget(tk.Toplevel):
-    def __init__(self, master, on_cerrar=None, expandido=False):
+    def __init__(self, master, on_cerrar=None, expandido=False, version=None):
         _tomar_colores()
         super().__init__(master)
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         # Los iconos son imágenes en píxeles: con el zoom de Windows al 125 %
-        # tienen que crecer como crece la letra.
-        self._escala = max(1.0, self.winfo_fpixels("1i") / 96.0)
+        # tienen que crecer como crece la letra (y con Alto contraste, un
+        # 12 % más, como todo lo demás).
+        self._escala = max(1.0, self.winfo_fpixels("1i") / 96.0) * ESCALA_TEMA
+        self._version = version
 
         self.on_cerrar = on_cerrar
         self._expandido = False
@@ -442,45 +481,67 @@ class PerformanceWidget(tk.Toplevel):
                  add="+")
         return lbl
 
+    def _pildora(self, padre, texto):
+        """La versión en una píldora, como junto al nombre en la barra
+        lateral de la app."""
+        letra = _letra(8)
+        alto = round(16 * self._escala)
+        lienzo = tk.Canvas(padre, height=alto, width=1, bg=COLOR_BG, highlightthickness=0, bd=0)
+        id_texto = lienzo.create_text(0, alto / 2, anchor="w", text=texto, fill=COLOR_TXT_DIM, font=letra)
+        ancho = lienzo.bbox(id_texto)[2] + round(14 * self._escala)
+        lienzo.configure(width=ancho)
+        lienzo.coords(id_texto, round(7 * self._escala), alto / 2)
+        fondo = lienzo.create_polygon(_puntos_redondeados(0, 0, ancho - 1, alto - 1, alto / 2),
+                                      fill=COLOR_CARD_ALT, outline="", smooth=True)
+        lienzo.tag_lower(fondo)
+        return lienzo
+
     def _tarjeta(self, master, titulo=None, icono=None):
         """Una tarjeta del tema (redondeada, con su borde) y, si lleva título,
-        su cabecera: el icono de la sección en el color de acento y el
-        nombre, como las tarjetas de la app."""
+        su cabecera: el icono de la sección en el acento y el nombre en el
+        color del texto, como las tarjetas de la app."""
         tarjeta = _Tarjeta(master, self._escala)
         tarjeta.pack(fill="x", padx=10, pady=(0, 6))
         if titulo:
             fila = tk.Frame(tarjeta, bg=COLOR_CARD)
-            fila.pack(fill="x", padx=12, pady=(10, 4))
+            fila.pack(fill="x", padx=12, pady=(10, 6))
             if icono:
-                tk.Label(fila, image=self._icono(icono, COLOR_ACCENT, 14), bg=COLOR_CARD, bd=0).pack(
-                    side="left", padx=(0, 6))
-            tk.Label(fila, text=titulo, bg=COLOR_CARD, fg=COLOR_TXT_DIM, font=_letra(8, "bold")).pack(side="left")
+                tk.Label(fila, image=self._icono(icono, COLOR_ACCENT, 15), bg=COLOR_CARD, bd=0).pack(
+                    side="left", padx=(0, 7))
+            tk.Label(fila, text=_titulo(titulo), bg=COLOR_CARD, fg=COLOR_TXT, font=_letra(9, "bold")).pack(side="left")
         return tarjeta
 
     def _imagen_atajo(self, nombre, estado):
-        """El icono de un atajo sobre su cuadrito redondeado: "reposo",
-        "encima" (al pasar el ratón) o "activo" (Modo Juego encendido, con
-        el color de acento, como lo seleccionado en la app)."""
-        relleno, color = {"reposo": (COLOR_CARD_ALT, COLOR_TXT), "encima": (COLOR_HOVER, COLOR_TXT),
-                          "activo": (COLOR_ACCENT, temas.TEMAS[temas.nombre_valido(T.nombre)]["sobre_acento"])}[estado]
+        """El icono de un atajo sobre su cuadrito redondeado, teñido con el
+        acento del tema: "reposo", "encima" (al pasar el ratón, más tinte) o
+        "activo" (Modo Juego encendido: acento lleno, como lo seleccionado
+        en la app). Antes eran cuadritos grises iguales en todos los temas."""
+        relleno, color = {"reposo": (_mezclar(COLOR_ACCENT, COLOR_CARD, 0.84), COLOR_ACCENT),
+                          "encima": (_mezclar(COLOR_ACCENT, COLOR_CARD, 0.68), COLOR_ACCENT),
+                          "activo": (COLOR_ACCENT, COLOR_SOBRE_ACENTO)}[estado]
         return iconos.icono_cuadro(nombre, color, relleno, COLOR_CARD, 34, RADIO_BOTON, 18, self._escala, self)
 
     def _hover(self, widget, nombre):
-        """Cambia el cuadrito al pasar el ratón. Los atajos eran etiquetas
-        muertas: nada indicaba que se pudieran pulsar."""
+        """Más tinte al pasar el ratón. Los atajos eran etiquetas muertas:
+        nada indicaba que se pudieran pulsar."""
         widget._img_reposo = self._imagen_atajo(nombre, "reposo")
         widget._img_encima = self._imagen_atajo(nombre, "encima")
         widget.bind("<Enter>", lambda e: widget.configure(image=widget._img_encima), add="+")
         widget.bind("<Leave>", lambda e: widget.configure(image=widget._img_reposo), add="+")
 
     def _construir_ui(self):
-        # ---- Encabezado: marca + título, plegar y cerrar ----
+        # ---- Encabezado: la marca como en la app, plegar y cerrar ----
         self.frame_header = tk.Frame(self, bg=COLOR_BG)
-        self.frame_header.pack(fill="x", padx=12, pady=(9, 5))
-        tk.Label(self.frame_header, image=self._icono("marca", COLOR_ACCENT, 15), bg=COLOR_BG, bd=0).pack(
-            side="left", padx=(2, 6))
-        tk.Label(self.frame_header, text="TechClean", bg=COLOR_BG, fg=COLOR_TXT_DIM,
-                 font=_letra(9, "bold")).pack(side="left")
+        self.frame_header.pack(fill="x", padx=12, pady=(10, 6))
+        # El logo sobre su cuadrito del acento, como arriba de la barra
+        # lateral: lo primero que dice de qué tema va el widget.
+        tk.Label(self.frame_header, bg=COLOR_BG, bd=0,
+                 image=iconos.icono_cuadro("marca", COLOR_SOBRE_ACENTO, COLOR_ACCENT, COLOR_BG, 22, RADIO_BOTON,
+                                           14, self._escala, self)).pack(side="left", padx=(0, 7))
+        tk.Label(self.frame_header, text="TechClean", bg=COLOR_BG, fg=COLOR_TXT,
+                 font=_letra(10, "bold")).pack(side="left")
+        if self._version:
+            self._pildora(self.frame_header, self._version).pack(side="left", padx=(7, 0))
         # El de cerrar se pone rojo al apuntarlo: de los dos botones del
         # encabezado es el único que hace algo que hay que volver a deshacer,
         # y conviene que no se confunda con el de plegar.
@@ -491,24 +552,26 @@ class PerformanceWidget(tk.Toplevel):
                                               self._toggle_expandir, 16)
         self.btn_expandir.pack(side="right", padx=(0, 4))
 
-        # ---- Barra compacta (siempre visible) ----
+        # ---- Barra compacta (siempre visible): icono + cifra ----
         self.frame_compacto = _Tarjeta(self, self._escala)
         self.frame_compacto.pack(fill="x", padx=10, pady=(0, 8))
         fila_compacta = tk.Frame(self.frame_compacto, bg=COLOR_CARD)
-        fila_compacta.pack(fill="x", padx=6, pady=2)
+        fila_compacta.pack(fill="x", padx=8, pady=3)
         metricas = prefs.cargar().get("widget_metricas") or ["cpu", "ram", "red", "gpu"]
         # El orden en que se crean es el orden en que salen (side="left").
         # Va CPU, RAM, GPU para que coincida con la tarjeta de Rendimiento:
         # antes la GPU quedaba en medio de las dos que uno mira juntas.
-        self.lbl_cpu = self._crear_metric_label(fila_compacta) if "cpu" in metricas else None
-        self.lbl_ram = self._crear_metric_label(fila_compacta) if "ram" in metricas else None
-        self.lbl_gpu = self._crear_metric_label(fila_compacta) if "gpu" in metricas else None
+        # Cada cifra con su icono (los de Componentes) en vez de "CPU 26%":
+        # se distingue de un vistazo y se parece a la app.
+        self.lbl_cpu = self._crear_metric_label(fila_compacta, "componentes") if "cpu" in metricas else None
+        self.lbl_ram = self._crear_metric_label(fila_compacta, "memoria") if "ram" in metricas else None
+        self.lbl_gpu = self._crear_metric_label(fila_compacta, "gpu") if "gpu" in metricas else None
         if "red" in metricas:
             # Separador antes de la red: la red no es un porcentaje como las
             # otras tres, y pegada a ellas se leía como si lo fuera.
-            tk.Frame(fila_compacta, bg=COLOR_BORDE, width=1).pack(side="left", fill="y", pady=8, padx=4)
-        self.lbl_net_down = self._crear_metric_label(fila_compacta, ancho=6) if "red" in metricas else None
-        self.lbl_net_up = self._crear_metric_label(fila_compacta, ancho=6) if "red" in metricas else None
+            tk.Frame(fila_compacta, bg=COLOR_BORDE, width=1).pack(side="left", fill="y", pady=8, padx=(2, 6))
+        self.lbl_net_down = self._crear_metric_label(fila_compacta, "bandeja", 5) if "red" in metricas else None
+        self.lbl_net_up = self._crear_metric_label(fila_compacta, "subir", 5) if "red" in metricas else None
 
         # ---- Panel expandido: tarjetas de Rendimiento / Atajos / Sistema ----
         self.frame_expandido = tk.Frame(self, bg=COLOR_BG)
@@ -521,10 +584,11 @@ class PerformanceWidget(tk.Toplevel):
             col = tk.Frame(fila_rend, bg=COLOR_CARD)
             col.pack(side="left", padx=(0, 14))
             tk.Label(col, text=etiqueta, bg=COLOR_CARD, fg=COLOR_TXT_DIM, font=_letra(8)).pack(anchor="w")
-            # Ancho fijo y dígitos de ancho fijo: si no, al pasar de 9% a 10%
-            # el número ensancha su columna y las tres se recolocan.
-            lbl_num = tk.Label(col, text="--%", bg=COLOR_CARD, fg=COLOR_TXT,
-                               font=("Consolas", 15, "bold"), width=5, anchor="w")
+            # Ancho fijo: si no, al pasar de 9% a 10% el número ensancha su
+            # columna y las tres se recolocan. La letra es la de las cifras
+            # del tema, como en Inicio.
+            lbl_num = tk.Label(col, text="--%", bg=COLOR_CARD, fg=COLOR_TXT, font=_letra_num(16), width=4,
+                               anchor="w")
             lbl_num.pack(anchor="w")
             barra = _MiniBarra(col, ancho=round(76 * self._escala), alto=round(26 * self._escala))
             barra.pack(anchor="w", pady=(3, 0))
@@ -570,7 +634,7 @@ class PerformanceWidget(tk.Toplevel):
         # Antes las cuatro filas empezaban con el mismo punto: para saber
         # cual era cual habia que leerlas enteras. Cada una con su icono se
         # distingue de un vistazo, que es de lo que va un overlay. El icono
-        # se pinta del color de cómo va (verde, ámbar, rojo).
+        # se pinta de cómo va: el acento, o aviso / crítico.
         self._iconos_sistema = {"disco": "disco", "bateria": "bateria", "temp": "temperatura",
                                 "uptime": "historial"}
         for clave in ("disco", "bateria", "temp", "uptime"):
@@ -580,7 +644,7 @@ class PerformanceWidget(tk.Toplevel):
                              bg=COLOR_CARD, bd=0)
             punto.pack(side="left")
             texto = tk.Label(fila, text="--", bg=COLOR_CARD, fg=COLOR_TXT, font=_letra(9), anchor="w")
-            texto.pack(side="left", padx=(6, 0))
+            texto.pack(side="left", padx=(7, 0))
             self.filas_sistema[clave] = (punto, texto)
         tk.Frame(tarjeta_sistema, bg=COLOR_CARD, height=10).pack()  # respiro final
 
@@ -626,17 +690,19 @@ class PerformanceWidget(tk.Toplevel):
         globo["mostrar"] = mostrar
         globo["ocultar"] = ocultar
 
-    def _crear_metric_label(self, parent, ancho=8):
-        """Una métrica de la barra compacta.
+    def _crear_metric_label(self, parent, icono, ancho=4):
+        """Una métrica de la barra compacta: su icono y la cifra. Devuelve
+        la etiqueta de la cifra.
 
         BUG corregido — la barra temblaba. Sin `width`, una etiqueta de Tk
-        se mide por su texto: al pasar de "CPU 9%" a "CPU 10%" crecía un
-        carácter y empujaba a todas las de su derecha, así que la barra
-        entera se recolocaba una o dos veces por segundo mientras la
-        mirabas. Con ancho fijo en caracteres y una tipografía donde todos
-        los dígitos miden lo mismo, el texto cambia y nada se mueve."""
-        lbl = tk.Label(parent, text="--", bg=COLOR_CARD, fg=COLOR_TXT,
-                       font=("Consolas", 10, "bold"), padx=5, pady=7,
+        se mide por su texto: al pasar de "9%" a "10%" crecía un carácter y
+        empujaba a todas las de su derecha, así que la barra entera se
+        recolocaba una o dos veces por segundo mientras la mirabas. Con
+        ancho fijo en caracteres, el texto cambia y nada se mueve (con la
+        letra de cifras de cada tema: prueba_widget.py mide que no cambie)."""
+        tk.Label(parent, image=self._icono(icono, COLOR_TXT_DIM, 14), bg=COLOR_CARD, bd=0).pack(
+            side="left", padx=(4, 0))
+        lbl = tk.Label(parent, text="--", bg=COLOR_CARD, fg=COLOR_TXT, font=_letra_num(10), padx=4, pady=7,
                        width=ancho, anchor="w")
         lbl.pack(side="left")
         return lbl
@@ -795,17 +861,14 @@ class PerformanceWidget(tk.Toplevel):
             self._net_prev = net_ahora
             self._net_prev_time = ahora
 
-            if self.lbl_cpu:
-                self.lbl_cpu.configure(text=t("wid_cpu", pct=f"{cpu:.0f}"), fg=_color(cpu))
-            if self.lbl_ram:
-                self.lbl_ram.configure(text=t("wid_ram", pct=f"{ram:.0f}"), fg=_color(ram))
-            gpu_txt = t("wid_gpu", pct=f"{gpu:.0f}") if gpu is not None else t("wid_gpu_nd")
-            if self.lbl_gpu:
-                self.lbl_gpu.configure(text=gpu_txt, fg=_color(gpu))
+            for lbl, valor in ((self.lbl_cpu, cpu), (self.lbl_ram, ram), (self.lbl_gpu, gpu)):
+                if lbl:
+                    # Sin dato, una raya como en Inicio (antes "GPU N/D").
+                    lbl.configure(text=f"{valor:.0f}%" if valor is not None else "—", fg=_color_numero(valor))
             if self.lbl_net_down:
-                self.lbl_net_down.configure(text="↓" + _formato_red(bajada_kbps))
+                self.lbl_net_down.configure(text=_formato_red(bajada_kbps))
             if self.lbl_net_up:
-                self.lbl_net_up.configure(text="↑" + _formato_red(subida_kbps))
+                self.lbl_net_up.configure(text=_formato_red(subida_kbps))
 
             if self._expandido:
                 # Tarjeta Rendimiento: números grandes + minigráficas
@@ -813,8 +876,8 @@ class PerformanceWidget(tk.Toplevel):
                     lbl = self._metricas_grandes.get(clave)
                     barra = self._barras.get(clave)
                     if lbl is not None:
-                        lbl.configure(text=(f"{valor:.0f}%" if valor is not None else "N/D"),
-                                      fg=_color(valor))
+                        lbl.configure(text=(f"{valor:.0f}%" if valor is not None else "—"),
+                                      fg=_color_numero(valor))
                     if barra is not None:
                         barra.set_valor(valor)
 

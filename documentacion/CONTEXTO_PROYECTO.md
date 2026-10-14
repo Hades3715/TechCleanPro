@@ -1734,9 +1734,20 @@ con Pulido (el de fábrica) ni con ningún otro tema.
 - Al cambiar de tema, `main._rehacer_widget` lo vuelve a crear como
   estaba (visible u oculto, desplegado o no). Antes había que cerrarlo y
   abrirlo.
-- Las cifras siguen en Consolas: con una letra proporcional, pasar de 9 %
-  a 10 % volvía a mover la barra (ver "LOS NÚMEROS YA NO TIEMBLAN" en
-  widget.py).
+- Primera versión: solo cambiaban los colores, y al desarrollador no le
+  convenció ("se ve casi igual al primero que tuvimos"): lo que iba bien
+  era VERDE en todos los temas, y el verde era lo que más se veía. Se hizo
+  como la app (`color_uso`): lo que va bien en el ACENTO del tema, aviso y
+  crítico solo cuando se llena; los números en el color del texto (en el
+  acento con Telemetría, el tema "de panel de control", que además pone
+  los títulos en mayúsculas); los atajos, cuadritos teñidos del acento; el
+  logo sobre su cuadrito de acento y la versión en una píldora, como en la
+  barra lateral; la barra compacta con iconos en vez de "CPU 26%"; las
+  cifras con la letra de números del tema (`T.familia_num`) y todo al
+  tamaño del tema (Alto contraste, +12 %).
+- Las cifras van en etiquetas de ancho fijo: pasar de 9 % a 10 % no mueve
+  la barra (ver "LOS NÚMEROS YA NO TIEMBLAN" en widget.py). Ya no hace
+  falta Consolas para eso: lo que lo evita es el ancho fijo.
 
 ### Reportar un problema (`reportar.py`)
 

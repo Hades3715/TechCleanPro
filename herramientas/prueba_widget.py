@@ -221,17 +221,19 @@ comprobar("hay etiquetas en la barra compacta", len(etiquetas) >= 3, f"{len(etiq
 for i, lbl in enumerate(etiquetas):
     comprobar(f"la etiqueta {i} tiene ancho fijo", int(lbl.cget("width")) > 0,
               f'width={lbl.cget("width")}')
+    # 1.8.0: la letra de las cifras del tema (Consolas en Telemetria y
+    # Terminal retro, Segoe UI Variable Display en Pulido...), no siempre
+    # Consolas: lo que evita el temblor es el ancho fijo, medido abajo.
     familia = str(lbl.cget("font"))
-    comprobar(f"la etiqueta {i} usa digitos de ancho fijo", "Consolas" in familia,
-              familia)
+    comprobar(f"la etiqueta {i} usa la letra de cifras del tema", widget_mod.T.familia_num in familia, familia)
 
 # Lo que importa de verdad: que al cambiar el texto la etiqueta NO cambie de
 # tamano. Es la comprobacion que habria pillado el temblor original.
 lbl = etiquetas[0]
-lbl.configure(text="CPU 9%")
+lbl.configure(text="9%")
 root.update_idletasks()
 ancho_corto = lbl.winfo_reqwidth()
-lbl.configure(text="CPU 100%")
+lbl.configure(text="100%")
 root.update_idletasks()
 ancho_largo = lbl.winfo_reqwidth()
 comprobar("de 9% a 100% la etiqueta mide lo mismo", ancho_corto == ancho_largo,
@@ -387,7 +389,7 @@ comprobar("los iconos del widget existen todos",
 
 print("\n== Sigue al tema de la app (1.8.0) ==")
 import temas
-for nombre in ("claro", "retro", temas.POR_DEFECTO):
+for nombre in ("claro", "retro", "telemetria", temas.POR_DEFECTO):
     temas.T.nombre = nombre
     otro_widget = widget_mod.PerformanceWidget(root, expandido=True)
     otro_widget.geometry("+4000+4000")
@@ -398,8 +400,15 @@ for nombre in ("claro", "retro", temas.POR_DEFECTO):
               and otro_widget.frame_compacto.cget("bg") == fichas["panel"]
               and otro_widget.filas_sistema["disco"][1].cget("fg") == fichas["texto"],
               f'{otro_widget.frame_header.cget("bg")} / {otro_widget.frame_compacto.cget("bg")}')
-    comprobar(f"{nombre}: los colores de estado son los del tema",
-              widget_mod._color_temp(40) == fichas["ok"] and widget_mod._color(95) == fichas["critico"])
+    # Como en la app (color_uso): lo que va bien, en el ACENTO del tema; antes
+    # era verde en todos y el widget se veia igual con cualquiera.
+    comprobar(f"{nombre}: lo que va bien en el acento, lo lleno en aviso o critico",
+              widget_mod._color(30) == fichas["acento"] and widget_mod._color_temp(40) == fichas["acento"]
+              and widget_mod._color(70) == fichas["aviso"] and widget_mod._color(95) == fichas["critico"])
+    hud = fichas["lateral_estilo"] == "rail"
+    comprobar(f"{nombre}: el numero que va bien, en {'el acento (panel de control)' if hud else 'el color del texto'}",
+              widget_mod._color_numero(30) == (fichas["acento"] if hud else fichas["texto"])
+              and widget_mod._color_numero(95) == fichas["critico"])
     comprobar(f"{nombre}: se puede crear ya desplegado", otro_widget._expandido)
     comprobar(f"{nombre}: el color clave no coincide con ningun color del tema",
               widget_mod.COLOR_CLAVE.lower() not in {str(v).lower() for v in fichas.values()})

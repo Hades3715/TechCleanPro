@@ -74,9 +74,11 @@ Barra lateral agrupada con iconos de línea, tarjetas, y cada opción
 explicada en su fila. Las listas largas (carpetas, programas, servicios,
 el Historial) se dibujan de otra forma y ya no congelan la ventana.
 
-El **widget flotante** también: toma los colores, la letra y las esquinas
-del tema que elijas (antes seguía con los colores de siempre y no pegaba
-con ninguno), con tarjetas redondeadas y los mismos iconos que la app.
+El **widget flotante** también: con cada tema cambian sus colores (el acento
+del tema en barras, gráficas y atajos; ámbar o rojo solo cuando algo se
+llena), la letra, las esquinas y hasta el estilo (Telemetría lo pone en
+modo panel de control). Tarjetas redondeadas, los mismos iconos que la app
+y el logo con la versión, como en la barra lateral.
 
 ### 💽 Espacio en disco: la unidad entera
 

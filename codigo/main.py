@@ -8451,7 +8451,8 @@ class TechCleanApp(ctk.CTk):
             encender = False
         else:
             if self.performance_widget is None:
-                self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente)
+                self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente,
+                                                                 version=APP_VERSION.rsplit(".", 1)[0])
                 self._log_dev(t("gaming_log_widget"), t("gaming_widget_cmd"),
                               t("gaming_widget_mostrado"),
                               seccion=t("seccion_segundo_plano"), exito=True)
@@ -9026,7 +9027,8 @@ class TechCleanApp(ctk.CTk):
         de energía). No fuerza nada si el equipo ya está en otro estado."""
         if self.prefs.get("widget_visible"):
             if self.performance_widget is None:
-                self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente)
+                self.performance_widget = widget_mod.PerformanceWidget(self, on_cerrar=self._widget_cerrado_manualmente,
+                                                                 version=APP_VERSION.rsplit(".", 1)[0])
             else:
                 self.performance_widget.mostrar()
             if hasattr(self, "switch_widget") and self.switch_widget.winfo_exists():
@@ -11994,7 +11996,8 @@ class TechCleanApp(ctk.CTk):
         self.performance_widget = None
         if visible:
             self.performance_widget = widget_mod.PerformanceWidget(
-                self, on_cerrar=self._widget_cerrado_manualmente, expandido=expandido)
+                self, on_cerrar=self._widget_cerrado_manualmente, expandido=expandido,
+                version=APP_VERSION.rsplit(".", 1)[0])
 
     def _guardar_numero_pref(self, clave, valor):
         """Un número de Ajustes que el vigilante lee en cada vuelta: basta
