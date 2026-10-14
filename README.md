@@ -498,6 +498,10 @@ pyinstaller --noconfirm --onefile --windowed --uac-admin --icon "assets\icono.ic
   con Windows.
 - **🔐 Privacidad de la app** (Ajustes → Privacidad y `PRIVACIDAD.md`): qué
   guarda (solo en tu equipo), cuándo se conecta a internet y qué no hace.
+- **🎯 Ajusta TechClean a tu equipo** (Inicio, y luego Ajustes): mira la
+  RAM, el procesador, si es portátil y tus juegos, y propone qué funciones
+  dejar encendidas y cuáles apagadas, cada una con su porqué. No cambia nada
+  sin que lo apruebes.
 - **🐞 Reportar un problema** (Ajustes, o *Enviar este error* cuando algo
   falla): el error y cómo es el equipo, sin el nombre de usuario ni las
   carpetas, listo para publicarlo en GitHub o copiarlo. La app no lo envía:

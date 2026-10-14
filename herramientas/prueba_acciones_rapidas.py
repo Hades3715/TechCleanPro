@@ -231,6 +231,107 @@ app = main.TechCleanApp()
 correr(app, 1.0)
 comprobar(app.winfo_exists() and app._pantalla_actual == "mostrar_dashboard",
           "despues de la ventana de condiciones, la app abre normal")
+
+print("== Ajustar TechClean a este equipo: lo que propone (1.8.0) ==")
+import recomendaciones as rec
+DE_FABRICA = {"modo_ligero": False, "auto_ram_activa": True, "bateria_ahorro_automatico": False,
+              "juegos_modo_auto": [], "frenar_acaparadores": True, "limpieza_activa": False,
+              "inicio_activo": False, "limpieza_hora": "09:00"}
+
+
+def claves(equipo, **estado):
+    return [p["clave"] for p in rec.recomendar(equipo, {**DE_FABRICA, **estado})]
+
+
+portatil_modesto = {"ram_gb": 4, "nucleos": 2, "portatil": True, "juegos": []}
+comprobar(claves(portatil_modesto) == ["ligero_on", "bateria_on", "limpieza_on", "inicio_on"],
+          f"portatil de 4 GB: Modo Ligero, ahorro de bateria, limpieza e inicio ({claves(portatil_modesto)})")
+juegos = [{"nombre": f"Juego {i}", "ruta": f"C:\\Juegos\\J{i}"} for i in range(5)] + [{"nombre": "Sin ruta", "ruta": ""}]
+gamer = {"ram_gb": 32, "nucleos": 8, "portatil": False, "juegos": juegos}
+props = rec.recomendar(gamer, {**DE_FABRICA, "modo_ligero": True, "auto_ram_activa": False,
+                               "frenar_acaparadores": False})
+comprobar([p["clave"] for p in props] == ["ligero_off", "ram_on", "juegos_auto", "frenar_on", "limpieza_on",
+                                          "inicio_on"],
+          f"PC de juegos con el Modo Ligero puesto: se quita, y lo de jugar ({[p['clave'] for p in props]})")
+juegos_auto = next(p for p in props if p["clave"] == "juegos_auto")
+comprobar(len(juegos_auto["aplicar"]["juegos_modo_auto"]) == 5
+          and all(c.endswith(os.sep) for c in juegos_auto["aplicar"]["juegos_modo_auto"]),
+          "marca los juegos como lo hace Gaming (sin el que no tiene carpeta)")
+comprobar(juegos_auto["params"]["juegos"].endswith("…") and juegos_auto["params"]["juegos"].count(",") == 2,
+          f"nombra tres juegos y pone puntos suspensivos ({juegos_auto['params']['juegos']})")
+comprobar(next(p for p in props if p["clave"] == "ram_on")["aplicar"]["umbral_ram_auto"] == 85,
+          "con 32 GB, liberar RAM al 85 %")
+comprobar(rec.recomendar({"ram_gb": 8, "nucleos": 4, "portatil": False, "juegos": []},
+                         {**DE_FABRICA, "auto_ram_activa": False})[0]["aplicar"]["umbral_ram_auto"] == 80,
+          "con 8 GB, al 80 %")
+bien = {**DE_FABRICA, "bateria_ahorro_automatico": True, "limpieza_activa": True, "inicio_activo": True}
+comprobar(claves({"ram_gb": 16, "nucleos": 6, "portatil": True, "juegos": []}, **bien) == [],
+          "un equipo ya bien ajustado: nada que proponer")
+comprobar("juegos_auto" not in claves(gamer, juegos_modo_auto=["c:\\juegos\\j0\\"]),
+          "si ya marco algun juego, no se le cambia lo que eligio")
+comprobar("inicio_on" not in claves(portatil_modesto, inicio_activo=True),
+          "si ya abre con Windows, no se propone otra vez")
+for p in props + rec.recomendar(portatil_modesto, DE_FABRICA):
+    titulo, motivo = main.TechCleanApp.TEXTOS_AJUSTE[p["clave"]]
+    comprobar(bool(main.t(titulo)) and "{" not in main.t(motivo, **p["params"]),
+              f"{p['clave']}: tiene titulo y su porque se rellena entero")
+
+print("== Ajustar TechClean a este equipo: la ventana ==")
+comprobar(getattr(app, "_tarjeta_ajuste", None) is not None and app._tarjeta_ajuste.winfo_exists(),
+          "la primera vez, la tarjeta esta en Inicio")
+# Nada de tareas de Windows de verdad: crear la limpieza programada o el
+# inicio automatico se simula.
+originales = {n: getattr(main.opt, n) for n in ("crear_limpieza_programada", "limpieza_programada_activa",
+                                                "set_startup", "is_startup_enabled", "listar_juegos_instalados")}
+falso = {"limpieza": False, "inicio": False, "llamadas": []}
+
+
+def crear_falsa(frecuencia="DAILY", hora="09:00"):
+    falso["llamadas"].append(("limpieza", frecuencia, hora))
+    falso["limpieza"] = True
+    return True, "schtasks /create (simulado)"
+
+
+def inicio_falso(habilitar):
+    falso["llamadas"].append(("inicio", habilitar))
+    falso["inicio"] = habilitar
+    return True, "schtasks (simulado)"
+
+
+main.opt.crear_limpieza_programada = crear_falsa
+main.opt.limpieza_programada_activa = lambda: falso["limpieza"]
+main.opt.set_startup = inicio_falso
+main.opt.is_startup_enabled = lambda: falso["inicio"]
+main.opt.listar_juegos_instalados = lambda: [{"nombre": "Juego A", "ruta": "C:\\Juegos\\A"}]
+equipo, estado = app._leer_equipo_para_ajuste()
+comprobar(equipo["ram_gb"] > 0 and equipo["nucleos"] > 0 and equipo["juegos"][0]["nombre"] == "Juego A"
+          and estado["limpieza_activa"] is False, "lee el equipo y como esta la app")
+# Lo que se analiza se fija, para que la prueba no dependa de este equipo.
+app._leer_equipo_para_ajuste = lambda: ({"ram_gb": 16, "nucleos": 8, "portatil": True,
+                                         "juegos": [{"nombre": "Juego A", "ruta": "C:\\Juegos\\A"}]},
+                                        {**DE_FABRICA})
+antes = set(app.winfo_children())
+app._abrir_ajuste_equipo()
+correr(app, 1.5)
+dialogo = [w for w in app.winfo_children() if w not in antes][-1]
+comprobar(app.prefs.get("ajuste_equipo_visto") and not app._tarjeta_ajuste,
+          "abrirla quita la tarjeta de Inicio (desde ahora esta en Ajustes)")
+casillas_ajuste = dialogo._ajuste["casillas"]
+comprobar([p["clave"] for _, p in casillas_ajuste] == ["bateria_on", "juegos_auto", "limpieza_on", "inicio_on"]
+          and all(c.get() for c, _ in casillas_ajuste),
+          f"propone y marca todo ({[p['clave'] for _, p in casillas_ajuste]})")
+next(c for c, p in casillas_ajuste if p["clave"] == "inicio_on").toggle()      # este no lo quiere
+dialogo._ajuste["aplicar"].invoke()
+correr(app, 1.5)
+comprobar(app.prefs.get("bateria_ahorro_automatico") is True and prefs.cargar().get("bateria_ahorro_automatico") is True,
+          "aplica el ahorro de bateria (y queda guardado)")
+comprobar(prefs.cargar().get("juegos_modo_auto") == [rec.carpeta_juego("C:\\Juegos\\A")],
+          "marca el juego para el Modo Juego automatico")
+comprobar(("limpieza", "WEEKLY", "09:00") in falso["llamadas"], "programa la limpieza semanal")
+comprobar(not any(l[0] == "inicio" for l in falso["llamadas"]), "lo que se desmarco no se toca")
+for nombre, funcion in originales.items():
+    setattr(main.opt, nombre, funcion)
+dialogo.destroy()
 app.destroy()
 print()
 print("RESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS"))

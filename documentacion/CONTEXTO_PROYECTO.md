@@ -1714,6 +1714,34 @@ Admin hacía un HTML sin marca para el cliente.
   el mismo consumo; con la ventana quieta, 0,45 % de CPU (0,35 %): Inicio
   ahora lee también la GPU de AMD e Intel. Memoria: 97 MB (86 MB).
 
+### Ajustar TechClean a este equipo (`recomendaciones.py`, 1.8.0)
+
+Idea del desarrollador: "un botón que analice el PC y le indique o active
+qué funciones tener encendidas y apagadas", al inicio y no escondido.
+
+- Una tarjeta en Inicio ("Ajusta TechClean a tu equipo") hasta que se usa o
+  se pulsa "Ahora no" (`ajuste_equipo_visto`); después, en Ajustes. No es
+  una ventana que salte sola al abrir: molesta, y con su `grab_set` habría
+  estorbado a todo el banco, que crea la app sin preferencias.
+- Propone, no aplica: la app solo cambia lo que se le pide. Cada propuesta
+  va marcada y con su porqué; se aplica lo que quede marcado.
+- `recomendaciones.recomendar(equipo, estado)` es pura y solo devuelve lo
+  que CAMBIA: Modo Ligero (encender en equipos de ≤2 núcleos o ≤4 GB,
+  quitar en ≥4 núcleos y ≥8 GB), liberar RAM automática (siempre: solo
+  actúa al llenarse; 80 % con ≤8 GB, si no 85 %), ahorro con batería baja
+  (portátiles), Modo Juego automático en los juegos instalados (si no
+  marcó ninguno: lo que eligió no se toca), frenar acaparadores, limpieza
+  semanal y abrir con Windows (si hay algo automático: solo funciona con
+  la app abierta).
+- Sustituye a la sugerencia del Modo Ligero (una ventana, una vez, solo en
+  equipos modestos).
+- El plan de energía NO se propone: "alto rendimiento" en un sobremesa
+  moderno apenas gana y gasta más; no hay una recomendación honesta
+  general.
+- La limpieza programada y el inicio con Windows son tareas de schtasks:
+  en un hilo y comprobando que quedaron. En el banco se simulan (no se
+  crean tareas de verdad en el equipo de desarrollo).
+
 ### Condiciones de uso antes de abrir la app (1.8.0)
 
 Lo pidió el desarrollador ("quizá un usuario me meta en problemas"): que

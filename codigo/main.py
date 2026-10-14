@@ -41,6 +41,7 @@ import tecnico as tec
 import disco
 import informe
 import reportar
+import recomendaciones
 import seguridad as seg
 import widget as widget_mod
 import tray as tray_mod
@@ -225,11 +226,11 @@ NOMBRES_TEMA = {
 }
 
 # Lo que enseña la ventana de novedades al actualizar (claves de idiomas.py).
-NOVEDADES = ("nov_180_temas", "nov_180_rediseno", "nov_180_informe", "nov_180_disco", "nov_180_fallos",
-             "nov_180_componentes_salud", "nov_180_inicio_windows", "nov_180_proteccion", "nov_180_privacidad",
-             "nov_180_gaming", "nov_180_energia", "nov_180_drivers", "nov_180_segundo_plano",
-             "nov_180_rapida", "nov_180_privacidad_app", "nov_180_reportar", "nov_180_cerrados", "nov_180_ligera", "nov_180_arreglos",
-             "nov_180_textos", "nov_180_componentes")
+NOVEDADES = ("nov_180_temas", "nov_180_rediseno", "nov_180_ajuste", "nov_180_informe", "nov_180_disco",
+             "nov_180_fallos", "nov_180_componentes_salud", "nov_180_inicio_windows", "nov_180_proteccion",
+             "nov_180_privacidad", "nov_180_gaming", "nov_180_energia", "nov_180_drivers",
+             "nov_180_segundo_plano", "nov_180_rapida", "nov_180_privacidad_app", "nov_180_reportar",
+             "nov_180_cerrados", "nov_180_ligera", "nov_180_arreglos", "nov_180_textos", "nov_180_componentes")
 
 
 def _sin_emoji(texto):
@@ -3297,10 +3298,14 @@ class TechCleanApp(ctk.CTk):
                       command=self._accion_optimizacion_rapida).pack(side="right")
         boton_secundario(cabecera, _sin_emoji(t("dash_boton_vaciar_papelera")), self._accion_vaciar_papelera_user,
                          icono="papelera", height=42).pack(side="right", padx=10)
-        self.lbl_resultado_user = ctk.CTkLabel(lienzo, text=t("dash_resultado_inicial"),
+        fila_avisos = Caja(lienzo)
+        fila_avisos.grid(row=1, column=0, columnspan=4, sticky="we")
+        self.lbl_resultado_user = ctk.CTkLabel(fila_avisos, text=t("dash_resultado_inicial"),
                                                 font=fuente(size=12), text_color=T.texto2,
                                                 wraplength=900, justify="left", anchor="w")
-        self.lbl_resultado_user.grid(row=1, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 10))
+        self.lbl_resultado_user.pack(fill="x", padx=10, pady=(0, 10))
+        if not self.prefs.get("ajuste_equipo_visto"):
+            self._tarjeta_ajuste_equipo(fila_avisos)
 
         # ---- Salud del sistema ----
         panel_salud = tarjeta(lienzo)
@@ -3374,6 +3379,190 @@ class TechCleanApp(ctk.CTk):
 
         self._refrescar_gauges()
         self._calcular_salud_sistema()
+
+    # ---------------- Ajustar TechClean a este equipo (1.8.0) ----------------
+    # Cada propuesta de recomendaciones.py con su título y su porqué. Las
+    # CLAVES de idiomas, no el texto: el diccionario se crea al importar.
+    TEXTOS_AJUSTE = {
+        "ligero_on": ("ajuste_ligero_on_titulo", "ajuste_ligero_on_motivo"),
+        "ligero_off": ("ajuste_ligero_off_titulo", "ajuste_ligero_off_motivo"),
+        "ram_on": ("ajuste_ram_on_titulo", "ajuste_ram_on_motivo"),
+        "bateria_on": ("ajuste_bateria_on_titulo", "ajuste_bateria_on_motivo"),
+        "juegos_auto": ("ajuste_juegos_auto_titulo", "ajuste_juegos_auto_motivo"),
+        "frenar_on": ("ajuste_frenar_on_titulo", "ajuste_frenar_on_motivo"),
+        "limpieza_on": ("ajuste_limpieza_on_titulo", "ajuste_limpieza_on_motivo"),
+        "inicio_on": ("ajuste_inicio_on_titulo", "ajuste_inicio_on_motivo"),
+    }
+
+    def _tarjeta_ajuste_equipo(self, padre):
+        """Inicio, hasta que se usa o se descarta: la invitación a ajustar la
+        app al equipo. Lo pidió el desarrollador "al inicio y no escondido";
+        después vive en Ajustes."""
+        panel = tarjeta(padre, borde=T.acento)
+        panel.pack(fill="x", padx=8, pady=(0, 12))
+        self._tarjeta_ajuste = panel
+        fila_t = Caja(panel)
+        fila_t.pack(fill="x", padx=20, pady=16)
+        escala = ctk.ScalingTracker.get_widget_scaling(panel)
+        tk.Label(fila_t, bg=T.panel, bd=0,
+                 image=iconos.icono_cuadro("optimizar", T.sobre_acento, T.acento, T.panel, 40, T.radio_boton, 22,
+                                           escala, fila_t)).pack(side="left", padx=(0, 14))
+        ctk.CTkButton(fila_t, text=t("ajuste_card_btn"), height=38, command=self._abrir_ajuste_equipo).pack(side="right")
+        boton_secundario(fila_t, t("ajuste_card_cerrar"), self._descartar_tarjeta_ajuste, height=38).pack(
+            side="right", padx=10)
+        textos = Caja(fila_t)
+        textos.pack(side="left", fill="x", expand=True)
+        Texto(textos, t("ajuste_card_titulo"), size=15, weight="bold").pack(fill="x")
+        texto_fluido(Texto(textos, t("ajuste_card_texto"), size=12, color=T.texto2, wraplength=560),
+                     textos, 0).pack(fill="x", pady=(2, 0))
+
+    def _descartar_tarjeta_ajuste(self):
+        self.prefs["ajuste_equipo_visto"] = True
+        prefs.guardar({"ajuste_equipo_visto": True})
+        panel = getattr(self, "_tarjeta_ajuste", None)
+        if panel is not None and panel.winfo_exists():
+            panel.destroy()
+        self._tarjeta_ajuste = None
+
+    def _leer_equipo_para_ajuste(self):
+        """En un hilo: cómo es el equipo y cómo está la app ahora (schtasks
+        y los manifiestos de los juegos son lentos)."""
+        try:
+            bateria = psutil.sensors_battery()
+        except Exception:
+            bateria = None
+        try:
+            juegos = opt.listar_juegos_instalados()
+        except Exception:
+            juegos = []
+        equipo = {"ram_gb": psutil.virtual_memory().total / 1024 ** 3,
+                  "nucleos": psutil.cpu_count(logical=False) or psutil.cpu_count() or 0,
+                  "portatil": bateria is not None, "juegos": juegos}
+        estado = {"modo_ligero": bool(self.prefs.get("modo_ligero")),
+                  "auto_ram_activa": bool(self.prefs.get("auto_ram_activa", True)),
+                  "bateria_ahorro_automatico": bool(self.prefs.get("bateria_ahorro_automatico")),
+                  "juegos_modo_auto": list(self.prefs.get("juegos_modo_auto", [])),
+                  "frenar_acaparadores": bool(self.prefs.get("frenar_acaparadores", True)),
+                  "limpieza_activa": opt.limpieza_programada_activa(),
+                  "inicio_activo": opt.is_startup_enabled(),
+                  "limpieza_hora": self.prefs.get("limpieza_hora", "09:00")}
+        return equipo, estado
+
+    def _abrir_ajuste_equipo(self):
+        """Analiza el equipo y enseña lo que propone recomendaciones.py,
+        cada cosa con su porqué y marcada; el usuario quita lo que no quiera
+        y pulsa Aplicar. Abrirla cuenta como usar la tarjeta de Inicio."""
+        self._descartar_tarjeta_ajuste()
+        dialogo = ctk.CTkToplevel(self)
+        dialogo.title(t("ajuste_titulo_ventana"))
+        dialogo.geometry("640x620")
+        dialogo.minsize(520, 420)
+        dialogo.configure(fg_color=T.fondo)
+        dialogo.grab_set()
+        Texto(dialogo, t("ajuste_titulo_ventana"), size=17, weight="bold").pack(fill="x", padx=22, pady=(18, 2))
+        lbl_resumen = Texto(dialogo, t("ajuste_analizando"), size=12, color=T.texto2)
+        lbl_resumen.pack(fill="x", padx=22)
+        fila_b = Caja(dialogo)
+        fila_b.pack(side="bottom", fill="x", padx=22, pady=(8, 18))
+        lbl_estado = Texto(dialogo, "", size=12, color=T.texto2, wraplength=590)
+        lbl_estado.pack(side="bottom", fill="x", padx=22, pady=(6, 0))
+        cuerpo = ctk.CTkScrollableFrame(dialogo, fg_color="transparent")
+        cuerpo.pack(fill="both", expand=True, padx=14, pady=(10, 0))
+        boton_secundario(fila_b, t("comun_cerrar"), dialogo.destroy).pack(side="right")
+        btn_aplicar = ctk.CTkButton(fila_b, text=t("ajuste_aplicar"), state="disabled")
+        btn_aplicar.pack(side="right", padx=(0, 8))
+        dialogo._ajuste = {"aplicar": btn_aplicar, "casillas": []}      # para el banco de pruebas
+
+        def pintar(equipo, props):
+            if not dialogo.winfo_exists():
+                return
+            juegos = equipo["juegos"]
+            lbl_resumen.configure(text=t("ajuste_resumen",
+                                         tipo=t("ajuste_portatil" if equipo["portatil"] else "ajuste_escritorio"),
+                                         ram=f'{equipo["ram_gb"]:.0f} GB', nucleos=equipo["nucleos"],
+                                         juegos=t("ajuste_juegos", n=len(juegos)) if juegos else t("ajuste_sin_juegos")))
+            if not props:
+                texto_fluido(Texto(cuerpo, t("ajuste_todo_bien"), size=13, wraplength=560), cuerpo, 20).pack(
+                    fill="x", padx=8, pady=8)
+                return
+            Texto(cuerpo, t("ajuste_propuesta"), size=13, weight="bold").pack(fill="x", padx=8, pady=(4, 2))
+            for prop in props:
+                clave_titulo, clave_motivo = self.TEXTOS_AJUSTE[prop["clave"]]
+                caja = Caja(cuerpo)
+                caja.pack(fill="x", padx=8, pady=(10, 0))
+                marca = casilla(caja, marcada=True, text=t(clave_titulo), font=fuente(size=13, weight="bold"))
+                marca.pack(anchor="w")
+                texto_fluido(Texto(caja, t(clave_motivo, **prop["params"]), size=12, color=T.texto2, wraplength=540),
+                             caja, 30).pack(fill="x", padx=(30, 0), pady=(2, 0))
+                dialogo._ajuste["casillas"].append((marca, prop))
+            Texto(cuerpo, t("ajuste_nota"), size=11, color=T.texto3).pack(fill="x", padx=8, pady=(14, 4))
+            btn_aplicar.configure(state="normal", command=aplicar)
+
+        def aplicar():
+            elegidas = [prop for marca, prop in dialogo._ajuste["casillas"] if marca.get()]
+            btn_aplicar.configure(state="disabled")
+            for marca, _ in dialogo._ajuste["casillas"]:
+                marca.configure(state="disabled")
+            lbl_estado.configure(text=t("ajuste_aplicando"))
+            self._aplicar_ajuste_equipo(
+                elegidas, lambda texto: lbl_estado.winfo_exists() and lbl_estado.configure(text=texto))
+
+        def worker():
+            equipo, estado = self._leer_equipo_para_ajuste()
+            props = recomendaciones.recomendar(equipo, estado)
+            self.after(0, lambda: pintar(equipo, props))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _aplicar_ajuste_equipo(self, elegidas, avisar):
+        """Lo que el usuario aprobó. Los ajustes de la app, al momento y en
+        el hilo de Tk; la limpieza programada y el inicio con Windows son
+        tareas de schtasks: en un hilo, comprobando que de verdad quedaron."""
+        cambios = {}
+        for prop in elegidas:
+            cambios.update(prop["aplicar"])
+        tareas = {k: cambios.pop(k) for k in ("limpieza_programada", "inicio_automatico") if k in cambios}
+        if cambios:
+            self.prefs.update(cambios)
+            prefs.guardar(cambios)
+        if "modo_ligero" in cambios:
+            self._aplicar_preferencia_animaciones()
+        if cambios.get("auto_ram_activa"):
+            self.auto_ram.iniciar()
+        if "umbral_ram_auto" in cambios:
+            self.autopilot.umbral_ram = self.auto_ram.umbral_ram = cambios["umbral_ram_auto"]
+        if cambios.get("juegos_modo_auto"):
+            self.vigia_juegos.iniciar()
+        for prop in elegidas:
+            if prop["clave"] not in ("limpieza_on", "inicio_on"):
+                self._log_dev(t("ajuste_log"), "preferencias", t(self.TEXTOS_AJUSTE[prop["clave"]][0]),
+                              seccion=t("seccion_ajustes"), exito=True)
+
+        def worker():
+            fallos = []
+            if tareas.get("limpieza_programada"):
+                hora = self.prefs.get("limpieza_hora", "09:00")
+                exito, comando = opt.crear_limpieza_programada(frecuencia="WEEKLY", hora=hora)
+                exito = exito and opt.limpieza_programada_activa()
+                if exito:
+                    # También en la app abierta: Segundo plano la lee de aquí.
+                    self.prefs["limpieza_frecuencia"] = "WEEKLY"
+                    prefs.guardar({"limpieza_frecuencia": "WEEKLY"})
+                else:
+                    fallos.append(t("ajuste_limpieza_on_titulo"))
+                self._log_dev(t("ajuste_log"), comando, t("ajuste_limpieza_on_titulo"),
+                              seccion=t("seccion_ajustes"), exito=exito)
+            if tareas.get("inicio_automatico"):
+                exito, comando = opt.set_startup(True)
+                exito = exito and opt.is_startup_enabled()
+                if not exito:
+                    fallos.append(t("ajuste_inicio_on_titulo"))
+                self._log_dev(t("ajuste_log"), comando, t("ajuste_inicio_on_titulo"),
+                              seccion=t("seccion_ajustes"), exito=exito)
+            texto = t("ajuste_listo", n=len(elegidas) - len(fallos), total=len(elegidas))
+            if fallos:
+                texto += " " + t("ajuste_fallo", lista=", ".join(fallos))
+            self.after(0, lambda: avisar(texto))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _subtitulo_inicio(self):
         info = self._system_info_cache
@@ -9038,41 +9227,9 @@ class TechCleanApp(ctk.CTk):
         if perfil_guardado and perfil_guardado in opt.POWER_PLANS:
             threading.Thread(target=lambda: opt.set_power_plan(perfil_guardado), daemon=True).start()
 
-        # Modo Ligero: si nunca se preguntó y el equipo parece modesto
-        # (pocos núcleos o poca RAM), sugerirlo UNA sola vez — nunca se
-        # vuelve a insistir, sin importar la respuesta.
-        if not self.prefs.get("modo_ligero_preguntado"):
-            self.prefs["modo_ligero_preguntado"] = True
-            prefs.guardar({"modo_ligero_preguntado": True})
-
-            def worker():
-                modesto = sysmon.es_equipo_modesto()
-                if modesto:
-                    self.after(0, self._sugerir_modo_ligero)
-            threading.Thread(target=worker, daemon=True).start()
-
-    def _sugerir_modo_ligero(self):
-        dialogo = ctk.CTkToplevel(self)
-        dialogo.title(t("ligero_titulo_ventana"))
-        dialogo.geometry("420x220")
-        dialogo.grab_set()
-        ctk.CTkLabel(dialogo, text=t("ligero_titulo"),
-                     font=fuente(size=15, weight="bold")).pack(pady=(20, 6))
-        ctk.CTkLabel(dialogo,
-                     text=t("ligero_texto"),
-                     font=fuente(size=12), wraplength=380, justify="left").pack(padx=20, pady=(0, 16))
-        fila = ctk.CTkFrame(dialogo, fg_color="transparent")
-        fila.pack(pady=10)
-
-        def activar():
-            dialogo.destroy()
-            self.prefs["modo_ligero"] = True
-            prefs.guardar({"modo_ligero": True})
-            self._aplicar_preferencia_animaciones()
-
-        ctk.CTkButton(fila, text=t("ligero_no"), fg_color=T.boton2, command=dialogo.destroy, text_color=T.texto, hover_color=T.boton2_hover).pack(
-            side="left", padx=8)
-        ctk.CTkButton(fila, text=t("ligero_si"), command=activar).pack(side="left", padx=8)
+        # 1.8.0: ya no se sugiere aquí el Modo Ligero (una ventana, solo en
+        # equipos modestos): lo propone "Ajustar TechClean a este equipo",
+        # la tarjeta de Inicio, junto con el resto de ajustes.
 
     def _intervalo(self, base_ms):
         """Todos los temporizadores recurrentes de la app pasan por aquí:
@@ -11523,6 +11680,9 @@ class TechCleanApp(ctk.CTk):
             self.after(0, lambda: self._pintar_estado_inicio(activo, estado))
         threading.Thread(target=worker_estado_inicio, daemon=True).start()
 
+        derecha = fila(panel, "optimizar", t("ajuste_ajustes_titulo"), t("ajuste_ajustes_desc"))
+        ctk.CTkButton(derecha, text=t("ajuste_ajustes_btn"), width=110,
+                      command=self._abrir_ajuste_equipo).pack(side="right")
         self.switch_modo_ligero, _ = fila_interruptor(panel, "energia", t("ajustes_modo_ligero_titulo"),
                                                       t("ajustes_modo_ligero_desc"), self.prefs.get("modo_ligero"),
                                                       self._toggle_modo_ligero)

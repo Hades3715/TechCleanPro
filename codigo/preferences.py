@@ -35,7 +35,6 @@ _DEFAULTS = {
     "widget_pos": None,                         # [x, y] — última posición del widget flotante
     "widget_metricas": ["cpu", "ram", "red", "gpu"],  # qué paneles mostrar en el widget expandido
     "modo_ligero": False,                          # intervalos de actualización más espaciados
-    "modo_ligero_preguntado": False,                # para sugerirlo solo una vez, no cada arranque
     "ultima_revision_actualizacion": 0,                # timestamp — para revisar como máximo 1 vez al día
     "idioma": "es",                                       # "es" o "en" — se aplica al reiniciar la app
     "idioma_preguntado": False,                              # para preguntarlo solo la primera vez
@@ -63,6 +62,7 @@ _DEFAULTS = {
     "tema": "pulido",                                        # uno de temas.ORDEN; cualquier otro valor = el de fábrica
     "terminos_aceptados": "",                                # versión de las condiciones aceptadas (main.TERMINOS_VERSION)
     "terminos_fecha": "",                                    # cuándo se aceptaron
+    "ajuste_equipo_visto": False,                            # la tarjeta de Inicio "Ajusta TechClean a tu equipo" ya se usó o se descartó
 }
 
 # Claves que no tiene sentido traer de otro equipo al importar ajustes: son
@@ -70,7 +70,8 @@ _DEFAULTS = {
 # Las condiciones aceptadas tampoco: las acepta quien usa ESTE equipo, no
 # viajan en un archivo de ajustes.
 _NO_IMPORTABLES = {"avisos_disco", "aviso_reinicio", "ultima_revision_actualizacion",
-                   "ultima_version_vista", "widget_pos", "terminos_aceptados", "terminos_fecha"}
+                   "ultima_version_vista", "widget_pos", "terminos_aceptados", "terminos_fecha",
+                   "ajuste_equipo_visto"}
 
 
 def filtrar_importables(datos):

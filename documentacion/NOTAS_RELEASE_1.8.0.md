@@ -46,6 +46,16 @@ hay que aceptarlas para usarla. También si venías de la 1.7.0.
 
 ## Novedades
 
+### 🎯 Ajusta TechClean a tu equipo (Inicio)
+
+La primera vez, en Inicio: TechClean mira tu equipo (RAM, procesador, si
+es portátil, tus juegos) y te propone qué funciones dejar encendidas y
+cuáles apagadas, cada una con su porqué: Modo Ligero en un equipo justo,
+ahorro con batería baja en un portátil, Modo Juego automático en tus
+juegos, la limpieza semanal... **No cambia nada sin que lo apruebes**, y
+todo se cambia de vuelta en Ajustes. Después queda en Ajustes → *Ajustar
+TechClean a este equipo*.
+
 ### 📄 Informe del equipo en PDF (Historial → Crear informe)
 
 Un PDF con la cara de TechClean, en tu Escritorio:
