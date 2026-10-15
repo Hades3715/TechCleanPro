@@ -30,8 +30,8 @@ Descarga **uno solo**, el que te sirva. No hace falta instalar nada más.
 
 | Archivo | SHA-256 |
 |---|---|
-| TechClean_ES.exe | `960B80828C19F89842FF6EDF59A11EFCDEED6AA139D8D216F4B0C1127EE28A66` |
-| TechClean_EN.exe | `4C23FDD6AFB74499688FC580EA83854DACEC42348C444B867E54600880F8F094` |
+| TechClean_ES.exe | `6E64391073C060320C36FDA8B3783B01DF995750D286CD4CD06953B4F8F4B27A` |
+| TechClean_EN.exe | `8ABFAC672B811BCF747E86D4E3C73CAF43667397492622A4E78737FFBA746FF3` |
 
 **Privacidad:** TechClean no recoge ni envía datos tuyos. Todo lo que guarda
 se queda en tu equipo, y solo se conecta a internet para buscar
@@ -217,6 +217,8 @@ lista de Inicio de Windows de 1 s a 0,25 s.
 - Actualizar una app con winget se daba por hecho sin comprobarlo.
 - Ajustes → Buscar actualizaciones decía «No se pudo consultar» a quien ya
   estaba al día.
+- Inicio: el aviso «Limpieza automática programada activa» salía dos veces
+  al cambiar de tema o volver rápido a Inicio.
 
 ---
 

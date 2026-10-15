@@ -358,9 +358,31 @@ comprobar(prefs.cargar().get("juegos_modo_auto") == [rec.carpeta_juego("C:\\Jueg
           "marca el juego para el Modo Juego automatico")
 comprobar(("limpieza", "WEEKLY", "09:00") in falso["llamadas"], "programa la limpieza semanal")
 comprobar(not any(l[0] == "inicio" for l in falso["llamadas"]), "lo que se desmarco no se toca")
+
+print("== Inicio: el aviso de la limpieza programada sale una vez ==")
+# BUG (1.8.0, salio en las capturas para la Store): si Inicio se rehacia
+# antes de que el hilo contestara, los dos hilos ponian el aviso en la
+# columna nueva y salia dos veces. El hilo se hace lento a proposito.
+dialogo.destroy()
+# Lento de verdad (schtasks tarda eso en un equipo cargado): con 0.4 s el
+# primer hilo ya habia contestado antes de rehacer Inicio y no se veia nada.
+main.opt.limpieza_programada_activa = lambda: (time.sleep(1.5), True)[1]
+app.mostrar_dashboard()
+correr(app, 0.1)
+app.mostrar_dashboard()
+correr(app, 3.0)
+texto_aviso = main._sin_emoji(main.t("dash_limpieza_programada_aviso", hora=app.prefs.get("limpieza_hora", "09:00")))
+
+
+def avisos_en(widget):
+    propios = 1 if isinstance(widget, main.ctk.CTkLabel) and widget.cget("text") == texto_aviso else 0
+    return propios + sum(avisos_en(h) for h in widget.winfo_children())
+
+
+comprobar(avisos_en(app._col_salud_actual) == 1,
+          f"con Inicio rehecho dos veces seguidas, un solo aviso ({avisos_en(app._col_salud_actual)})")
 for nombre, funcion in originales.items():
     setattr(main.opt, nombre, funcion)
-dialogo.destroy()
 app.destroy()
 print()
 print("RESULTADO: " + ("sin fallos" if not fallos else f"{len(fallos)} FALLOS"))

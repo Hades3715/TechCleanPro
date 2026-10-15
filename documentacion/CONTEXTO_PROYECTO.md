@@ -1642,6 +1642,17 @@ Con eso: Archivos grandes 2 s → 0,4 s; Desinstalar programas 1,8 s →
   interruptor se quedaba en la posición falsa.
 - Actualizar una app con winget: se lanzaba y se daba por hecho. Ahora
   espera y comprueba que ya no sale en la lista de pendientes.
+- **El aviso "Limpieza automática programada activa" salía DOS veces en
+  Inicio** (visto en las capturas, después de publicar la 1.8.0). El hilo
+  que mira schtasks ponía el aviso en `self._col_salud_actual` al
+  contestar; si Inicio se rehacía antes (cambiar de tema, volver a Inicio),
+  los dos hilos lo ponían en la columna nueva. Ahora cada hilo escribe solo
+  en la columna de su pantalla. `prueba_acciones_rapidas.py` lo reproduce
+  con schtasks lento: con 0,4 s el primer hilo ya había contestado y no se
+  veía; con 1,5 s sí.
+- "Windows solo da este dato a una app abierta como administrador (el .exe
+  de TechClean lo es)": solo sale cuando la app NO es administrador, así
+  que lo útil es decir qué hacer: pulsar «Desbloquear funciones».
 
 ### El informe en PDF (`informe.py`) y la privacidad
 

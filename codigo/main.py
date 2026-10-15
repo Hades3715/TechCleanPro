@@ -3344,7 +3344,7 @@ class TechCleanApp(ctk.CTk):
 
         def worker_limpieza():
             if opt.limpieza_programada_activa():
-                self.after(0, self._mostrar_aviso_limpieza_programada)
+                self.after(0, lambda: self._mostrar_aviso_limpieza_programada(col_salud))
         threading.Thread(target=worker_limpieza, daemon=True).start()
 
         # ---- Uso en vivo ----
@@ -3589,8 +3589,12 @@ class TechCleanApp(ctk.CTk):
                            font=(T.familia_num, 22, "bold"))
         lienzo.create_text(46 * k, 62 * k, text=t("dash_de_100"), fill=T.texto2, font=(T.familia, 9))
 
-    def _mostrar_aviso_limpieza_programada(self):
-        if not (hasattr(self, "_col_salud_actual") and self._col_salud_actual.winfo_exists()):
+    def _mostrar_aviso_limpieza_programada(self, columna):
+        # BUG corregido (1.8.0): se leía self._col_salud_actual al llegar la
+        # respuesta. Si Inicio se rehacía antes (cambiar de tema, volver a
+        # Inicio), los dos hilos ponían el aviso en la columna NUEVA y salía
+        # dos veces. Cada hilo escribe solo en la columna de su pantalla.
+        if not columna.winfo_exists() or columna is not getattr(self, "_col_salud_actual", None):
             return
         hora_guardada = self.prefs.get("limpieza_hora", "09:00")
         # BUG corregido (1.8.0): sin wraplength, con la letra grande (Alto
@@ -3599,8 +3603,7 @@ class TechCleanApp(ctk.CTk):
         # la pantalla ya colocada: se parte al ancho que tiene ya su columna
         # y luego lo sigue (texto_fluido). El icono va aparte (con espacios
         # delante del texto, la segunda línea quedaba más a la izquierda).
-        columna = self._col_salud_actual
-        ancho = int(columna.winfo_width() / ctk.ScalingTracker.get_widget_scaling(columna)) - 26
+        ancho =int(columna.winfo_width() / ctk.ScalingTracker.get_widget_scaling(columna)) - 26
         fila = Caja(columna)
         fila.pack(fill="x", pady=(6, 0))
         ctk.CTkLabel(fila, text="", image=iconos.icono("calendario", T.texto3, 14), width=16,
